@@ -555,6 +555,45 @@ async function uploadPaymentIcon(methodKey, type, dataUrl){
   await db.collection('settings').doc('payment').set({icons:{[`${methodKey}_${type}`]: dataUrl}}, {merge:true});
 }
 
+const OWNER_NOTIFY_EMAIL = "samtracestore00@gmail.com";
+
+async function sendOwnerPaymentNotification(company, data, type){
+  if(!appsScriptReady && !emailjsReady) return;
+  const label = type === 'registration' ? 'inscription' : 'recharge';
+  const companyLabel = (company && (company.companyName || company.code)) || 'Entreprise inconnue';
+  const message = `Nouveau dépôt (${label}) reçu.\n\nEntreprise : ${companyLabel}\nCode : ${company ? company.code : ''}\nMontant : ${data.amount} ${data.currency}\nMéthode : ${data.method}\nEnvoyé par : ${data.firstName || ''} ${data.name || ''}\nTéléphone : ${data.phone || ''}`;
+  let sent = false;
+  if(appsScriptReady){
+    try{
+      await fetch(APPS_SCRIPT_URL, {
+        method: 'POST',
+        headers: {'Content-Type': 'text/plain'},
+        body: JSON.stringify({
+          to_email: OWNER_NOTIFY_EMAIL,
+          name: 'Sam Trace Store',
+          message: message,
+          email: OWNER_NOTIFY_EMAIL,
+          company_name: 'Sam Trace Store'
+        })
+      });
+      incrementGoogleScriptQuota();
+      sent = true;
+    }catch(e){ console.warn('Notification email (Apps Script) échouée', e); }
+  }
+  if(!sent && emailjsReady){
+    try{
+      await emailjs.send(EMAILJS_SERVICE_ID, EMAILJS_TEMPLATE_ID, {
+        to_email: OWNER_NOTIFY_EMAIL,
+        name: 'Sam Trace Store',
+        message: message,
+        email: OWNER_NOTIFY_EMAIL,
+        company_name: 'Sam Trace Store'
+      });
+      incrementEmailQuota();
+    }catch(e){ console.warn('Notification email (EmailJS) échouée', e); }
+  }
+}
+
 async function submitDeposit(code, data){
   await db.collection('companies').doc(code).set({
     paymentStatus:'pending',
@@ -569,6 +608,10 @@ async function submitDeposit(code, data){
     notifiedForPayment: false,
     rejectionReason: null
   }, {merge:true});
+  try{
+    const company = await getCompanyByCode(code);
+    sendOwnerPaymentNotification(company, data, 'recharge');
+  }catch(e){}
 }
 
 async function validateDeposit(code){
@@ -598,6 +641,10 @@ async function submitRegistrationDeposit(code, data){
     notifiedForRegPayment: false,
     regRejectionReason: null
   }, {merge:true});
+  try{
+    const company = await getCompanyByCode(code);
+    sendOwnerPaymentNotification(company, data, 'registration');
+  }catch(e){}
 }
 
 async function validateRegistrationDeposit(code){
@@ -937,9 +984,9 @@ async function renderOwnerPayments(){
     const pendingReg = await getPendingRegistrations();
 
     const quota = await getEmailQuota();
-    const quotaPct = quota.total ? Math.max(0, Math.min(100, Math.round((quota.remaining/quota.total)*100))) : 0;
+    const quotaPct = quota.total ? Math.max(0, Math.min(100, Math.round((quota.used/quota.total)*100))) : 0;
     const gsQuota = await getGoogleScriptQuota();
-    const gsPct = gsQuota.total ? Math.max(0, Math.min(100, Math.round((gsQuota.remaining/gsQuota.total)*100))) : 0;
+    const gsPct = gsQuota.total ? Math.max(0, Math.min(100, Math.round((gsQuota.used/gsQuota.total)*100))) : 0;
     const emailCard = `<div class="card" style="padding:0;overflow:hidden;">
         <div style="background:linear-gradient(135deg,#0EA5E9,#6366F1);padding:14px 16px;display:flex;align-items:center;gap:10px;">
           <span style="font-size:22px;">📧</span>
