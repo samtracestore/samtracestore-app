@@ -173,6 +173,88 @@ try{
 }catch(e){ firebaseReady = false; }
 </script>
 
+<!-- ============================================================ -->
+<!-- EmailJS (envoi d'emails aux clients quand le statut d'un      -->
+<!-- colis change). Créez un compte gratuit sur emailjs.com,       -->
+<!-- ajoutez un service email, un template, puis collez vos        -->
+<!-- identifiants ci-dessous.                                      -->
+<!-- ============================================================ -->
+<script src="https://cdn.jsdelivr.net/npm/@emailjs/browser@4/dist/email.min.js"></script>
+<script>
+// ==================================================================
+// ⚠️ A REMPLIR : collez ici vos identifiants EmailJS
+// (emailjs.com → Account → General pour la Public Key,
+//  Email Services pour le Service ID, Email Templates pour le Template ID)
+// ==================================================================
+const EMAILJS_PUBLIC_KEY = "mG1juAwCC-qG3WBor";
+const EMAILJS_SERVICE_ID = "service_2h8wbec";
+const EMAILJS_TEMPLATE_ID = "template_ynb7ayx";
+
+let emailjsReady = false;
+try{
+  if(EMAILJS_PUBLIC_KEY !== "VOTRE_PUBLIC_KEY"){
+    emailjs.init({publicKey: EMAILJS_PUBLIC_KEY});
+    emailjsReady = true;
+  }
+}catch(e){ emailjsReady = false; }
+
+// ==================================================================
+// ⚠️ A REMPLIR (optionnel, système de secours) : collez ici l'URL
+// de votre Google Apps Script déployé comme "Web App" (se termine
+// par /exec). Utilisé automatiquement seulement si EmailJS échoue
+// (ex: quota de 200 emails/mois dépassé).
+// ==================================================================
+const APPS_SCRIPT_URL = "VOTRE_APPS_SCRIPT_URL";
+const appsScriptReady = APPS_SCRIPT_URL !== "VOTRE_APPS_SCRIPT_URL";
+
+async function sendViaAppsScript(pkg, client){
+  if(!appsScriptReady) return;
+  await fetch(APPS_SCRIPT_URL, {
+    method: 'POST',
+    headers: {'Content-Type': 'text/plain'},
+    body: JSON.stringify({
+      to_email: client.email,
+      name: client.name || pkg.name || '',
+      message: buildStatusMessage(pkg),
+      email: client.email,
+      company_name: adminSession && adminSession.companyName ? adminSession.companyName : 'Sam Trace Store'
+    })
+  });
+}
+
+function buildStatusMessage(pkg){
+  const statusMsg = STATUS_EMAIL_MESSAGE[pkg.status] || '';
+  const statusLabel = STATUS_LABEL[pkg.status] || pkg.status;
+  return `${statusMsg}\n\nNuméro de suivi : ${pkg.trackingId}\nStatut actuel : ${statusLabel}`;
+}
+
+async function sendStatusEmail(pkg){
+  if(!emailjsReady && !appsScriptReady) return;
+  const client = await getClient(pkg.phone);
+  if(!client || !client.email) return;
+  let emailjsFailed = false;
+  if(emailjsReady){
+    try{
+      await emailjs.send(EMAILJS_SERVICE_ID, EMAILJS_TEMPLATE_ID, {
+        to_email: client.email,
+        name: client.name || pkg.name || '',
+        message: buildStatusMessage(pkg),
+        email: client.email,
+        company_name: adminSession && adminSession.companyName ? adminSession.companyName : 'Sam Trace Store'
+      });
+      incrementEmailQuota();
+    }catch(e){
+      console.warn('EmailJS a échoué, tentative via Google Apps Script', e);
+      emailjsFailed = true;
+    }
+  }
+  if((!emailjsReady || emailjsFailed) && appsScriptReady){
+    try{ await sendViaAppsScript(pkg, client); }
+    catch(e){ console.warn('Google Apps Script a échoué aussi', e); }
+  }
+}
+</script>
+
 <script>
 const STATUSES = [
   {key:"preparation", label:"En préparation"},
@@ -182,6 +264,13 @@ const STATUSES = [
   {key:"livre", label:"Livré"}
 ];
 const STATUS_LABEL = Object.fromEntries(STATUSES.map(s=>[s.key,s.label]));
+const STATUS_EMAIL_MESSAGE = {
+  preparation: "Votre colis est actuellement en cours de préparation.",
+  expedie: "Bonne nouvelle ! Votre colis vient d'être expédié.",
+  attente: "Votre colis est actuellement en attente.",
+  disponible: "🏢 Votre colis est disponible au bureau. Vous pouvez venir le récupérer dès maintenant.",
+  livre: "✅ Votre colis a été livré. Merci de votre confiance !"
+};
 const OWNER_PHONE = "50940788131";
 const WHATSAPP_NUMBER = "50940788131";
 function first4(phone){
@@ -389,6 +478,36 @@ const PAYMENT_METHODS = [
   {key:'buh', label:'BUH (Compte USD)', currency:'USD', beneficiary:'Sarah Fleuranvil', number:'2000-0074-455'},
   {key:'visa', label:'Visa / Meru', currency:'USD', beneficiary:'Sarah Fleuranvil', email:'sarahfleuranvil00@gmail.com', tag:'$Samimy', number:'40788131'}
 ];
+
+const EMAILJS_MONTHLY_QUOTA = 200;
+
+function currentMonthKey(){
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
+}
+
+async function getEmailQuota(){
+  try{
+    const doc = await db.collection('settings').doc('emailQuota').get();
+    const data = doc.exists ? doc.data() : {};
+    const month = currentMonthKey();
+    const count = (data.month === month) ? (data.count || 0) : 0;
+    return { total: EMAILJS_MONTHLY_QUOTA, used: count, remaining: Math.max(0, EMAILJS_MONTHLY_QUOTA - count), month };
+  }catch(e){
+    return { total: EMAILJS_MONTHLY_QUOTA, used: 0, remaining: EMAILJS_MONTHLY_QUOTA, month: currentMonthKey() };
+  }
+}
+
+async function incrementEmailQuota(){
+  try{
+    const month = currentMonthKey();
+    const ref = db.collection('settings').doc('emailQuota');
+    const doc = await ref.get();
+    const data = doc.exists ? doc.data() : {};
+    const count = (data.month === month) ? (data.count || 0) : 0;
+    await ref.set({ month, count: count + 1 }, {merge:true});
+  }catch(e){}
+}
 
 async function getPaymentSettings(){
   try{
@@ -747,6 +866,20 @@ function compactCardHtml(id, gradient, icon, title, subtitle, listContentHtml){
 async function renderOwnerPanel(main){
   let pendingCount = 0;
   try{ pendingCount = (await getPendingDeposits()).length + (await getPendingRegistrations()).length; }catch(e){}
+  const quota = await getEmailQuota();
+  const quotaPct = quota.total ? Math.max(0, Math.min(100, Math.round((quota.remaining/quota.total)*100))) : 0;
+  const quotaColor = quotaPct > 30 ? 'var(--ok)' : (quotaPct > 10 ? '#f5a623' : 'var(--danger)');
+  const emailCard = `<div class="card">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;">
+        <span style="font-size:20px;">📧</span><h2 style="margin:0;">Service Email</h2>
+      </div>
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
+        <span class="sub">EmailJS : ${quota.remaining} restants sur ${quota.total} (ce mois-ci)</span>
+      </div>
+      <div style="background:var(--panel2);border-radius:8px;height:8px;overflow:hidden;">
+        <div style="background:${quotaColor};height:100%;width:${quotaPct}%;"></div>
+      </div>
+    </div>`;
   main.innerHTML = `
     <div class="card" style="display:flex;justify-content:space-between;align-items:center;">
       <div><p class="sub" style="margin:0">Connecté en tant que</p><b>Sam Trace Store (propriétaire)</b></div>
@@ -755,6 +888,7 @@ async function renderOwnerPanel(main){
         <button class="ghost" id="btnAdminLogout">Déconnexion</button>
       </div>
     </div>
+    ${emailCard}
     <div class="modeSwitch" style="margin-bottom:14px;">
       <button id="btnOwnerCompanies" class="${ownerView==='companies'?'active':''}" style="flex:1;">Entreprises</button>
       <button id="btnOwnerPackages" class="${ownerView==='packages'?'active':''}" style="flex:1;">Colis</button>
@@ -1192,12 +1326,14 @@ async function renderOwnerPackages(){
         existingPickedUpAt = (existing && existing.pickedUpAt) ? existing.pickedUpAt : null;
       }
       const lastStatus = history.length ? history[history.length-1].status : null;
-      if(status !== lastStatus){
+      const statusChanged = status !== lastStatus;
+      if(statusChanged){
         history.push({status, date:new Date().toISOString()});
       }
       const pkg = {trackingId, name, phone: normalizePhone(phone), status, updatedAt:new Date().toISOString(), history, companyCode: adminSession.code};
       if(existingPickedUpAt) pkg.pickedUpAt = existingPickedUpAt;
       await savePackage(pkg);
+      if(statusChanged) sendStatusEmail(pkg);
       toast(isEditing ? "Colis mis à jour" : "Colis enregistré");
       editingTrackingId = null;
       renderAdmin();
@@ -1828,12 +1964,14 @@ async function renderAdmin(){
         existingPickedUpAt = (existing && existing.pickedUpAt) ? existing.pickedUpAt : null;
       }
       const lastStatus = history.length ? history[history.length-1].status : null;
-      if(status !== lastStatus){
+      const statusChanged = status !== lastStatus;
+      if(statusChanged){
         history.push({status, date:new Date().toISOString()});
       }
       const pkg = {trackingId, name, phone: normalizePhone(phone), status, updatedAt:new Date().toISOString(), history, companyCode: adminSession.code};
       if(existingPickedUpAt) pkg.pickedUpAt = existingPickedUpAt;
       await savePackage(pkg);
+      if(statusChanged) sendStatusEmail(pkg);
       toast(isEditing ? "Colis mis à jour" : "Colis enregistré");
       editingTrackingId = null;
       renderAdmin();
