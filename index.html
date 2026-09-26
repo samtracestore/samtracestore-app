@@ -866,20 +866,6 @@ function compactCardHtml(id, gradient, icon, title, subtitle, listContentHtml){
 async function renderOwnerPanel(main){
   let pendingCount = 0;
   try{ pendingCount = (await getPendingDeposits()).length + (await getPendingRegistrations()).length; }catch(e){}
-  const quota = await getEmailQuota();
-  const quotaPct = quota.total ? Math.max(0, Math.min(100, Math.round((quota.remaining/quota.total)*100))) : 0;
-  const quotaColor = quotaPct > 30 ? 'var(--ok)' : (quotaPct > 10 ? '#f5a623' : 'var(--danger)');
-  const emailCard = `<div class="card">
-      <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;">
-        <span style="font-size:20px;">📧</span><h2 style="margin:0;">Service Email</h2>
-      </div>
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
-        <span class="sub">EmailJS : ${quota.remaining} restants sur ${quota.total} (ce mois-ci)</span>
-      </div>
-      <div style="background:var(--panel2);border-radius:8px;height:8px;overflow:hidden;">
-        <div style="background:${quotaColor};height:100%;width:${quotaPct}%;"></div>
-      </div>
-    </div>`;
   main.innerHTML = `
     <div class="card" style="display:flex;justify-content:space-between;align-items:center;">
       <div><p class="sub" style="margin:0">Connecté en tant que</p><b>Sam Trace Store (propriétaire)</b></div>
@@ -888,7 +874,6 @@ async function renderOwnerPanel(main){
         <button class="ghost" id="btnAdminLogout">Déconnexion</button>
       </div>
     </div>
-    ${emailCard}
     <div class="modeSwitch" style="margin-bottom:14px;">
       <button id="btnOwnerCompanies" class="${ownerView==='companies'?'active':''}" style="flex:1;">Entreprises</button>
       <button id="btnOwnerPackages" class="${ownerView==='packages'?'active':''}" style="flex:1;">Colis</button>
@@ -920,6 +905,21 @@ async function renderOwnerPayments(){
     const settings = await getPaymentSettings();
     const pending = await getPendingDeposits();
     const pendingReg = await getPendingRegistrations();
+
+    const quota = await getEmailQuota();
+    const quotaPct = quota.total ? Math.max(0, Math.min(100, Math.round((quota.remaining/quota.total)*100))) : 0;
+    const emailCard = `<div class="card" style="padding:0;overflow:hidden;">
+        <div style="background:linear-gradient(135deg,#0EA5E9,#6366F1);padding:14px 16px;display:flex;align-items:center;gap:10px;">
+          <span style="font-size:22px;">📧</span>
+          <div style="color:#fff;font-weight:700;font-size:16px;">Service Email</div>
+        </div>
+        <div style="padding:14px 16px;">
+          <span class="sub">EmailJS : ${quota.remaining} restants sur ${quota.total} (ce mois-ci)</span>
+          <div style="background:var(--panel2);border-radius:8px;height:8px;overflow:hidden;margin-top:8px;">
+            <div style="background:linear-gradient(90deg,#0EA5E9,#6366F1);height:100%;width:${quotaPct}%;"></div>
+          </div>
+        </div>
+      </div>`;
 
     const pendingRegListContent = pendingReg.length === 0
       ? `<div class="card"><div class="empty">Aucune inscription en attente.</div></div>`
@@ -1048,7 +1048,7 @@ async function renderOwnerPayments(){
     const methodsHtml = compactCardHtml('paymentMethods', '#3ECF8E,#FF7A1A', '💳', 'Icônes de paiement',
       `${PAYMENT_METHODS.length} méthodes — appuyez pour voir la liste`, methodsListContent);
 
-    content.innerHTML = pendingRegHtml + pendingHtml + notifCardOwner + confirmedRegHtml + confirmedHtml + settingsHtml + methodsHtml + `
+    content.innerHTML = emailCard + pendingRegHtml + pendingHtml + notifCardOwner + confirmedRegHtml + confirmedHtml + settingsHtml + methodsHtml + `
       <div class="card">
         <h2>Avatar du service client</h2>
         <p class="sub">Choisissez une photo depuis votre galerie pour la bulle WhatsApp affichée aux entreprises.</p>
