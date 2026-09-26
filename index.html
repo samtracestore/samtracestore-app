@@ -220,6 +220,7 @@ async function sendViaAppsScript(pkg, client){
       company_name: adminSession && adminSession.companyName ? adminSession.companyName : 'Sam Trace Store'
     })
   });
+  incrementGoogleScriptQuota();
 }
 
 function buildStatusMessage(pkg){
@@ -480,10 +481,16 @@ const PAYMENT_METHODS = [
 ];
 
 const EMAILJS_MONTHLY_QUOTA = 200;
+const APPS_SCRIPT_DAILY_QUOTA = 100;
 
 function currentMonthKey(){
   const d = new Date();
   return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
+}
+
+function currentDayKey(){
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
 }
 
 async function getEmailQuota(){
@@ -506,6 +513,29 @@ async function incrementEmailQuota(){
     const data = doc.exists ? doc.data() : {};
     const count = (data.month === month) ? (data.count || 0) : 0;
     await ref.set({ month, count: count + 1 }, {merge:true});
+  }catch(e){}
+}
+
+async function getGoogleScriptQuota(){
+  try{
+    const doc = await db.collection('settings').doc('googleScriptQuota').get();
+    const data = doc.exists ? doc.data() : {};
+    const day = currentDayKey();
+    const count = (data.day === day) ? (data.count || 0) : 0;
+    return { total: APPS_SCRIPT_DAILY_QUOTA, used: count, remaining: Math.max(0, APPS_SCRIPT_DAILY_QUOTA - count), day };
+  }catch(e){
+    return { total: APPS_SCRIPT_DAILY_QUOTA, used: 0, remaining: APPS_SCRIPT_DAILY_QUOTA, day: currentDayKey() };
+  }
+}
+
+async function incrementGoogleScriptQuota(){
+  try{
+    const day = currentDayKey();
+    const ref = db.collection('settings').doc('googleScriptQuota');
+    const doc = await ref.get();
+    const data = doc.exists ? doc.data() : {};
+    const count = (data.day === day) ? (data.count || 0) : 0;
+    await ref.set({ day, count: count + 1 }, {merge:true});
   }catch(e){}
 }
 
@@ -908,12 +938,18 @@ async function renderOwnerPayments(){
 
     const quota = await getEmailQuota();
     const quotaPct = quota.total ? Math.max(0, Math.min(100, Math.round((quota.remaining/quota.total)*100))) : 0;
+    const gsQuota = await getGoogleScriptQuota();
+    const gsPct = gsQuota.total ? Math.max(0, Math.min(100, Math.round((gsQuota.remaining/gsQuota.total)*100))) : 0;
     const emailCard = `<div class="card" style="padding:0;overflow:hidden;">
         <div style="background:linear-gradient(135deg,#0EA5E9,#6366F1);padding:14px 16px;display:flex;align-items:center;gap:10px;">
           <span style="font-size:22px;">📧</span>
           <div style="color:#fff;font-weight:700;font-size:16px;">Service Email</div>
         </div>
         <div style="padding:14px 16px;">
+          <span class="sub">Google Script : ${gsQuota.remaining} restants sur ${gsQuota.total} (dernières 24h)</span>
+          <div style="background:var(--panel2);border-radius:8px;height:8px;overflow:hidden;margin-top:8px;margin-bottom:14px;">
+            <div style="background:linear-gradient(90deg,#0EA5E9,#6366F1);height:100%;width:${gsPct}%;"></div>
+          </div>
           <span class="sub">EmailJS : ${quota.remaining} restants sur ${quota.total} (ce mois-ci)</span>
           <div style="background:var(--panel2);border-radius:8px;height:8px;overflow:hidden;margin-top:8px;">
             <div style="background:linear-gradient(90deg,#0EA5E9,#6366F1);height:100%;width:${quotaPct}%;"></div>
