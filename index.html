@@ -1043,14 +1043,17 @@ async function renderOwnerPayments(){
       </div>`;
 
     const currentOwnerCode = await getOwnerCode();
-    const codeCard = `<div class="card">
-        <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;">
-          <span style="font-size:20px;">🔑</span><h2 style="margin:0;">Code d'accès propriétaire</h2>
+    const codeCard = `<div class="card" style="padding:0;overflow:hidden;">
+        <div style="background:linear-gradient(135deg,#10B981,#0EA5E9);padding:14px 16px;display:flex;align-items:center;gap:10px;">
+          <span style="font-size:22px;">🔑</span>
+          <div style="color:#fff;font-weight:700;font-size:16px;">Code d'accès propriétaire</div>
         </div>
-        <p class="sub">Code actuel : <b>${currentOwnerCode || 'non défini'}</b></p>
-        <label>Nouveau code (4 chiffres)</label>
-        <input id="ownerCodeInput" type="text" inputmode="numeric" maxlength="4" placeholder="••••">
-        <button class="primary" id="btnSaveOwnerCode" style="margin-top:10px;">Enregistrer le nouveau code</button>
+        <div style="padding:14px 16px;">
+          <p class="sub">Code actuel : <b>${currentOwnerCode || 'non défini'}</b></p>
+          <label>Nouveau code (4 chiffres)</label>
+          <input id="ownerCodeInput" type="text" inputmode="numeric" maxlength="4" placeholder="••••">
+          <button class="primary" id="btnSaveOwnerCode" style="margin-top:10px;">Enregistrer le nouveau code</button>
+        </div>
       </div>`;
 
     const pendingRegListContent = pendingReg.length === 0
@@ -1091,15 +1094,18 @@ async function renderOwnerPayments(){
     const pendingHtml = compactCardHtml('pending', '#F9A8D4,#F472B6', '💰', 'Dépôts en attente',
       `${pending.length} en attente — appuyez pour voir la liste`, pendingListContent);
 
-    const notifCardOwner = `<div class="card">
-      <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;">
-        <span style="font-size:20px;">🔔</span><h2 style="margin:0;">Notification</h2>
+    const notifCardOwner = `<div class="card" style="padding:0;overflow:hidden;">
+      <div style="background:linear-gradient(135deg,#F59E0B,#EF4444);padding:14px 16px;display:flex;align-items:center;gap:10px;">
+        <span style="font-size:22px;">🔔</span>
+        <div style="color:#fff;font-weight:700;font-size:16px;">Notification</div>
       </div>
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
-        <span class="sub">Statut notification</span>
-        <span style="color:var(--ok);font-weight:700;">✅ Active</span>
+      <div style="padding:14px 16px;">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
+          <span class="sub">Statut notification</span>
+          <span style="color:var(--ok);font-weight:700;">✅ Active</span>
+        </div>
+        <p class="sub" style="margin:0;">${pending.length > 0 ? `${pending.length} dépôt(s) en attente de votre validation.` : `Aucun dépôt en attente pour l'instant.`}</p>
       </div>
-      <p class="sub" style="margin:0;">${pending.length > 0 ? `${pending.length} dépôt(s) en attente de votre validation.` : `Aucun dépôt en attente pour l'instant.`}</p>
     </div>`;
 
     const confirmed = await getConfirmedDeposits();
