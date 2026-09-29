@@ -335,6 +335,72 @@ function toast(msg){
 
 function normalizePhone(p){ return (p||"").replace(/[\s\-\.]/g,""); }
 
+const COUNTRIES = ["Haïti","États-Unis","Canada","République Dominicaine","Autre"];
+const HAITI_LOCATIONS = {
+  "Ouest": ["Port-au-Prince","Delmas","Pétion-Ville","Carrefour","Tabarre","Cité Soleil","Kenscoff","Croix-des-Bouquets","Gressier","Léogâne","Grand-Goâve","Petit-Goâve","Arcahaie","Cabaret","Cornillon","Ganthier","Thomazeau","Fonds-Verrettes"],
+  "Nord": ["Cap-Haïtien","Acul-du-Nord","Limonade","Plaine-du-Nord","Quartier-Morin","Milot","Grande-Rivière-du-Nord","Bahon","Dondon","Saint-Raphaël","Pignon","La Victoire","Ranquitte","Pilate","Plaisance","Limbé","Bas-Limbé","Port-Margot"],
+  "Nord-Est": ["Fort-Liberté","Ferrier","Perches","Ouanaminthe","Capotille","Mont-Organisé","Trou-du-Nord","Terrier-Rouge","Caracol","Sainte-Suzanne","Vallières","Mombin-Crochu"],
+  "Nord-Ouest": ["Port-de-Paix","La Tortue","Bassin-Bleu","Chansolme","Bombardopolis","Baie-de-Henne","Jean-Rabel","Môle-Saint-Nicolas","Saint-Louis-du-Nord","Anse-à-Foleur"],
+  "Artibonite": ["Gonaïves","L'Estère","Ennery","Gros-Morne","Anse-Rouge","Terre-Neuve","Marmelade","Saint-Michel-de-l'Attalaye","Dessalines","Grande-Saline","Petite-Rivière-de-l'Artibonite","Verrettes","La Chapelle","Saint-Marc","Liancourt","Desdunes"],
+  "Centre": ["Hinche","Cerca-Carvajal","Maissade","Thomonde","Mirebalais","Saut-d'Eau","Boucan-Carré","Lascahobas","Belladère","Baptiste","Cerca-la-Source","Thomassique"],
+  "Sud": ["Les Cayes","Camp-Perrin","Chantal","Torbeck","Maniche","Ile-à-Vache","Port-Salut","Roche-à-Bateau","Arniquet","Chardonnières","Les Anglais","Tiburon","Coteaux","Port-à-Piment","Aquin","Cavaillon","Saint-Louis-du-Sud"],
+  "Sud-Est": ["Jacmel","Bainet","Cayes-Jacmel","Marigot","Belle-Anse","Grand-Gosier","Thiotte","La Vallée","Anse-à-Pitre","Côtes-de-Fer"],
+  "Grand'Anse": ["Jérémie","Abricots","Bonbon","Corail","Roseaux","Chambellan","Pestel","Beaumont","Dame-Marie","Anse-d'Hainault","Les Irois","Moron"],
+  "Nippes": ["Miragoâne","Petite-Rivière-de-Nippes","Petit-Trou-de-Nippes","Anse-à-Veau","L'Azile","Baradères","Plaisance-du-Sud","Fond-des-Nègres","Paillant"]
+};
+
+function buildLocationSelectsHTML(){
+  return `
+      <label>Pays de destination</label>
+      <select id="pCountry">
+        <option value="">Choisir un pays</option>
+        ${COUNTRIES.map(c=>`<option value="${c}">${c}</option>`).join('')}
+      </select>
+      <label>Département / Région</label>
+      <div id="pDeptWrap"><input id="pDept" placeholder="Département / Région"></div>
+      <label>Commune / Ville</label>
+      <div id="pCommuneWrap"><input id="pCommune" placeholder="Commune / Ville"></div>`;
+}
+
+function updateDeptField(country, selectedDept){
+  const wrap = document.getElementById('pDeptWrap');
+  if(!wrap) return;
+  if(country === 'Haïti'){
+    const depts = Object.keys(HAITI_LOCATIONS);
+    wrap.innerHTML = `<select id="pDept"><option value="">Choisir un département</option>${depts.map(d=>`<option value="${d}" ${d===selectedDept?'selected':''}>${d}</option>`).join('')}</select>`;
+  } else {
+    wrap.innerHTML = `<input id="pDept" placeholder="Département / Région / État" value="${selectedDept||''}">`;
+  }
+  document.getElementById('pDept').onchange = ()=>{
+    const dept = document.getElementById('pDept').value;
+    updateCommuneField(country, dept, '');
+  };
+}
+
+function updateCommuneField(country, dept, selectedCommune){
+  const wrap = document.getElementById('pCommuneWrap');
+  if(!wrap) return;
+  if(country === 'Haïti' && HAITI_LOCATIONS[dept]){
+    const communes = HAITI_LOCATIONS[dept];
+    wrap.innerHTML = `<select id="pCommune"><option value="">Choisir une commune</option>${communes.map(c=>`<option value="${c}" ${c===selectedCommune?'selected':''}>${c}</option>`).join('')}</select>`;
+  } else {
+    wrap.innerHTML = `<input id="pCommune" placeholder="Commune / Ville" value="${selectedCommune||''}">`;
+  }
+}
+
+function initLocationFields(prefillCountry, prefillDept, prefillCommune){
+  const countrySel = document.getElementById('pCountry');
+  if(!countrySel) return;
+  countrySel.value = prefillCountry || '';
+  updateDeptField(countrySel.value, prefillDept);
+  updateCommuneField(countrySel.value, prefillDept, prefillCommune);
+  countrySel.onchange = ()=>{
+    updateDeptField(countrySel.value, '');
+    updateCommuneField(countrySel.value, '', '');
+  };
+}
+
+
 async function saveClient(phone, name, email){
   phone = normalizePhone(phone);
   await db.collection('clients').doc(phone).set({phone,name,email,registeredAt:new Date().toISOString(),lastSeen:new Date().toISOString()});
@@ -1414,6 +1480,7 @@ async function renderCompanyPackagesView(code, companyName){
           <div class="info">
             <div><b>#${p.trackingId}</b> — ${STATUS_LABEL[p.status]||p.status}</div>
             <div class="name">${p.name} · ${p.phone}</div>
+            ${(p.destCommune||p.destDepartment) ? `<div class="sub" style="font-size:11px;">📍 ${[p.destCommune,p.destDepartment,p.destCountry].filter(Boolean).join(', ')}</div>` : ''}
           </div>
         </div>`).join('') + `</div>`;
     }
@@ -1436,14 +1503,23 @@ async function renderOwnerPackages(){
       <input id="pName" placeholder="Ex : Marie Dupont">
       <label>Téléphone du client</label>
       <input id="pPhone" type="tel" placeholder="Ex : 06 12 34 56 78">
+      ${buildLocationSelectsHTML()}
       <label>Statut</label>
       <select id="pStatus">${optionsHtml}</select>
       <button class="primary" id="btnSavePkg">${isEditing ? 'Mettre à jour le colis' : 'Enregistrer le colis'}</button>
     </div>
     <div class="card">
+      <h2>📊 Suivi par destination</h2>
+      <label>Filtrer par département</label>
+      <select id="destFilter"><option value="">Toutes les destinations</option>${Object.keys(HAITI_LOCATIONS).map(d=>`<option value="${d}">${d}</option>`).join('')}</select>
+      <div id="destStats" style="margin-top:14px;"><div class="empty">Chargement...</div></div>
+      <div id="destFilterResults" style="margin-top:10px;"></div>
+    </div>
+    <div class="card">
       <h2>Tous les colis</h2>
       <div id="adminList"><div class="empty">Chargement...</div></div>
     </div>`;
+  initLocationFields('','','');
 
   if(isEditing){
     try{
@@ -1453,6 +1529,7 @@ async function renderOwnerPackages(){
         document.getElementById('pName').value = existing.name || '';
         document.getElementById('pPhone').value = existing.phone || '';
         document.getElementById('pStatus').value = existing.status || 'preparation';
+        initLocationFields(existing.destCountry||'', existing.destDepartment||'', existing.destCommune||'');
       }
     }catch(e){}
     document.getElementById('btnCancelEdit').onclick = ()=>{ editingTrackingId = null; renderAdmin(); };
@@ -1464,6 +1541,9 @@ async function renderOwnerPackages(){
     const name = document.getElementById('pName').value.trim();
     const phone = document.getElementById('pPhone').value.trim();
     const status = document.getElementById('pStatus').value;
+    const destCountry = document.getElementById('pCountry').value;
+    const destDepartment = document.getElementById('pDept') ? document.getElementById('pDept').value : '';
+    const destCommune = document.getElementById('pCommune') ? document.getElementById('pCommune').value : '';
     if(!trackingId || !phone || !name){ toast("Nom, numéro de suivi et téléphone requis"); return; }
     try{
       let history = [];
@@ -1478,7 +1558,7 @@ async function renderOwnerPackages(){
       if(statusChanged){
         history.push({status, date:new Date().toISOString()});
       }
-      const pkg = {trackingId, name, phone: normalizePhone(phone), status, updatedAt:new Date().toISOString(), history, companyCode: adminSession.code};
+      const pkg = {trackingId, name, phone: normalizePhone(phone), status, destCountry, destDepartment, destCommune, updatedAt:new Date().toISOString(), history, companyCode: adminSession.code};
       if(existingPickedUpAt) pkg.pickedUpAt = existingPickedUpAt;
       await savePackage(pkg);
       if(statusChanged) sendStatusEmail(pkg);
@@ -1487,6 +1567,47 @@ async function renderOwnerPackages(){
       renderAdmin();
     }catch(e){ toast("Erreur d'enregistrement"); }
   };
+
+  try{
+    const allPkgsForStats = await getAllPackages();
+    const now = new Date();
+    const thisMonthPkgs = allPkgsForStats.filter(p=>{
+      const d = new Date((p.history&&p.history[0]&&p.history[0].date) || p.updatedAt);
+      return d.getFullYear()===now.getFullYear() && d.getMonth()===now.getMonth();
+    });
+    const counts = {};
+    thisMonthPkgs.forEach(p=>{
+      const key = p.destDepartment || 'Non renseigné';
+      counts[key] = (counts[key]||0) + 1;
+    });
+    const sorted = Object.entries(counts).sort((a,b)=>b[1]-a[1]);
+    const maxCount = sorted.length ? sorted[0][1] : 1;
+    const statsEl = document.getElementById('destStats');
+    if(sorted.length===0){
+      statsEl.innerHTML = `<div class="empty">Aucun colis ce mois-ci.</div>`;
+    } else {
+      statsEl.innerHTML = `<p class="sub" style="margin-bottom:8px;">Colis par département (ce mois-ci)</p>` + sorted.map(([dept,count])=>`
+        <div style="margin-bottom:8px;">
+          <div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:3px;"><span>${dept}</span><b>${count}</b></div>
+          <div style="background:var(--panel2);border-radius:8px;height:8px;overflow:hidden;"><div style="background:linear-gradient(90deg,#0EA5E9,#6366F1);height:100%;width:${Math.round((count/maxCount)*100)}%;"></div></div>
+        </div>`).join('');
+    }
+    document.getElementById('destFilter').onchange = async (e)=>{
+      const dept = e.target.value;
+      const resultsEl = document.getElementById('destFilterResults');
+      if(!dept){ resultsEl.innerHTML = ''; return; }
+      const matches = allPkgsForStats.filter(p=>p.destDepartment === dept);
+      if(matches.length === 0){
+        resultsEl.innerHTML = `<div class="empty">Aucun colis pour ${dept}.</div>`;
+      } else {
+        resultsEl.innerHTML = matches.map(p=>`
+          <div class="pkgAdmin" style="flex-direction:column;align-items:stretch;">
+            <div><b>#${p.trackingId}</b> — ${STATUS_LABEL[p.status]||p.status}</div>
+            <div class="name">${p.name} · ${[p.destCommune,p.destDepartment].filter(Boolean).join(', ')}</div>
+          </div>`).join('');
+      }
+    };
+  }catch(e){}
 
   try{
     const pkgs = await getCompanyPackages(adminSession.code);
@@ -1511,6 +1632,7 @@ async function renderOwnerPackages(){
             <div class="info" data-edit="${p.trackingId}" style="cursor:pointer;flex:1;">
               <div><b>#${p.trackingId}</b> — ${STATUS_LABEL[p.status]||p.status}</div>
               <div class="name">${p.name} · ${p.phone}</div>
+              ${(p.destCommune||p.destDepartment) ? `<div class="sub" style="font-size:11px;">📍 ${[p.destCommune,p.destDepartment,p.destCountry].filter(Boolean).join(', ')}</div>` : ''}
             </div>
             <button class="miniBtn" data-id="${p.trackingId}">Supprimer</button>
           </div>
@@ -2068,6 +2190,7 @@ async function renderAdmin(){
       <input id="pName" placeholder="Ex : Marie Dupont">
       <label>Téléphone du client</label>
       <input id="pPhone" type="tel" placeholder="Ex : 06 12 34 56 78">
+      ${buildLocationSelectsHTML()}
       <label>Statut</label>
       <select id="pStatus">${optionsHtml}</select>
       <button class="primary" id="btnSavePkg">${isEditing ? 'Mettre à jour le colis' : 'Enregistrer le colis'}</button>
@@ -2077,6 +2200,7 @@ async function renderAdmin(){
       <div id="adminList"><div class="empty">Chargement...</div></div>
     </div>
     ${whatsappBubbleHTML()}`;
+  initLocationFields('','','');
   document.getElementById('btnAdminLogout').onclick = ()=>{ adminSession=null; editingTrackingId=null; renderAdmin(); };
   if(showConfirmBanner){
     document.getElementById('btnDismissConfirm').onclick = async ()=>{
@@ -2103,6 +2227,7 @@ async function renderAdmin(){
         document.getElementById('pName').value = existing.name || '';
         document.getElementById('pPhone').value = existing.phone || '';
         document.getElementById('pStatus').value = existing.status || 'preparation';
+        initLocationFields(existing.destCountry||'', existing.destDepartment||'', existing.destCommune||'');
       }
     }catch(e){}
     document.getElementById('btnCancelEdit').onclick = ()=>{ editingTrackingId = null; renderAdmin(); };
@@ -2114,6 +2239,9 @@ async function renderAdmin(){
     const name = document.getElementById('pName').value.trim();
     const phone = document.getElementById('pPhone').value.trim();
     const status = document.getElementById('pStatus').value;
+    const destCountry = document.getElementById('pCountry').value;
+    const destDepartment = document.getElementById('pDept') ? document.getElementById('pDept').value : '';
+    const destCommune = document.getElementById('pCommune') ? document.getElementById('pCommune').value : '';
     if(!trackingId || !phone || !name){ toast("Nom, numéro de suivi et téléphone requis"); return; }
     try{
       let history = [];
@@ -2128,7 +2256,7 @@ async function renderAdmin(){
       if(statusChanged){
         history.push({status, date:new Date().toISOString()});
       }
-      const pkg = {trackingId, name, phone: normalizePhone(phone), status, updatedAt:new Date().toISOString(), history, companyCode: adminSession.code};
+      const pkg = {trackingId, name, phone: normalizePhone(phone), status, destCountry, destDepartment, destCommune, updatedAt:new Date().toISOString(), history, companyCode: adminSession.code};
       if(existingPickedUpAt) pkg.pickedUpAt = existingPickedUpAt;
       await savePackage(pkg);
       if(statusChanged) sendStatusEmail(pkg);
@@ -2161,6 +2289,7 @@ async function renderAdmin(){
             <div class="info" data-edit="${p.trackingId}" style="cursor:pointer;flex:1;">
               <div><b>#${p.trackingId}</b> — ${STATUS_LABEL[p.status]||p.status}</div>
               <div class="name">${p.name} · ${p.phone}</div>
+              ${(p.destCommune||p.destDepartment) ? `<div class="sub" style="font-size:11px;">📍 ${[p.destCommune,p.destDepartment,p.destCountry].filter(Boolean).join(', ')}</div>` : ''}
             </div>
             <button class="miniBtn" data-id="${p.trackingId}">Supprimer</button>
           </div>
