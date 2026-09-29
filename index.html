@@ -936,6 +936,7 @@ function pkgCardHTML(p){
       <div>
         <div class="tid">#${p.trackingId}</div>
         <div class="desc">${p.name||''}</div>
+        ${(p.destCommune||p.destDepartment) ? `<div class="sub" style="font-size:11px;margin-top:2px;">📍 ${[p.destCommune,p.destDepartment,p.destCountry].filter(Boolean).join(', ')}</div>` : ''}
       </div>
       <span class="badge ${p.status}">${STATUS_LABEL[p.status]||p.status}</span>
     </div>
