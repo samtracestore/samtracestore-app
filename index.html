@@ -231,28 +231,46 @@ function buildStatusMessage(pkg){
 
 async function sendStatusEmail(pkg){
   if(!emailjsReady && !appsScriptReady) return;
+  const recipients = [];
   const client = await getClient(pkg.phone);
-  if(!client || !client.email) return;
-  let emailjsFailed = false;
-  if(emailjsReady){
-    try{
-      await emailjs.send(EMAILJS_SERVICE_ID, EMAILJS_TEMPLATE_ID, {
-        to_email: client.email,
-        name: client.name || pkg.name || '',
-        message: buildStatusMessage(pkg),
-        email: client.email,
-        company_name: adminSession && adminSession.companyName ? adminSession.companyName : 'Sam Trace Store'
-      });
-      incrementEmailQuota();
-    }catch(e){
-      console.warn('EmailJS a échoué, tentative via Google Apps Script', e);
-      emailjsFailed = true;
+  if(client && client.email) recipients.push({email: client.email, name: client.name || pkg.name || ''});
+  const alertSub = await getTrackingAlert(pkg.trackingId);
+  if(alertSub && alertSub.email && !recipients.some(r=> r.email.toLowerCase() === alertSub.email.toLowerCase())){
+    recipients.push({email: alertSub.email, name: pkg.name || ''});
+  }
+  for(const r of recipients){
+    let emailjsFailed = false;
+    if(emailjsReady){
+      try{
+        await emailjs.send(EMAILJS_SERVICE_ID, EMAILJS_TEMPLATE_ID, {
+          to_email: r.email,
+          name: r.name,
+          message: buildStatusMessage(pkg),
+          email: r.email,
+          company_name: adminSession && adminSession.companyName ? adminSession.companyName : 'Sam Trace Store'
+        });
+        incrementEmailQuota();
+      }catch(e){
+        console.warn('EmailJS a échoué, tentative via Google Apps Script', e);
+        emailjsFailed = true;
+      }
+    }
+    if((!emailjsReady || emailjsFailed) && appsScriptReady){
+      try{ await sendViaAppsScript(pkg, {email: r.email, name: r.name}); }
+      catch(e){ console.warn('Google Apps Script a échoué aussi', e); }
     }
   }
-  if((!emailjsReady || emailjsFailed) && appsScriptReady){
-    try{ await sendViaAppsScript(pkg, client); }
-    catch(e){ console.warn('Google Apps Script a échoué aussi', e); }
-  }
+}
+
+async function saveTrackingAlert(trackingId, email){
+  await db.collection('trackingAlerts').doc(trackingId).set({email, createdAt:new Date().toISOString()});
+}
+
+async function getTrackingAlert(trackingId){
+  try{
+    const doc = await db.collection('trackingAlerts').doc(trackingId).get();
+    return doc.exists ? doc.data() : null;
+  }catch(e){ return null; }
 }
 </script>
 
@@ -1009,6 +1027,22 @@ async function renderClient(){
         if(pkg){
           const btn = resultEl.querySelector('[data-pickup]');
           if(btn) btn.onclick = ()=> confirmPickup(btn.dataset.pickup);
+          const box = document.createElement('div');
+          box.style.marginTop = '14px';
+          box.innerHTML = `
+            <label>🔔 Recevoir un email à chaque changement (facultatif)</label>
+            <input id="alertEmail" type="email" placeholder="votre@email.com">
+            <button class="primary" id="btnAlertEmail" style="margin-top:8px;">Me prévenir par email</button>`;
+          resultEl.appendChild(box);
+          document.getElementById('btnAlertEmail').onclick = async ()=>{
+            const email = document.getElementById('alertEmail').value.trim();
+            if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)){ toast("Adresse email invalide"); return; }
+            try{
+              await saveTrackingAlert(pkg.trackingId, email);
+              toast("✅ Vous serez prévenu par email");
+              box.innerHTML = `<div class="empty">✅ Vous recevrez un email à chaque changement de statut.</div>`;
+            }catch(e){ toast("Erreur, réessayez"); }
+          };
         }
       }catch(e){ resultEl.innerHTML = `<div class="empty">Erreur, réessayez.</div>`; }
     };
