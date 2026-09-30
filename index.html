@@ -984,7 +984,30 @@ async function renderClient(){
         <h2>Comment ça marche ?</h2>
         <p class="sub" style="margin:0">Votre numéro de téléphone sert uniquement à retrouver vos propres colis. Personne d'autre ne peut voir vos informations.</p>
       </div>
+      <div class="card">
+        <h2>🔍 Suivi rapide par numéro</h2>
+        <p class="sub">Vous avez juste un numéro de suivi ? Retrouvez ce colis directement, sans vous connecter.</p>
+        <label>Numéro de suivi</label>
+        <input id="quickTrackInput" placeholder="Ex : STS-2026-001">
+        <button class="ghost" id="btnQuickTrack" style="margin-top:8px;width:100%;">Suivre ce colis</button>
+        <div id="quickTrackResult" style="margin-top:10px;"></div>
+      </div>
     `;
+    document.getElementById('btnQuickTrack').onclick = async ()=>{
+      if(!firebaseReady){ toast("Firebase non configuré"); return; }
+      const trackingId = document.getElementById('quickTrackInput').value.trim();
+      const resultEl = document.getElementById('quickTrackResult');
+      if(!trackingId){ toast("Entrez un numéro de suivi"); return; }
+      resultEl.innerHTML = `<div class="empty">Recherche...</div>`;
+      try{
+        const pkg = await getPackage(trackingId);
+        resultEl.innerHTML = pkg ? pkgCardHTML(pkg) : `<div class="empty">Aucun colis trouvé avec ce numéro.</div>`;
+        if(pkg){
+          const btn = resultEl.querySelector('[data-pickup]');
+          if(btn) btn.onclick = ()=> confirmPickup(btn.dataset.pickup);
+        }
+      }catch(e){ resultEl.innerHTML = `<div class="empty">Erreur, réessayez.</div>`; }
+    };
     document.getElementById('btnRegister').onclick = async ()=>{
       if(!firebaseReady){ toast("Firebase non configuré"); return; }
       const name = document.getElementById('regName').value.trim();
@@ -1123,6 +1146,17 @@ async function renderOwnerPayments(){
         </div>
       </div>`;
 
+    const backupCard = `<div class="card" style="padding:0;overflow:hidden;">
+        <div style="background:linear-gradient(135deg,#8B5CF6,#EC4899);padding:14px 16px;display:flex;align-items:center;gap:10px;">
+          <span style="font-size:22px;">💾</span>
+          <div style="color:#fff;font-weight:700;font-size:16px;">Sauvegarde des données</div>
+        </div>
+        <div style="padding:14px 16px;">
+          <p class="sub">Télécharge une copie de toutes tes entreprises et de tous tes colis, au cas où.</p>
+          <button class="primary" id="btnExportBackup" style="margin-top:6px;">📥 Exporter mes données</button>
+        </div>
+      </div>`;
+
     const pendingRegListContent = pendingReg.length === 0
       ? `<div class="card"><div class="empty">Aucune inscription en attente.</div></div>`
       : pendingReg.map(c=>`
@@ -1253,7 +1287,7 @@ async function renderOwnerPayments(){
     const methodsHtml = compactCardHtml('paymentMethods', '#3ECF8E,#FF7A1A', '💳', 'Icônes de paiement',
       `${PAYMENT_METHODS.length} méthodes — appuyez pour voir la liste`, methodsListContent);
 
-    content.innerHTML = emailCard + codeCard + pendingRegHtml + pendingHtml + notifCardOwner + confirmedRegHtml + confirmedHtml + settingsHtml + methodsHtml + `
+    content.innerHTML = emailCard + codeCard + backupCard + pendingRegHtml + pendingHtml + notifCardOwner + confirmedRegHtml + confirmedHtml + settingsHtml + methodsHtml + `
       <div class="card">
         <h2>Avatar du service client</h2>
         <p class="sub">Choisissez une photo depuis votre galerie pour la bulle WhatsApp affichée aux entreprises.</p>
@@ -1336,6 +1370,24 @@ async function renderOwnerPayments(){
         renderOwnerPayments();
       };
     });
+    document.getElementById('btnExportBackup').onclick = async ()=>{
+      try{
+        toast("Préparation de l'export...");
+        const companies = await getAllCompanies();
+        const packages = await getAllPackages();
+        const backup = {exportedAt: new Date().toISOString(), companies, packages};
+        const blob = new Blob([JSON.stringify(backup, null, 2)], {type:'application/json'});
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `sts-sauvegarde-${new Date().toISOString().slice(0,10)}.json`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+        toast("✅ Export téléchargé");
+      }catch(e){ toast("Erreur lors de l'export"); }
+    };
     document.getElementById('btnSaveOwnerCode').onclick = async ()=>{
       const newCode = document.getElementById('ownerCodeInput').value.trim();
       if(newCode.length !== 4 || !/^\d{4}$/.test(newCode)){
@@ -1511,6 +1563,8 @@ async function renderOwnerPackages(){
     </div>
     <div class="card">
       <h2>📊 Suivi par destination</h2>
+      <label>Mois</label>
+      <select id="monthFilter"></select>
       <label>Filtrer par département</label>
       <select id="destFilter"><option value="">Toutes les destinations</option>${Object.keys(HAITI_LOCATIONS).map(d=>`<option value="${d}">${d}</option>`).join('')}</select>
       <div id="destStats" style="margin-top:14px;"><div class="empty">Chargement...</div></div>
@@ -1571,28 +1625,43 @@ async function renderOwnerPackages(){
 
   try{
     const allPkgsForStats = await getAllPackages();
-    const now = new Date();
-    const thisMonthPkgs = allPkgsForStats.filter(p=>{
-      const d = new Date((p.history&&p.history[0]&&p.history[0].date) || p.updatedAt);
-      return d.getFullYear()===now.getFullYear() && d.getMonth()===now.getMonth();
-    });
-    const counts = {};
-    thisMonthPkgs.forEach(p=>{
-      const key = p.destDepartment || 'Non renseigné';
-      counts[key] = (counts[key]||0) + 1;
-    });
-    const sorted = Object.entries(counts).sort((a,b)=>b[1]-a[1]);
-    const maxCount = sorted.length ? sorted[0][1] : 1;
-    const statsEl = document.getElementById('destStats');
-    if(sorted.length===0){
-      statsEl.innerHTML = `<div class="empty">Aucun colis ce mois-ci.</div>`;
-    } else {
-      statsEl.innerHTML = `<p class="sub" style="margin-bottom:8px;">Colis par département (ce mois-ci)</p>` + sorted.map(([dept,count])=>`
-        <div style="margin-bottom:8px;">
-          <div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:3px;"><span>${dept}</span><b>${count}</b></div>
-          <div style="background:var(--panel2);border-radius:8px;height:8px;overflow:hidden;"><div style="background:linear-gradient(90deg,#0EA5E9,#6366F1);height:100%;width:${Math.round((count/maxCount)*100)}%;"></div></div>
-        </div>`).join('');
+
+    const monthOptions = [];
+    const now0 = new Date();
+    for(let i=0;i<6;i++){
+      const d = new Date(now0.getFullYear(), now0.getMonth()-i, 1);
+      monthOptions.push({year:d.getFullYear(), month:d.getMonth(), label:d.toLocaleDateString('fr-FR',{month:'long',year:'numeric'})});
     }
+    const monthSelect = document.getElementById('monthFilter');
+    monthSelect.innerHTML = monthOptions.map((m,i)=>`<option value="${i}">${m.label}${i===0?' (en cours)':''}</option>`).join('');
+
+    function renderStatsForMonth(idx){
+      const {year, month} = monthOptions[idx];
+      const monthPkgs = allPkgsForStats.filter(p=>{
+        const d = new Date((p.history&&p.history[0]&&p.history[0].date) || p.updatedAt);
+        return d.getFullYear()===year && d.getMonth()===month;
+      });
+      const counts = {};
+      monthPkgs.forEach(p=>{
+        const key = p.destDepartment || 'Non renseigné';
+        counts[key] = (counts[key]||0) + 1;
+      });
+      const sorted = Object.entries(counts).sort((a,b)=>b[1]-a[1]);
+      const maxCount = sorted.length ? sorted[0][1] : 1;
+      const statsEl = document.getElementById('destStats');
+      if(sorted.length===0){
+        statsEl.innerHTML = `<div class="empty">Aucun colis pour ce mois.</div>`;
+      } else {
+        statsEl.innerHTML = `<p class="sub" style="margin-bottom:8px;">Colis par département</p>` + sorted.map(([dept,count])=>`
+          <div style="margin-bottom:8px;">
+            <div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:3px;"><span>${dept}</span><b>${count}</b></div>
+            <div style="background:var(--panel2);border-radius:8px;height:8px;overflow:hidden;"><div style="background:linear-gradient(90deg,#0EA5E9,#6366F1);height:100%;width:${Math.round((count/maxCount)*100)}%;"></div></div>
+          </div>`).join('');
+      }
+    }
+    renderStatsForMonth(0);
+    monthSelect.onchange = ()=> renderStatsForMonth(parseInt(monthSelect.value));
+
     document.getElementById('destFilter').onchange = async (e)=>{
       const dept = e.target.value;
       const resultsEl = document.getElementById('destFilterResults');
