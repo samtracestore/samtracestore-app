@@ -464,6 +464,8 @@ async function setCompanyBlocked(code, blocked){
 }
 
 async function deleteCompany(code){
+  const snap = await db.collection('packages').where('companyCode','==',code).get();
+  await Promise.all(snap.docs.map(d=> d.ref.delete()));
   await db.collection('companies').doc(code).delete();
 }
 
@@ -1154,6 +1156,7 @@ async function renderOwnerPayments(){
         <div style="padding:14px 16px;">
           <p class="sub">Télécharge une copie de toutes tes entreprises et de tous tes colis, au cas où.</p>
           <button class="primary" id="btnExportBackup" style="margin-top:6px;">📥 Exporter mes données</button>
+          <button class="miniBtn" id="btnCleanOrphans" style="margin-top:10px;width:100%;">🧹 Nettoyer les colis orphelins</button>
         </div>
       </div>`;
 
@@ -1387,6 +1390,22 @@ async function renderOwnerPayments(){
         URL.revokeObjectURL(url);
         toast("✅ Export téléchargé");
       }catch(e){ toast("Erreur lors de l'export"); }
+    };
+    document.getElementById('btnCleanOrphans').onclick = async ()=>{
+      try{
+        const companies = await getAllCompanies();
+        const ownerCode = await getOwnerCode();
+        const valid = new Set(companies.map(c=>c.code));
+        valid.add(ownerCode);
+        const packages = await getAllPackages();
+        const orphans = packages.filter(p => p.companyCode && !valid.has(p.companyCode));
+        if(orphans.length === 0){ toast("Aucun colis orphelin"); return; }
+        const liste = orphans.map(p=>`${p.trackingId} (${p.name})`).join('\n');
+        const ok = confirm(`${orphans.length} colis appartiennent à une entreprise supprimée :\n${liste}\n\nLes supprimer définitivement ?`);
+        if(!ok) return;
+        await Promise.all(orphans.map(p=> deletePackage(p.trackingId)));
+        toast(`✅ ${orphans.length} colis orphelin(s) supprimé(s)`);
+      }catch(e){ toast("Erreur lors du nettoyage"); }
     };
     document.getElementById('btnSaveOwnerCode').onclick = async ()=>{
       const newCode = document.getElementById('ownerCodeInput').value.trim();
