@@ -1002,7 +1002,9 @@ async function renderClient(){
       if(!trackingId){ toast("Entrez un numéro de suivi"); return; }
       resultEl.innerHTML = `<div class="empty">Recherche...</div>`;
       try{
-        const pkg = await getPackage(trackingId);
+        const clean = trackingId.replace(/\s+/g,'').toUpperCase();
+        let pkg = await getPackage(clean);
+        if(!pkg && clean !== trackingId) pkg = await getPackage(trackingId);
         resultEl.innerHTML = pkg ? pkgCardHTML(pkg) : `<div class="empty">Aucun colis trouvé avec ce numéro.</div>`;
         if(pkg){
           const btn = resultEl.querySelector('[data-pickup]');
@@ -1611,7 +1613,7 @@ async function renderOwnerPackages(){
 
   document.getElementById('btnSavePkg').onclick = async ()=>{
     if(!firebaseReady){ toast("Firebase non configuré"); return; }
-    const trackingId = isEditing ? editingTrackingId : document.getElementById('pTrack').value.trim();
+    const trackingId = isEditing ? editingTrackingId : document.getElementById('pTrack').value.replace(/\s+/g,'').toUpperCase();
     const name = document.getElementById('pName').value.trim();
     const phone = document.getElementById('pPhone').value.trim();
     const status = document.getElementById('pStatus').value;
@@ -1620,6 +1622,10 @@ async function renderOwnerPackages(){
     const destCommune = document.getElementById('pCommune') ? document.getElementById('pCommune').value : '';
     if(!trackingId || !phone || !name){ toast("Nom, numéro de suivi et téléphone requis"); return; }
     try{
+      if(!isEditing){
+        const dejaPris = await getPackage(trackingId);
+        if(dejaPris){ toast("Ce numéro de suivi existe déjà. Choisissez-en un autre."); return; }
+      }
       let history = [];
       let existingPickedUpAt = null;
       if(isEditing){
@@ -2324,7 +2330,7 @@ async function renderAdmin(){
 
   document.getElementById('btnSavePkg').onclick = async ()=>{
     if(!firebaseReady){ toast("Firebase non configuré"); return; }
-    const trackingId = isEditing ? editingTrackingId : document.getElementById('pTrack').value.trim();
+    const trackingId = isEditing ? editingTrackingId : document.getElementById('pTrack').value.replace(/\s+/g,'').toUpperCase();
     const name = document.getElementById('pName').value.trim();
     const phone = document.getElementById('pPhone').value.trim();
     const status = document.getElementById('pStatus').value;
@@ -2333,6 +2339,10 @@ async function renderAdmin(){
     const destCommune = document.getElementById('pCommune') ? document.getElementById('pCommune').value : '';
     if(!trackingId || !phone || !name){ toast("Nom, numéro de suivi et téléphone requis"); return; }
     try{
+      if(!isEditing){
+        const dejaPris = await getPackage(trackingId);
+        if(dejaPris){ toast("Ce numéro de suivi existe déjà. Choisissez-en un autre."); return; }
+      }
       let history = [];
       let existingPickedUpAt = null;
       if(isEditing){
