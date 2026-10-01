@@ -117,6 +117,118 @@
     100%{transform:translateY(110vh) rotate(360deg);opacity:0.9;}
   }
 </style>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js">
+// ===== HISTORIQUE & QR CODE =====
+async function displayPackageHistory(pkg, elementId){
+  const history = await getPackageHistory(pkg.trackingId);
+  if(history.length === 0) return;
+  let html = '<div style="background:var(--panel2);padding:10px;border-radius:8px;"><strong>📋 Historique :</strong><br>';
+  history.forEach(event => {
+    const date = new Date(event.timestamp).toLocaleString('fr-FR');
+    html += `<div style="padding:4px 0;font-size:11px;">📌 ${event.status} — ${date}</div>`;
+  });
+  html += '</div>';
+  const el = document.getElementById(elementId);
+  if(el) el.innerHTML = html;
+}
+
+function generateQRCode(trackingId, elementId){
+  const el = document.getElementById(elementId);
+  if(!el) return;
+  el.innerHTML = '';
+  new QRCode(el, {
+    text: `https://samtracestore.github.io/samtracestore-app/?track=${trackingId}`,
+    width: 120,
+    height: 120,
+    colorDark: "var(--accent)",
+    colorLight: "white"
+  });
+}
+
+// ===== SUPPORT CHAT =====
+let supportMessages = [];
+
+document.addEventListener('DOMContentLoaded', ()=>{
+  const supportBtn = document.getElementById('supportBtn');
+  const chatInput = document.getElementById('chatInput');
+  const chatSendBtn = document.getElementById('chatSendBtn');
+  
+  if(supportBtn){
+    supportBtn.onclick = ()=>{
+      const chat = document.getElementById('supportChat');
+      const hidden = chat.style.display === 'none';
+      chat.style.display = hidden ? 'block' : 'none';
+      supportBtn.style.display = hidden ? 'none' : 'block';
+    };
+  }
+  
+  if(chatSendBtn){
+    chatSendBtn.onclick = async ()=>{
+      const msg = chatInput.value.trim();
+      if(!msg) return;
+      supportMessages.push({user: 'client', text: msg, time: new Date().toISOString()});
+      chatInput.value = '';
+      await saveSupportMessage(msg);
+      updateChatDisplay();
+      toast('Message envoyé ✅');
+    };
+  }
+});
+
+async function saveSupportMessage(message){
+  try{
+    await db.collection('supportMessages').add({
+      message,
+      timestamp: new Date().toISOString(),
+      userType: 'client'
+    });
+  }catch(e){ console.warn('Support message save failed', e); }
+}
+
+function updateChatDisplay(){
+  const chatDiv = document.getElementById('chatMessages');
+  if(!chatDiv) return;
+  chatDiv.innerHTML = supportMessages.map(m => 
+    `<div style="margin-bottom:8px;padding:8px;background:${m.user === 'client' ? 'var(--accent)' : 'var(--panel2)'};color:${m.user === 'client' ? 'white' : 'var(--text)'},border-radius:6px;font-size:12px;">${m.text}</div>`
+  ).join('');
+}
+
+// ===== RAPPEL AUTO APRÈS X JOURS =====
+async function checkAndSendReminders(){
+  try{
+    const snapshot = await db.collection('packages').where('status', '!=', 'Livré').get();
+    const now = new Date();
+    snapshot.docs.forEach(async (doc) => {
+      const pkg = doc.data();
+      if(!pkg.createdAt) return;
+      const createdDate = new Date(pkg.createdAt);
+      const daysDiff = (now - createdDate) / (1000 * 60 * 60 * 24);
+      if(daysDiff >= 3 && daysDiff < 3.1){
+        const client = await getClient(pkg.phone);
+        if(client && client.email){
+          await sendStatusEmail({...pkg, message: '⏰ Votre colis attend depuis 3 jours. Venez le récupérer !'});
+        }
+      }
+    });
+  }catch(e){ console.warn('Reminder check failed', e); }
+}
+
+// Vérifier les rappels toutes les heures
+setInterval(checkAndSendReminders, 60 * 60 * 1000);
+checkAndSendReminders();
+
+// ===== MISE À JOUR AFFICHAGE COLIS =====
+const origPkgCardHTML = window.pkgCardHTML;
+window.pkgCardHTML = function(pkg){
+  let html = origPkgCardHTML ? origPkgCardHTML(pkg) : '';
+  setTimeout(() => {
+    displayPackageHistory(pkg, `history_${pkg.id}`);
+    generateQRCode(pkg.trackingId, `qrcode_${pkg.id}`);
+  }, 100);
+  return html;
+};
+
+</script>
 </head>
 <body>
 <div id="app">
@@ -147,8 +259,230 @@
 <!-- Firebase (base de données gratuite). Charge le SDK "compat"   -->
 <!-- pour rester simple, sans outil de compilation.                -->
 <!-- ============================================================ -->
-<script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-app-compat.js"></script>
-<script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-app-compat.js">
+// ===== HISTORIQUE & QR CODE =====
+async function displayPackageHistory(pkg, elementId){
+  const history = await getPackageHistory(pkg.trackingId);
+  if(history.length === 0) return;
+  let html = '<div style="background:var(--panel2);padding:10px;border-radius:8px;"><strong>📋 Historique :</strong><br>';
+  history.forEach(event => {
+    const date = new Date(event.timestamp).toLocaleString('fr-FR');
+    html += `<div style="padding:4px 0;font-size:11px;">📌 ${event.status} — ${date}</div>`;
+  });
+  html += '</div>';
+  const el = document.getElementById(elementId);
+  if(el) el.innerHTML = html;
+}
+
+function generateQRCode(trackingId, elementId){
+  const el = document.getElementById(elementId);
+  if(!el) return;
+  el.innerHTML = '';
+  new QRCode(el, {
+    text: `https://samtracestore.github.io/samtracestore-app/?track=${trackingId}`,
+    width: 120,
+    height: 120,
+    colorDark: "var(--accent)",
+    colorLight: "white"
+  });
+}
+
+// ===== SUPPORT CHAT =====
+let supportMessages = [];
+
+document.addEventListener('DOMContentLoaded', ()=>{
+  const supportBtn = document.getElementById('supportBtn');
+  const chatInput = document.getElementById('chatInput');
+  const chatSendBtn = document.getElementById('chatSendBtn');
+  
+  if(supportBtn){
+    supportBtn.onclick = ()=>{
+      const chat = document.getElementById('supportChat');
+      const hidden = chat.style.display === 'none';
+      chat.style.display = hidden ? 'block' : 'none';
+      supportBtn.style.display = hidden ? 'none' : 'block';
+    };
+  }
+  
+  if(chatSendBtn){
+    chatSendBtn.onclick = async ()=>{
+      const msg = chatInput.value.trim();
+      if(!msg) return;
+      supportMessages.push({user: 'client', text: msg, time: new Date().toISOString()});
+      chatInput.value = '';
+      await saveSupportMessage(msg);
+      updateChatDisplay();
+      toast('Message envoyé ✅');
+    };
+  }
+});
+
+async function saveSupportMessage(message){
+  try{
+    await db.collection('supportMessages').add({
+      message,
+      timestamp: new Date().toISOString(),
+      userType: 'client'
+    });
+  }catch(e){ console.warn('Support message save failed', e); }
+}
+
+function updateChatDisplay(){
+  const chatDiv = document.getElementById('chatMessages');
+  if(!chatDiv) return;
+  chatDiv.innerHTML = supportMessages.map(m => 
+    `<div style="margin-bottom:8px;padding:8px;background:${m.user === 'client' ? 'var(--accent)' : 'var(--panel2)'};color:${m.user === 'client' ? 'white' : 'var(--text)'},border-radius:6px;font-size:12px;">${m.text}</div>`
+  ).join('');
+}
+
+// ===== RAPPEL AUTO APRÈS X JOURS =====
+async function checkAndSendReminders(){
+  try{
+    const snapshot = await db.collection('packages').where('status', '!=', 'Livré').get();
+    const now = new Date();
+    snapshot.docs.forEach(async (doc) => {
+      const pkg = doc.data();
+      if(!pkg.createdAt) return;
+      const createdDate = new Date(pkg.createdAt);
+      const daysDiff = (now - createdDate) / (1000 * 60 * 60 * 24);
+      if(daysDiff >= 3 && daysDiff < 3.1){
+        const client = await getClient(pkg.phone);
+        if(client && client.email){
+          await sendStatusEmail({...pkg, message: '⏰ Votre colis attend depuis 3 jours. Venez le récupérer !'});
+        }
+      }
+    });
+  }catch(e){ console.warn('Reminder check failed', e); }
+}
+
+// Vérifier les rappels toutes les heures
+setInterval(checkAndSendReminders, 60 * 60 * 1000);
+checkAndSendReminders();
+
+// ===== MISE À JOUR AFFICHAGE COLIS =====
+const origPkgCardHTML = window.pkgCardHTML;
+window.pkgCardHTML = function(pkg){
+  let html = origPkgCardHTML ? origPkgCardHTML(pkg) : '';
+  setTimeout(() => {
+    displayPackageHistory(pkg, `history_${pkg.id}`);
+    generateQRCode(pkg.trackingId, `qrcode_${pkg.id}`);
+  }, 100);
+  return html;
+};
+
+</script>
+<script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore-compat.js">
+// ===== HISTORIQUE & QR CODE =====
+async function displayPackageHistory(pkg, elementId){
+  const history = await getPackageHistory(pkg.trackingId);
+  if(history.length === 0) return;
+  let html = '<div style="background:var(--panel2);padding:10px;border-radius:8px;"><strong>📋 Historique :</strong><br>';
+  history.forEach(event => {
+    const date = new Date(event.timestamp).toLocaleString('fr-FR');
+    html += `<div style="padding:4px 0;font-size:11px;">📌 ${event.status} — ${date}</div>`;
+  });
+  html += '</div>';
+  const el = document.getElementById(elementId);
+  if(el) el.innerHTML = html;
+}
+
+function generateQRCode(trackingId, elementId){
+  const el = document.getElementById(elementId);
+  if(!el) return;
+  el.innerHTML = '';
+  new QRCode(el, {
+    text: `https://samtracestore.github.io/samtracestore-app/?track=${trackingId}`,
+    width: 120,
+    height: 120,
+    colorDark: "var(--accent)",
+    colorLight: "white"
+  });
+}
+
+// ===== SUPPORT CHAT =====
+let supportMessages = [];
+
+document.addEventListener('DOMContentLoaded', ()=>{
+  const supportBtn = document.getElementById('supportBtn');
+  const chatInput = document.getElementById('chatInput');
+  const chatSendBtn = document.getElementById('chatSendBtn');
+  
+  if(supportBtn){
+    supportBtn.onclick = ()=>{
+      const chat = document.getElementById('supportChat');
+      const hidden = chat.style.display === 'none';
+      chat.style.display = hidden ? 'block' : 'none';
+      supportBtn.style.display = hidden ? 'none' : 'block';
+    };
+  }
+  
+  if(chatSendBtn){
+    chatSendBtn.onclick = async ()=>{
+      const msg = chatInput.value.trim();
+      if(!msg) return;
+      supportMessages.push({user: 'client', text: msg, time: new Date().toISOString()});
+      chatInput.value = '';
+      await saveSupportMessage(msg);
+      updateChatDisplay();
+      toast('Message envoyé ✅');
+    };
+  }
+});
+
+async function saveSupportMessage(message){
+  try{
+    await db.collection('supportMessages').add({
+      message,
+      timestamp: new Date().toISOString(),
+      userType: 'client'
+    });
+  }catch(e){ console.warn('Support message save failed', e); }
+}
+
+function updateChatDisplay(){
+  const chatDiv = document.getElementById('chatMessages');
+  if(!chatDiv) return;
+  chatDiv.innerHTML = supportMessages.map(m => 
+    `<div style="margin-bottom:8px;padding:8px;background:${m.user === 'client' ? 'var(--accent)' : 'var(--panel2)'};color:${m.user === 'client' ? 'white' : 'var(--text)'},border-radius:6px;font-size:12px;">${m.text}</div>`
+  ).join('');
+}
+
+// ===== RAPPEL AUTO APRÈS X JOURS =====
+async function checkAndSendReminders(){
+  try{
+    const snapshot = await db.collection('packages').where('status', '!=', 'Livré').get();
+    const now = new Date();
+    snapshot.docs.forEach(async (doc) => {
+      const pkg = doc.data();
+      if(!pkg.createdAt) return;
+      const createdDate = new Date(pkg.createdAt);
+      const daysDiff = (now - createdDate) / (1000 * 60 * 60 * 24);
+      if(daysDiff >= 3 && daysDiff < 3.1){
+        const client = await getClient(pkg.phone);
+        if(client && client.email){
+          await sendStatusEmail({...pkg, message: '⏰ Votre colis attend depuis 3 jours. Venez le récupérer !'});
+        }
+      }
+    });
+  }catch(e){ console.warn('Reminder check failed', e); }
+}
+
+// Vérifier les rappels toutes les heures
+setInterval(checkAndSendReminders, 60 * 60 * 1000);
+checkAndSendReminders();
+
+// ===== MISE À JOUR AFFICHAGE COLIS =====
+const origPkgCardHTML = window.pkgCardHTML;
+window.pkgCardHTML = function(pkg){
+  let html = origPkgCardHTML ? origPkgCardHTML(pkg) : '';
+  setTimeout(() => {
+    displayPackageHistory(pkg, `history_${pkg.id}`);
+    generateQRCode(pkg.trackingId, `qrcode_${pkg.id}`);
+  }, 100);
+  return html;
+};
+
+</script>
 <script>
 // ==================================================================
 // ⚠️ A REMPLIR : collez ici la configuration de VOTRE projet Firebase
@@ -171,6 +505,117 @@ try{
   db = firebase.firestore();
   firebaseReady = firebaseConfig.apiKey !== "VOTRE_API_KEY";
 }catch(e){ firebaseReady = false; }
+
+// ===== HISTORIQUE & QR CODE =====
+async function displayPackageHistory(pkg, elementId){
+  const history = await getPackageHistory(pkg.trackingId);
+  if(history.length === 0) return;
+  let html = '<div style="background:var(--panel2);padding:10px;border-radius:8px;"><strong>📋 Historique :</strong><br>';
+  history.forEach(event => {
+    const date = new Date(event.timestamp).toLocaleString('fr-FR');
+    html += `<div style="padding:4px 0;font-size:11px;">📌 ${event.status} — ${date}</div>`;
+  });
+  html += '</div>';
+  const el = document.getElementById(elementId);
+  if(el) el.innerHTML = html;
+}
+
+function generateQRCode(trackingId, elementId){
+  const el = document.getElementById(elementId);
+  if(!el) return;
+  el.innerHTML = '';
+  new QRCode(el, {
+    text: `https://samtracestore.github.io/samtracestore-app/?track=${trackingId}`,
+    width: 120,
+    height: 120,
+    colorDark: "var(--accent)",
+    colorLight: "white"
+  });
+}
+
+// ===== SUPPORT CHAT =====
+let supportMessages = [];
+
+document.addEventListener('DOMContentLoaded', ()=>{
+  const supportBtn = document.getElementById('supportBtn');
+  const chatInput = document.getElementById('chatInput');
+  const chatSendBtn = document.getElementById('chatSendBtn');
+  
+  if(supportBtn){
+    supportBtn.onclick = ()=>{
+      const chat = document.getElementById('supportChat');
+      const hidden = chat.style.display === 'none';
+      chat.style.display = hidden ? 'block' : 'none';
+      supportBtn.style.display = hidden ? 'none' : 'block';
+    };
+  }
+  
+  if(chatSendBtn){
+    chatSendBtn.onclick = async ()=>{
+      const msg = chatInput.value.trim();
+      if(!msg) return;
+      supportMessages.push({user: 'client', text: msg, time: new Date().toISOString()});
+      chatInput.value = '';
+      await saveSupportMessage(msg);
+      updateChatDisplay();
+      toast('Message envoyé ✅');
+    };
+  }
+});
+
+async function saveSupportMessage(message){
+  try{
+    await db.collection('supportMessages').add({
+      message,
+      timestamp: new Date().toISOString(),
+      userType: 'client'
+    });
+  }catch(e){ console.warn('Support message save failed', e); }
+}
+
+function updateChatDisplay(){
+  const chatDiv = document.getElementById('chatMessages');
+  if(!chatDiv) return;
+  chatDiv.innerHTML = supportMessages.map(m => 
+    `<div style="margin-bottom:8px;padding:8px;background:${m.user === 'client' ? 'var(--accent)' : 'var(--panel2)'};color:${m.user === 'client' ? 'white' : 'var(--text)'},border-radius:6px;font-size:12px;">${m.text}</div>`
+  ).join('');
+}
+
+// ===== RAPPEL AUTO APRÈS X JOURS =====
+async function checkAndSendReminders(){
+  try{
+    const snapshot = await db.collection('packages').where('status', '!=', 'Livré').get();
+    const now = new Date();
+    snapshot.docs.forEach(async (doc) => {
+      const pkg = doc.data();
+      if(!pkg.createdAt) return;
+      const createdDate = new Date(pkg.createdAt);
+      const daysDiff = (now - createdDate) / (1000 * 60 * 60 * 24);
+      if(daysDiff >= 3 && daysDiff < 3.1){
+        const client = await getClient(pkg.phone);
+        if(client && client.email){
+          await sendStatusEmail({...pkg, message: '⏰ Votre colis attend depuis 3 jours. Venez le récupérer !'});
+        }
+      }
+    });
+  }catch(e){ console.warn('Reminder check failed', e); }
+}
+
+// Vérifier les rappels toutes les heures
+setInterval(checkAndSendReminders, 60 * 60 * 1000);
+checkAndSendReminders();
+
+// ===== MISE À JOUR AFFICHAGE COLIS =====
+const origPkgCardHTML = window.pkgCardHTML;
+window.pkgCardHTML = function(pkg){
+  let html = origPkgCardHTML ? origPkgCardHTML(pkg) : '';
+  setTimeout(() => {
+    displayPackageHistory(pkg, `history_${pkg.id}`);
+    generateQRCode(pkg.trackingId, `qrcode_${pkg.id}`);
+  }, 100);
+  return html;
+};
+
 </script>
 
 <!-- ============================================================ -->
@@ -179,7 +624,118 @@ try{
 <!-- ajoutez un service email, un template, puis collez vos        -->
 <!-- identifiants ci-dessous.                                      -->
 <!-- ============================================================ -->
-<script src="https://cdn.jsdelivr.net/npm/@emailjs/browser@4/dist/email.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@emailjs/browser@4/dist/email.min.js">
+// ===== HISTORIQUE & QR CODE =====
+async function displayPackageHistory(pkg, elementId){
+  const history = await getPackageHistory(pkg.trackingId);
+  if(history.length === 0) return;
+  let html = '<div style="background:var(--panel2);padding:10px;border-radius:8px;"><strong>📋 Historique :</strong><br>';
+  history.forEach(event => {
+    const date = new Date(event.timestamp).toLocaleString('fr-FR');
+    html += `<div style="padding:4px 0;font-size:11px;">📌 ${event.status} — ${date}</div>`;
+  });
+  html += '</div>';
+  const el = document.getElementById(elementId);
+  if(el) el.innerHTML = html;
+}
+
+function generateQRCode(trackingId, elementId){
+  const el = document.getElementById(elementId);
+  if(!el) return;
+  el.innerHTML = '';
+  new QRCode(el, {
+    text: `https://samtracestore.github.io/samtracestore-app/?track=${trackingId}`,
+    width: 120,
+    height: 120,
+    colorDark: "var(--accent)",
+    colorLight: "white"
+  });
+}
+
+// ===== SUPPORT CHAT =====
+let supportMessages = [];
+
+document.addEventListener('DOMContentLoaded', ()=>{
+  const supportBtn = document.getElementById('supportBtn');
+  const chatInput = document.getElementById('chatInput');
+  const chatSendBtn = document.getElementById('chatSendBtn');
+  
+  if(supportBtn){
+    supportBtn.onclick = ()=>{
+      const chat = document.getElementById('supportChat');
+      const hidden = chat.style.display === 'none';
+      chat.style.display = hidden ? 'block' : 'none';
+      supportBtn.style.display = hidden ? 'none' : 'block';
+    };
+  }
+  
+  if(chatSendBtn){
+    chatSendBtn.onclick = async ()=>{
+      const msg = chatInput.value.trim();
+      if(!msg) return;
+      supportMessages.push({user: 'client', text: msg, time: new Date().toISOString()});
+      chatInput.value = '';
+      await saveSupportMessage(msg);
+      updateChatDisplay();
+      toast('Message envoyé ✅');
+    };
+  }
+});
+
+async function saveSupportMessage(message){
+  try{
+    await db.collection('supportMessages').add({
+      message,
+      timestamp: new Date().toISOString(),
+      userType: 'client'
+    });
+  }catch(e){ console.warn('Support message save failed', e); }
+}
+
+function updateChatDisplay(){
+  const chatDiv = document.getElementById('chatMessages');
+  if(!chatDiv) return;
+  chatDiv.innerHTML = supportMessages.map(m => 
+    `<div style="margin-bottom:8px;padding:8px;background:${m.user === 'client' ? 'var(--accent)' : 'var(--panel2)'};color:${m.user === 'client' ? 'white' : 'var(--text)'},border-radius:6px;font-size:12px;">${m.text}</div>`
+  ).join('');
+}
+
+// ===== RAPPEL AUTO APRÈS X JOURS =====
+async function checkAndSendReminders(){
+  try{
+    const snapshot = await db.collection('packages').where('status', '!=', 'Livré').get();
+    const now = new Date();
+    snapshot.docs.forEach(async (doc) => {
+      const pkg = doc.data();
+      if(!pkg.createdAt) return;
+      const createdDate = new Date(pkg.createdAt);
+      const daysDiff = (now - createdDate) / (1000 * 60 * 60 * 24);
+      if(daysDiff >= 3 && daysDiff < 3.1){
+        const client = await getClient(pkg.phone);
+        if(client && client.email){
+          await sendStatusEmail({...pkg, message: '⏰ Votre colis attend depuis 3 jours. Venez le récupérer !'});
+        }
+      }
+    });
+  }catch(e){ console.warn('Reminder check failed', e); }
+}
+
+// Vérifier les rappels toutes les heures
+setInterval(checkAndSendReminders, 60 * 60 * 1000);
+checkAndSendReminders();
+
+// ===== MISE À JOUR AFFICHAGE COLIS =====
+const origPkgCardHTML = window.pkgCardHTML;
+window.pkgCardHTML = function(pkg){
+  let html = origPkgCardHTML ? origPkgCardHTML(pkg) : '';
+  setTimeout(() => {
+    displayPackageHistory(pkg, `history_${pkg.id}`);
+    generateQRCode(pkg.trackingId, `qrcode_${pkg.id}`);
+  }, 100);
+  return html;
+};
+
+</script>
 <script>
 // ==================================================================
 // ⚠️ A REMPLIR : collez ici vos identifiants EmailJS
@@ -272,6 +828,117 @@ async function getTrackingAlert(trackingId){
     return doc.exists ? doc.data() : null;
   }catch(e){ return null; }
 }
+
+// ===== HISTORIQUE & QR CODE =====
+async function displayPackageHistory(pkg, elementId){
+  const history = await getPackageHistory(pkg.trackingId);
+  if(history.length === 0) return;
+  let html = '<div style="background:var(--panel2);padding:10px;border-radius:8px;"><strong>📋 Historique :</strong><br>';
+  history.forEach(event => {
+    const date = new Date(event.timestamp).toLocaleString('fr-FR');
+    html += `<div style="padding:4px 0;font-size:11px;">📌 ${event.status} — ${date}</div>`;
+  });
+  html += '</div>';
+  const el = document.getElementById(elementId);
+  if(el) el.innerHTML = html;
+}
+
+function generateQRCode(trackingId, elementId){
+  const el = document.getElementById(elementId);
+  if(!el) return;
+  el.innerHTML = '';
+  new QRCode(el, {
+    text: `https://samtracestore.github.io/samtracestore-app/?track=${trackingId}`,
+    width: 120,
+    height: 120,
+    colorDark: "var(--accent)",
+    colorLight: "white"
+  });
+}
+
+// ===== SUPPORT CHAT =====
+let supportMessages = [];
+
+document.addEventListener('DOMContentLoaded', ()=>{
+  const supportBtn = document.getElementById('supportBtn');
+  const chatInput = document.getElementById('chatInput');
+  const chatSendBtn = document.getElementById('chatSendBtn');
+  
+  if(supportBtn){
+    supportBtn.onclick = ()=>{
+      const chat = document.getElementById('supportChat');
+      const hidden = chat.style.display === 'none';
+      chat.style.display = hidden ? 'block' : 'none';
+      supportBtn.style.display = hidden ? 'none' : 'block';
+    };
+  }
+  
+  if(chatSendBtn){
+    chatSendBtn.onclick = async ()=>{
+      const msg = chatInput.value.trim();
+      if(!msg) return;
+      supportMessages.push({user: 'client', text: msg, time: new Date().toISOString()});
+      chatInput.value = '';
+      await saveSupportMessage(msg);
+      updateChatDisplay();
+      toast('Message envoyé ✅');
+    };
+  }
+});
+
+async function saveSupportMessage(message){
+  try{
+    await db.collection('supportMessages').add({
+      message,
+      timestamp: new Date().toISOString(),
+      userType: 'client'
+    });
+  }catch(e){ console.warn('Support message save failed', e); }
+}
+
+function updateChatDisplay(){
+  const chatDiv = document.getElementById('chatMessages');
+  if(!chatDiv) return;
+  chatDiv.innerHTML = supportMessages.map(m => 
+    `<div style="margin-bottom:8px;padding:8px;background:${m.user === 'client' ? 'var(--accent)' : 'var(--panel2)'};color:${m.user === 'client' ? 'white' : 'var(--text)'},border-radius:6px;font-size:12px;">${m.text}</div>`
+  ).join('');
+}
+
+// ===== RAPPEL AUTO APRÈS X JOURS =====
+async function checkAndSendReminders(){
+  try{
+    const snapshot = await db.collection('packages').where('status', '!=', 'Livré').get();
+    const now = new Date();
+    snapshot.docs.forEach(async (doc) => {
+      const pkg = doc.data();
+      if(!pkg.createdAt) return;
+      const createdDate = new Date(pkg.createdAt);
+      const daysDiff = (now - createdDate) / (1000 * 60 * 60 * 24);
+      if(daysDiff >= 3 && daysDiff < 3.1){
+        const client = await getClient(pkg.phone);
+        if(client && client.email){
+          await sendStatusEmail({...pkg, message: '⏰ Votre colis attend depuis 3 jours. Venez le récupérer !'});
+        }
+      }
+    });
+  }catch(e){ console.warn('Reminder check failed', e); }
+}
+
+// Vérifier les rappels toutes les heures
+setInterval(checkAndSendReminders, 60 * 60 * 1000);
+checkAndSendReminders();
+
+// ===== MISE À JOUR AFFICHAGE COLIS =====
+const origPkgCardHTML = window.pkgCardHTML;
+window.pkgCardHTML = function(pkg){
+  let html = origPkgCardHTML ? origPkgCardHTML(pkg) : '';
+  setTimeout(() => {
+    displayPackageHistory(pkg, `history_${pkg.id}`);
+    generateQRCode(pkg.trackingId, `qrcode_${pkg.id}`);
+  }, 100);
+  return html;
+};
+
 </script>
 
 <script>
@@ -2501,6 +3168,134 @@ if ('serviceWorker' in navigator) {
     navigator.serviceWorker.register('sw.js').catch(()=>{});
   });
 }
+
+// ===== HISTORIQUE & QR CODE =====
+async function displayPackageHistory(pkg, elementId){
+  const history = await getPackageHistory(pkg.trackingId);
+  if(history.length === 0) return;
+  let html = '<div style="background:var(--panel2);padding:10px;border-radius:8px;"><strong>📋 Historique :</strong><br>';
+  history.forEach(event => {
+    const date = new Date(event.timestamp).toLocaleString('fr-FR');
+    html += `<div style="padding:4px 0;font-size:11px;">📌 ${event.status} — ${date}</div>`;
+  });
+  html += '</div>';
+  const el = document.getElementById(elementId);
+  if(el) el.innerHTML = html;
+}
+
+function generateQRCode(trackingId, elementId){
+  const el = document.getElementById(elementId);
+  if(!el) return;
+  el.innerHTML = '';
+  new QRCode(el, {
+    text: `https://samtracestore.github.io/samtracestore-app/?track=${trackingId}`,
+    width: 120,
+    height: 120,
+    colorDark: "var(--accent)",
+    colorLight: "white"
+  });
+}
+
+// ===== SUPPORT CHAT =====
+let supportMessages = [];
+
+document.addEventListener('DOMContentLoaded', ()=>{
+  const supportBtn = document.getElementById('supportBtn');
+  const chatInput = document.getElementById('chatInput');
+  const chatSendBtn = document.getElementById('chatSendBtn');
+  
+  if(supportBtn){
+    supportBtn.onclick = ()=>{
+      const chat = document.getElementById('supportChat');
+      const hidden = chat.style.display === 'none';
+      chat.style.display = hidden ? 'block' : 'none';
+      supportBtn.style.display = hidden ? 'none' : 'block';
+    };
+  }
+  
+  if(chatSendBtn){
+    chatSendBtn.onclick = async ()=>{
+      const msg = chatInput.value.trim();
+      if(!msg) return;
+      supportMessages.push({user: 'client', text: msg, time: new Date().toISOString()});
+      chatInput.value = '';
+      await saveSupportMessage(msg);
+      updateChatDisplay();
+      toast('Message envoyé ✅');
+    };
+  }
+});
+
+async function saveSupportMessage(message){
+  try{
+    await db.collection('supportMessages').add({
+      message,
+      timestamp: new Date().toISOString(),
+      userType: 'client'
+    });
+  }catch(e){ console.warn('Support message save failed', e); }
+}
+
+function updateChatDisplay(){
+  const chatDiv = document.getElementById('chatMessages');
+  if(!chatDiv) return;
+  chatDiv.innerHTML = supportMessages.map(m => 
+    `<div style="margin-bottom:8px;padding:8px;background:${m.user === 'client' ? 'var(--accent)' : 'var(--panel2)'};color:${m.user === 'client' ? 'white' : 'var(--text)'},border-radius:6px;font-size:12px;">${m.text}</div>`
+  ).join('');
+}
+
+// ===== RAPPEL AUTO APRÈS X JOURS =====
+async function checkAndSendReminders(){
+  try{
+    const snapshot = await db.collection('packages').where('status', '!=', 'Livré').get();
+    const now = new Date();
+    snapshot.docs.forEach(async (doc) => {
+      const pkg = doc.data();
+      if(!pkg.createdAt) return;
+      const createdDate = new Date(pkg.createdAt);
+      const daysDiff = (now - createdDate) / (1000 * 60 * 60 * 24);
+      if(daysDiff >= 3 && daysDiff < 3.1){
+        const client = await getClient(pkg.phone);
+        if(client && client.email){
+          await sendStatusEmail({...pkg, message: '⏰ Votre colis attend depuis 3 jours. Venez le récupérer !'});
+        }
+      }
+    });
+  }catch(e){ console.warn('Reminder check failed', e); }
+}
+
+// Vérifier les rappels toutes les heures
+setInterval(checkAndSendReminders, 60 * 60 * 1000);
+checkAndSendReminders();
+
+// ===== MISE À JOUR AFFICHAGE COLIS =====
+const origPkgCardHTML = window.pkgCardHTML;
+window.pkgCardHTML = function(pkg){
+  let html = origPkgCardHTML ? origPkgCardHTML(pkg) : '';
+  setTimeout(() => {
+    displayPackageHistory(pkg, `history_${pkg.id}`);
+    generateQRCode(pkg.trackingId, `qrcode_${pkg.id}`);
+  }, 100);
+  return html;
+};
+
 </script>
+
+<div id="supportChat" style="display:none;position:fixed;bottom:20px;right:20px;width:320px;background:var(--panel);border-radius:12px;box-shadow:0 4px 12px rgba(0,0,0,0.3);z-index:1000;">
+  <div style="background:var(--accent);color:white;padding:12px;border-radius:12px 12px 0 0;font-weight:bold;">💬 Support</div>
+  <div style="padding:12px;max-height:300px;overflow-y:auto;" id="chatMessages"></div>
+  <div style="padding:12px;border-top:1px solid var(--border);">
+    <textarea id="chatInput" placeholder="Votre message..." style="width:100%;padding:8px;border-radius:6px;border:1px solid var(--border);font-size:12px;min-height:60px;"></textarea>
+    <button class="primary" id="chatSendBtn" style="width:100%;margin-top:8px;">Envoyer</button>
+  </div>
+</div>
+<button id="supportBtn" class="primary" style="position:fixed;bottom:20px;right:20px;border-radius:50%;width:56px;height:56px;z-index:999;font-size:20px;padding:0;">💬</button>
+
 </body>
+
+<!-- FIRESTORE RULES: Ajoute cette règle :
+match /supportMessages/{id} {
+  allow read, write: if true;
+}
+-->
 </html>
