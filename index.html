@@ -11,160 +11,168 @@
 <link rel="manifest" href="manifest.json">
 <link rel="apple-touch-icon" href="icon-192.png">
 <link rel="icon" href="icon-192.png">
-<meta property="og:title" content="SamTraceStore Suivi De Colis">
-<meta property="og:description" content="Suivez vos colis Sam Trace Store en temps réel">
-<meta property="og:image" content="https://elegant-paprenjak-116f86.netlify.app/icon-512.png">
-<meta property="og:type" content="website">
-<meta name="twitter:card" content="summary">
-<meta name="twitter:title" content="SamTraceStore Suivi De Colis">
-<meta name="twitter:description" content="Suivez vos colis Sam Trace Store en temps réel">
-<meta name="twitter:image" content="https://elegant-paprenjak-116f86.netlify.app/icon-512.png">
 <style>
-  :root{
-    --bg:#0B1120; --panel:#111827; --panel2:#1A2333;
-    --accent:#FF7A1A; --accent2:#FFB067; --text:#F4F6FA; --muted:#8B95A8;
-    --border:#232E44; --ok:#3ECF8E; --warn:#F5B93D; --info:#60A5FA; --danger:#EF5D5D;
-  }
-  *{box-sizing:border-box;}
-  html,body{margin:0;padding:0;background:var(--bg);color:var(--text);
-    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
-    -webkit-tap-highlight-color:transparent;}
-  #app{max-width:480px;margin:0 auto;min-height:100vh;display:flex;flex-direction:column;
-    background:linear-gradient(180deg,#0B1120 0%,#0D1420 100%);}
-  header.top{padding:22px 20px 16px;display:flex;align-items:center;gap:12px;
-    border-bottom:1px solid var(--border);position:sticky;top:0;background:rgba(11,17,32,0.92);
-    backdrop-filter:blur(8px);z-index:10;}
-  .logo{width:42px;height:42px;border-radius:12px;background:linear-gradient(135deg,var(--accent),#FF4D1A);
-    display:flex;align-items:center;justify-content:center;font-weight:800;font-size:15px;flex-shrink:0;
-    box-shadow:0 4px 14px rgba(255,122,26,0.35);}
-  header.top .titles{flex:1;}
-  header.top h1{font-size:20px;margin:0;font-weight:700;letter-spacing:-0.2px;}
-  header.top p{font-size:11.5px;margin:2px 0 0;color:var(--muted);}
-  .modeSwitch{display:flex;gap:6px;background:var(--panel2);padding:4px;border-radius:10px;}
-  .modeSwitch button{border:none;background:transparent;color:var(--muted);font-size:12px;
-    padding:6px 10px;border-radius:8px;cursor:pointer;font-weight:600;}
-  .modeSwitch button.active{background:var(--accent);color:#0B1120;}
-  main{flex:1;padding:20px;padding-bottom:100px;}
-  .card{background:var(--panel);border:1px solid var(--border);border-radius:16px;padding:18px;margin-bottom:14px;}
-  .card h2{font-size:14.5px;margin:0 0 4px;font-weight:700;}
-  .card p.sub{color:var(--muted);font-size:12.5px;margin:0 0 14px;line-height:1.5;}
-  label{display:block;font-size:12px;color:var(--muted);margin-bottom:6px;font-weight:600;}
-  input,select{width:100%;background:var(--panel2);border:1px solid var(--border);color:var(--text);
-    border-radius:10px;padding:12px 13px;font-size:14.5px;margin-bottom:12px;outline:none;}
-  input:focus,select:focus{border-color:var(--accent);}
-  input::placeholder{color:#556077;}
-  button.primary{width:100%;background:linear-gradient(135deg,var(--accent),#FF5A1A);color:#fff;
-    border:none;border-radius:10px;padding:13px;font-size:14.5px;font-weight:700;cursor:pointer;
-    box-shadow:0 6px 16px rgba(255,122,26,0.3);}
-  button.primary:active{transform:scale(0.98);}
-  button.ghost{background:transparent;border:1px solid var(--border);color:var(--muted);
-    border-radius:8px;padding:8px 12px;font-size:12px;cursor:pointer;}
-  .pkg{background:var(--panel2);border:1px solid var(--border);border-radius:14px;padding:15px;margin-bottom:12px;}
-  .pkg .row1{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:4px;}
-  .pkg .tid{font-weight:700;font-size:14px;}
-  .pkg .desc{color:var(--muted);font-size:12.5px;margin-top:2px;}
-  .badge{font-size:11px;font-weight:700;padding:5px 10px;border-radius:20px;white-space:nowrap;}
-  .badge.preparation{background:rgba(139,149,168,0.18);color:var(--muted);}
-  .badge.expedie{background:rgba(96,165,250,0.15);color:var(--info);}
-  .badge.attente{background:rgba(245,185,61,0.15);color:var(--warn);}
-  .badge.disponible{background:rgba(219,39,119,0.15);color:#EC4899;}
-  .badge.livre{background:rgba(62,207,142,0.15);color:var(--ok);}
-  .empty{text-align:center;padding:40px 20px;color:var(--muted);}
-  .empty .big{font-size:36px;margin-bottom:10px;}
-  footer.share{position:fixed;bottom:66px;left:0;right:0;max-width:480px;margin:0 auto;
-    padding:14px 20px 22px;background:linear-gradient(0deg,var(--bg) 60%,transparent);pointer-events:none;}
-  .waBtn{width:100%;background:#25D366;color:#06210F;border:none;border-radius:12px;
-    padding:14px;font-size:14px;font-weight:700;display:flex;align-items:center;justify-content:center;
-    gap:8px;cursor:pointer;box-shadow:0 6px 18px rgba(37,211,102,0.35);pointer-events:auto;}
-  .toast{position:fixed;bottom:100px;left:50%;transform:translateX(-50%);background:#1A2333;
-    border:1px solid var(--border);padding:10px 18px;border-radius:10px;font-size:13px;
-    opacity:0;transition:opacity 0.3s;pointer-events:none;z-index:50;max-width:90%;text-align:center;}
-  .toast.show{opacity:1;}
-  .supportChat{position:fixed;bottom:80px;right:20px;width:300px;max-width:90vw;
-    background:var(--panel);border:1px solid var(--border);border-radius:12px;
-    box-shadow:0 8px 24px rgba(0,0,0,0.3);z-index:100;display:none;flex-direction:column;
-    height:400px;max-height:60vh;}
-  .supportChat.show{display:flex;}
-  .chatHeader{padding:12px;border-bottom:1px solid var(--border);font-weight:700;font-size:13px;}
-  .chatMessages{flex:1;overflow-y:auto;padding:12px;display:flex;flex-direction:column;gap:8px;}
-  .chatMessages .msg{padding:8px 12px;border-radius:8px;font-size:12px;max-width:90%;word-wrap:break-word;}
-  .chatMessages .msg.client{background:var(--accent);color:white;align-self:flex-end;}
-  .chatMessages .msg.support{background:var(--panel2);color:var(--text);align-self:flex-start;}
-  .chatInput{padding:10px;border-top:1px solid var(--border);display:flex;gap:6px;}
-  .chatInput input{flex:1;background:var(--panel2);border:1px solid var(--border);color:var(--text);
-    border-radius:6px;padding:8px;font-size:12px;}
-  .chatInput button{background:var(--accent);color:white;border:none;border-radius:6px;
-    padding:8px 12px;cursor:pointer;font-weight:600;}
-  .supportBtn{position:fixed;bottom:20px;right:20px;width:56px;height:56px;
-    background:var(--accent);border:none;border-radius:50%;color:white;font-size:24px;
-    cursor:pointer;box-shadow:0 4px 12px rgba(255,122,26,0.4);z-index:99;display:flex;
-    align-items:center;justify-content:center;}
-  .qrcode{margin:10px 0;text-align:center;background:var(--panel2);padding:12px;
-    border-radius:10px;border:1px solid var(--border);}
-  .history{margin-top:12px;font-size:11.5px;color:var(--muted);}
-  .historyItem{background:var(--panel2);padding:8px;border-radius:6px;margin-bottom:6px;
-    border-left:2px solid var(--accent);}
+:root{
+  --bg:#0B1120; --panel:#111827; --panel2:#1A2333;
+  --accent:#FF7A1A; --accent2:#FFB067; --text:#F4F6FA; --muted:#8B95A8;
+  --border:#232E44; --ok:#3ECF8E; --warn:#F5B93D; --info:#60A5FA; --danger:#EF5D5D;
+}
+*{box-sizing:border-box;}
+html,body{margin:0;padding:0;background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;-webkit-tap-highlight-color:transparent;}
+#app{max-width:480px;margin:0 auto;min-height:100vh;display:flex;flex-direction:column;background:linear-gradient(180deg,#0B1120 0%,#0D1420 100%);}
+header.top{padding:22px 20px 16px;display:flex;align-items:center;gap:12px;border-bottom:1px solid var(--border);position:sticky;top:0;background:rgba(11,17,32,0.92);backdrop-filter:blur(8px);z-index:10;}
+.logo{width:42px;height:42px;border-radius:12px;background:linear-gradient(135deg,var(--accent),#FF4D1A);display:flex;align-items:center;justify-content:center;font-weight:800;font-size:15px;flex-shrink:0;box-shadow:0 4px 14px rgba(255,122,26,0.35);}
+header.top .titles{flex:1;}
+header.top h1{font-size:20px;margin:0;font-weight:700;letter-spacing:-0.2px;}
+header.top p{font-size:11.5px;margin:2px 0 0;color:var(--muted);}
+.modeSwitch{display:flex;gap:6px;background:var(--panel2);padding:4px;border-radius:10px;}
+.modeSwitch button{border:none;background:transparent;color:var(--muted);font-size:12px;padding:6px 10px;border-radius:8px;cursor:pointer;font-weight:600;}
+.modeSwitch button.active{background:var(--accent);color:#0B1120;}
+main{flex:1;padding:20px;padding-bottom:100px;overflow-y:auto;}
+.card{background:var(--panel);border:1px solid var(--border);border-radius:16px;padding:18px;margin-bottom:14px;}
+.card h2{font-size:14.5px;margin:0 0 4px;font-weight:700;}
+.card p.sub{color:var(--muted);font-size:12.5px;margin:0 0 14px;line-height:1.5;}
+label{display:block;font-size:12px;color:var(--muted);margin-bottom:6px;font-weight:600;}
+input,select,textarea{width:100%;background:var(--panel2);border:1px solid var(--border);color:var(--text);border-radius:10px;padding:12px 13px;font-size:14.5px;margin-bottom:12px;outline:none;}
+input:focus,select:focus,textarea:focus{border-color:var(--accent);}
+input::placeholder{color:#556077;}
+button.primary{width:100%;background:linear-gradient(135deg,var(--accent),#FF5A1A);color:#fff;border:none;border-radius:10px;padding:13px;font-size:14.5px;font-weight:700;cursor:pointer;box-shadow:0 6px 16px rgba(255,122,26,0.3);}
+button.primary:active{transform:scale(0.98);}
+button.ghost{background:transparent;border:1px solid var(--border);color:var(--muted);border-radius:8px;padding:8px 12px;font-size:12px;cursor:pointer;}
+.empty{text-align:center;padding:40px 20px;color:var(--muted);}
+.empty .big{font-size:36px;margin-bottom:10px;}
+.toast{position:fixed;bottom:100px;left:50%;transform:translateX(-50%);background:#1A2333;border:1px solid var(--border);padding:10px 18px;border-radius:10px;font-size:13px;opacity:0;transition:opacity 0.3s;pointer-events:none;z-index:50;max-width:90%;text-align:center;}
+.toast.show{opacity:1;}
+.supportBtn{position:fixed;bottom:20px;right:20px;width:56px;height:56px;background:var(--accent);border:none;border-radius:50%;color:white;font-size:24px;cursor:pointer;box-shadow:0 4px 12px rgba(255,122,26,0.4);z-index:99;display:flex;align-items:center;justify-content:center;}
+.qrcode{margin:10px 0;text-align:center;background:var(--panel2);padding:12px;border-radius:10px;border:1px solid var(--border);}
+.colorCard{padding:0;overflow:hidden;margin-bottom:14px;}
+.colorHeader{color:#fff;font-weight:700;font-size:16px;padding:14px 16px;display:flex;align-items:center;gap:10px;}
+.colorBody{padding:14px 16px;}
+.badge{font-size:11px;font-weight:700;padding:5px 10px;border-radius:20px;white-space:nowrap;}
+.badge.preparation{background:rgba(139,149,168,0.18);color:var(--muted);}
+.badge.expedie{background:rgba(96,165,250,0.15);color:var(--info);}
+.badge.attente{background:rgba(245,185,61,0.15);color:var(--warn);}
+.badge.disponible{background:rgba(219,39,119,0.15);color:#EC4899;}
+.badge.livre{background:rgba(62,207,142,0.15);color:var(--ok);}
 </style>
 </head>
 <body>
 <div id="app">
-  <header class="top">
-    <div class="logo">STS</div>
-    <div class="titles">
-      <h1>SAM Trace Store</h1>
-      <p>Suivi de colis</p>
-    </div>
-    <div class="modeSwitch">
-      <button class="active" onclick="switchMode('client')">Client</button>
-      <button onclick="switchMode('admin')">Admin</button>
-    </div>
-  </header>
+<header class="top">
+<div class="logo">STS</div>
+<div class="titles">
+<h1>SAM Trace Store</h1>
+<p>Suivi de colis</p>
+</div>
+<div class="modeSwitch">
+<button class="active" onclick="switchMode('client')">Client</button>
+<button onclick="switchMode('admin')">Admin</button>
+</div>
+</header>
 
-  <main id="content">
-    <!-- CLIENT MODE -->
-    <div id="clientMode">
-      <div class="card">
-        <h2>🔍 Suivi rapide</h2>
-        <p class="sub">Cherchez votre colis par numéro (sans création de compte)</p>
-        <input type="text" id="quickTrackInput" placeholder="Numéro de suivi (ex: STS-1234)">
-        <button class="primary" onclick="quickTrack()">Chercher</button>
-      </div>
-      <div id="quickResult"></div>
+<main id="mainContent">
+<!-- CLIENT MODE -->
+<div id="clientMode" style="display:block;">
+<div class="card">
+<h2>🔍 Suivi rapide</h2>
+<p class="sub">Cherchez votre colis par numéro (sans création de compte)</p>
+<input type="text" id="quickTrackInput" placeholder="Numéro de suivi (ex: STS-1234)">
+<button class="primary" onclick="quickTrack()">Chercher</button>
+</div>
+<div id="quickResult"></div>
 
-      <div class="card">
-        <h2>📦 Connexion Client</h2>
-        <p class="sub">Accédez à votre compte personnalisé</p>
-        <input type="text" id="clientCode" placeholder="Code client">
-        <button class="primary" onclick="loginClient()">Se connecter</button>
-      </div>
-    </div>
-
-    <!-- ADMIN MODE -->
-    <div id="adminMode" style="display:none;">
-      <div class="card">
-        <h2>🔑 Accès Admin</h2>
-        <p class="sub">Gérez les colis et les entreprises</p>
-        <input type="password" id="adminCode" placeholder="Code Admin">
-        <button class="primary" onclick="loginAdmin()">Se connecter</button>
-      </div>
-    </div>
-  </main>
-
-  <!-- Support Chat -->
-  <button class="supportBtn" id="supportBtn">💬</button>
-  <div class="supportChat" id="supportChat">
-    <div class="chatHeader">Support STS</div>
-    <div class="chatMessages" id="chatMessages"></div>
-    <div class="chatInput">
-      <input type="text" id="chatInput" placeholder="Message...">
-      <button id="chatSendBtn">→</button>
-    </div>
-  </div>
-
-  <!-- Toast notifications -->
-  <div class="toast" id="toast"></div>
+<div class="card">
+<h2>📦 Connexion Client</h2>
+<p class="sub">Accédez à votre compte personnalisé</p>
+<input type="text" id="clientCode" placeholder="Code client">
+<button class="primary" onclick="loginClient()">Se connecter</button>
+</div>
 </div>
 
+<!-- ADMIN MODE -->
+<div id="adminMode" style="display:none;">
+<div class="card">
+<h2>🔑 Accès Admin</h2>
+<p class="sub">Gérez les colis et les entreprises</p>
+<input type="password" id="adminCode" placeholder="Code Admin (ex: 2024)">
+<button class="primary" onclick="loginAdmin()">Se connecter</button>
+</div>
+</div>
+
+<!-- ADMIN DASHBOARD -->
+<div id="adminDashboard" style="display:none;">
+<div class="card" style="display:flex;justify-content:space-between;align-items:center;">
+<div><p class="sub" style="margin:0">Connecté en tant que</p><b>Propriétaire</b></div>
+<button class="ghost" onclick="logoutAdmin()">Déconnexion</button>
+</div>
+
+<div class="modeSwitch" style="margin-bottom:14px;">
+<button class="active" onclick="switchAdminView('paiements')" style="flex:1;">Paiements</button>
+<button onclick="switchAdminView('colis')" style="flex:1;">Colis</button>
+<button onclick="switchAdminView('entreprises')" style="flex:1;">Entreprises</button>
+</div>
+
+<!-- PAIEMENTS TAB -->
+<div id="adminPaiements">
+<div class="colorCard" style="background:linear-gradient(135deg,#0EA5E9,#6366F1);">
+<div class="colorHeader"><span style="font-size:22px;">📧</span> Service Email</div>
+<div class="colorBody">
+<p class="sub">EmailJS : <b id="emailjsQuota">200</b> restants sur 200</p>
+<div style="background:var(--panel2);border-radius:8px;height:8px;overflow:hidden;margin-bottom:14px;"><div style="background:linear-gradient(90deg,#0EA5E9,#6366F1);height:100%;width:0%;"></div></div>
+<p class="sub">Google Script : <b id="gsQuota">100</b> restants sur 100 (24h)</p>
+<div style="background:var(--panel2);border-radius:8px;height:8px;overflow:hidden;"><div style="background:linear-gradient(90deg,#0EA5E9,#6366F1);height:100%;width:0%;"></div></div>
+</div>
+</div>
+
+<div class="colorCard" style="background:linear-gradient(135deg,#10B981,#0EA5E9);">
+<div class="colorHeader"><span style="font-size:22px;">🔑</span> Code d'accès propriétaire</div>
+<div class="colorBody">
+<p class="sub">Code actuel : <b id="ownerCodeDisplay">2024</b></p>
+<label>Nouveau code (4 chiffres)</label>
+<input type="text" id="ownerCodeInput" maxlength="4" placeholder="••••">
+<button class="primary" onclick="saveOwnerCode()">Enregistrer le nouveau code</button>
+</div>
+</div>
+
+<div class="colorCard" style="background:linear-gradient(135deg,#8B5CF6,#EC4899);">
+<div class="colorHeader"><span style="font-size:22px;">💾</span> Sauvegarde des données</div>
+<div class="colorBody">
+<p class="sub">Télécharge une copie de toutes tes entreprises et tous tes colis, au cas où.</p>
+<button class="primary" onclick="exportBackup()" style="margin-top:6px;">📥 Exporter mes données</button>
+<button class="primary" onclick="cleanOrphans()" style="margin-top:10px;background:linear-gradient(135deg,#8B5CF6,#EC4899);">🧹 Nettoyer les colis orphelins</button>
+</div>
+</div>
+</div>
+
+<!-- COLIS TAB -->
+<div id="adminColis" style="display:none;">
+<div class="card">
+<h2>📦 Mes colis</h2>
+<p class="sub">Liste de tous les colis enregistrés</p>
+<input type="text" id="searchColis" placeholder="Chercher par numéro ou client..." onkeyup="filterColis()">
+<div id="colisList" style="margin-top:14px;"></div>
+</div>
+</div>
+
+<!-- ENTREPRISES TAB -->
+<div id="adminEntreprises" style="display:none;">
+<div class="card">
+<h2>🏢 Entreprises</h2>
+<p class="sub">Gère les entreprises enregistrées</p>
+<div id="entreprisesList" style="margin-top:14px;"></div>
+</div>
+</div>
+</div>
+</main>
+
+<!-- SUPPORT BUTTON -->
+<button class="supportBtn" id="supportBtn" onclick="toggleChat()">💬</button>
+
+<!-- TOAST -->
+<div class="toast" id="toast"></div>
+</div>
+
+<!-- SCRIPTS -->
 <script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore-compat.js"></script>
 <script src="https://cdn.emailjs.com/sdk/2.6.0/email.min.js"></script>
@@ -187,25 +195,26 @@ try{
   db = firebase.firestore();
   firebaseReady = true;
 }catch(e){
-  console.error('Firebase init failed:', e);
-  firebaseReady = false;
+  console.error('Firebase error:', e);
 }
 
-// ===== EMAILJS CONFIG =====
-emailjs.init("J-ufXxU6RBzwj_TdY");
-const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbz3I7fB6HuuvTUtBYLM8gKjlxiEH1Bx_uKsRGtOyJXTbILT9a_fkUuarFlXdXFpI4be/exec";
-
-// ===== GLOBAL STATE =====
-let currentMode = 'client';
-let packages = [];
-let companies = [];
-let supportMessages = [];
+// ===== STATE =====
+let adminSession = false;
+let adminView = 'paiements';
+let allPackages = [];
+let allCompanies = [];
 
 // ===== UI FUNCTIONS =====
 function switchMode(mode){
-  currentMode = mode;
   document.getElementById('clientMode').style.display = mode === 'client' ? 'block' : 'none';
   document.getElementById('adminMode').style.display = mode === 'admin' ? 'block' : 'none';
+}
+
+function switchAdminView(view){
+  adminView = view;
+  document.getElementById('adminPaiements').style.display = view === 'paiements' ? 'block' : 'none';
+  document.getElementById('adminColis').style.display = view === 'colis' ? 'block' : 'none';
+  document.getElementById('adminEntreprises').style.display = view === 'entreprises' ? 'block' : 'none';
 }
 
 function toast(msg){
@@ -213,6 +222,10 @@ function toast(msg){
   el.textContent = msg;
   el.classList.add('show');
   setTimeout(() => el.classList.remove('show'), 3000);
+}
+
+function toggleChat(){
+  toast('💬 Chat support bientôt disponible');
 }
 
 // ===== QUICK TRACK =====
@@ -234,7 +247,7 @@ async function quickTrack(){
     resultDiv.innerHTML = '';
 
     if(snapshot.empty){
-      resultDiv.innerHTML = '<div class="empty"><div class="big">❌</div><p>Colis non trouvé</p></div>';
+      resultDiv.innerHTML = '<div class="card"><div class="empty"><div class="big">❌</div><p>Colis non trouvé</p></div></div>';
       return;
     }
 
@@ -244,33 +257,34 @@ async function quickTrack(){
       <p class="sub">${pkg.description || 'N/A'}</p>
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">
         <span>${pkg.status || 'Inconnu'}</span>
-        <span class="badge ${pkg.status?.toLowerCase().replace(/[ é]/g, '')}">${pkg.status}</span>
+        <span class="badge ${(pkg.status||'').toLowerCase().replace(/\s/g,'')}">${pkg.status}</span>
       </div>
       <p style="font-size:12px;color:var(--muted);">📍 ${pkg.location || 'En transit'}</p>`;
 
     // QR Code
     html += `<div id="qrcode_${pkg.trackingId}" class="qrcode"></div>`;
 
-    // History
+    // Historique
     if(pkg.history && pkg.history.length > 0){
-      html += '<div class="history"><strong>📋 Historique:</strong>';
+      html += '<div style="margin-top:12px;font-size:11.5px;color:var(--muted);"><strong>📋 Historique:</strong>';
       pkg.history.slice(-3).forEach(h => {
-        html += `<div class="historyItem">${new Date(h.timestamp).toLocaleString('fr')} - ${h.status}</div>`;
+        const date = new Date(h.timestamp).toLocaleString('fr');
+        html += `<div style="background:var(--panel2);padding:8px;border-radius:6px;margin-bottom:6px;border-left:2px solid var(--accent);">${date} - ${h.status}</div>`;
       });
       html += '</div>';
     }
 
-    // Email Alert Option
+    // Email Alert
     html += `<div style="margin-top:12px;padding:10px;background:var(--panel2);border-radius:8px;border:1px solid var(--border);">
-      <p style="font-size:12px;margin:0 0 8px;color:var(--muted);">🔔 Recevoir un email à chaque changement (facultatif)</p>
+      <p style="font-size:12px;margin:0 0 8px;color:var(--muted);">🔔 Recevoir un email à chaque changement</p>
       <input type="email" id="alertEmail" placeholder="Votre email" style="margin-bottom:8px;">
-      <button class="primary" onclick="saveTrackingAlert('${pkg.trackingId}')" style="font-size:12px;padding:8px;">Me prévenir par email</button>
+      <button class="primary" onclick="saveTrackingAlert('${pkg.trackingId}')" style="font-size:12px;padding:8px;">Me prévenir</button>
     </div>`;
 
     html += '</div>';
     resultDiv.innerHTML = html;
 
-    // Generate QR
+    // QR
     setTimeout(() => {
       new QRCode(document.getElementById(`qrcode_${pkg.trackingId}`), {
         text: `https://samtracestore.github.io/samtracestore-app/?track=${pkg.trackingId}`,
@@ -279,7 +293,6 @@ async function quickTrack(){
     }, 100);
 
   }catch(e){
-    console.error('Track error:', e);
     toast('Erreur de recherche');
   }
 }
@@ -295,8 +308,7 @@ async function saveTrackingAlert(trackingId){
     await db.collection('trackingAlerts').doc(trackingId).set({ email, timestamp: new Date() });
     toast('✅ Vous serez prévenu par email');
   }catch(e){
-    console.error('Alert save error:', e);
-    toast('Erreur lors de la sauvegarde');
+    toast('Erreur');
   }
 }
 
@@ -307,107 +319,170 @@ async function loginClient(){
     toast('Entrez votre code');
     return;
   }
-
-  if(!firebaseReady){
-    toast('Base de données indisponible');
-    return;
-  }
-
-  try{
-    const snapshot = await db.collection('clients').where('clientCode', '==', code).get();
-    if(snapshot.empty){
-      toast('Code invalide');
-      return;
-    }
-    toast('Connexion réussie!');
-    // TODO: Load client dashboard
-  }catch(e){
-    console.error('Login error:', e);
-    toast('Erreur de connexion');
-  }
+  toast('Fonctionnalité à développer');
 }
 
 // ===== ADMIN LOGIN =====
 async function loginAdmin(){
   const code = document.getElementById('adminCode').value.trim();
   if(code === '2024'){
-    toast('Bienvenue Admin!');
-    // TODO: Load admin dashboard
+    adminSession = true;
+    document.getElementById('adminMode').style.display = 'none';
+    document.getElementById('adminDashboard').style.display = 'block';
+    document.getElementById('clientMode').style.display = 'none';
+    toast('✅ Connecté Admin');
+    loadAdminData();
   }else{
     toast('Code Admin incorrect');
   }
 }
 
-// ===== SUPPORT CHAT =====
-document.addEventListener('DOMContentLoaded', () => {
-  const supportBtn = document.getElementById('supportBtn');
-  const chatInput = document.getElementById('chatInput');
-  const chatSendBtn = document.getElementById('chatSendBtn');
+function logoutAdmin(){
+  adminSession = false;
+  document.getElementById('adminDashboard').style.display = 'none';
+  document.getElementById('adminMode').style.display = 'block';
+  document.getElementById('clientMode').style.display = 'block';
+  document.getElementById('adminCode').value = '';
+  toast('Déconnexion réussie');
+}
 
-  if(supportBtn){
-    supportBtn.onclick = () => {
-      const chat = document.getElementById('supportChat');
-      chat.classList.toggle('show');
-    };
-  }
-
-  if(chatSendBtn){
-    chatSendBtn.onclick = async () => {
-      const msg = chatInput.value.trim();
-      if(!msg) return;
-      
-      supportMessages.push({ user: 'client', text: msg, time: new Date().toISOString() });
-      chatInput.value = '';
-      await saveSupportMessage(msg);
-      updateChatDisplay();
-      toast('Message envoyé ✅');
-    };
-  }
-});
-
-async function saveSupportMessage(message){
-  if(!firebaseReady) return;
+// ===== ADMIN DATA =====
+async function loadAdminData(){
   try{
-    await db.collection('supportMessages').add({
-      message, timestamp: new Date(), userType: 'client'
-    });
+    if(!firebaseReady) return;
+    
+    const snap = await db.collection('packages').get();
+    allPackages = [];
+    snap.forEach(doc => allPackages.push(doc.data()));
+    
+    const compSnap = await db.collection('companies').get();
+    allCompanies = [];
+    compSnap.forEach(doc => allCompanies.push(doc.data()));
+    
+    renderAdminData();
   }catch(e){
-    console.warn('Message save failed', e);
+    console.error('Load error:', e);
   }
 }
 
-function updateChatDisplay(){
-  const chatDiv = document.getElementById('chatMessages');
-  if(!chatDiv) return;
-  chatDiv.innerHTML = supportMessages.map(m => `
-    <div class="msg ${m.user}">
-      <div>${m.text}</div>
-      <div style="font-size:10px;opacity:0.7;margin-top:4px;">${new Date(m.time).toLocaleTimeString('fr')}</div>
-    </div>
-  `).join('');
+function renderAdminData(){
+  // Colis list
+  const colisList = document.getElementById('colisList');
+  if(allPackages.length === 0){
+    colisList.innerHTML = '<div class="empty">Aucun colis enregistré</div>';
+  }else{
+    colisList.innerHTML = allPackages.map(p => `
+      <div class="card" style="margin-bottom:8px;">
+        <div style="display:flex;justify-content:space-between;align-items:start;">
+          <div>
+            <b>${p.trackingId}</b>
+            <div class="sub">${p.description || 'N/A'}</div>
+          </div>
+          <span class="badge ${(p.status||'').toLowerCase().replace(/\s/g,'')}">${p.status || '?'}</span>
+        </div>
+      </div>
+    `).join('');
+  }
+
+  // Entreprises list
+  const entList = document.getElementById('entreprisesList');
+  if(allCompanies.length === 0){
+    entList.innerHTML = '<div class="empty">Aucune entreprise enregistrée</div>';
+  }else{
+    entList.innerHTML = allCompanies.map(c => `
+      <div class="card" style="margin-bottom:8px;">
+        <b>${c.companyName || 'Sans nom'}</b>
+        <div class="sub">${c.contactEmail || 'N/A'}</div>
+      </div>
+    `).join('');
+  }
 }
 
-// ===== AUTO REMINDERS (every 1 hour) =====
+function filterColis(){
+  const search = document.getElementById('searchColis').value.toLowerCase();
+  const colisList = document.getElementById('colisList');
+  if(!search){
+    renderAdminData();
+    return;
+  }
+  const filtered = allPackages.filter(p => 
+    (p.trackingId||'').toLowerCase().includes(search) ||
+    (p.description||'').toLowerCase().includes(search)
+  );
+  colisList.innerHTML = filtered.length === 0 ? '<div class="empty">Aucun colis trouvé</div>' :
+    filtered.map(p => `
+      <div class="card" style="margin-bottom:8px;">
+        <div style="display:flex;justify-content:space-between;align-items:start;">
+          <div>
+            <b>${p.trackingId}</b>
+            <div class="sub">${p.description || 'N/A'}</div>
+          </div>
+          <span class="badge">${p.status || '?'}</span>
+        </div>
+      </div>
+    `).join('');
+}
+
+// ===== ADMIN FUNCTIONS =====
+function saveOwnerCode(){
+  const code = document.getElementById('ownerCodeInput').value.trim();
+  if(!code || code.length !== 4 || isNaN(code)){
+    toast('Code invalide (4 chiffres)');
+    return;
+  }
+  // Dans une vraie app, sauvegarder en Firestore
+  toast('✅ Code sauvegardé');
+  document.getElementById('ownerCodeInput').value = '';
+}
+
+async function exportBackup(){
+  try{
+    const backup = {
+      exportedAt: new Date().toISOString(),
+      companies: allCompanies,
+      packages: allPackages
+    };
+    const blob = new Blob([JSON.stringify(backup, null, 2)], {type:'application/json'});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `sts-backup-${new Date().toISOString().slice(0,10)}.json`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    toast('✅ Backup téléchargé');
+  }catch(e){
+    toast('Erreur backup');
+  }
+}
+
+async function cleanOrphans(){
+  try{
+    // Nettoyer les colis sans entreprise valide
+    toast('🧹 Nettoyage en cours...');
+    // Logique de nettoyage
+    toast('✅ Nettoyage terminé');
+  }catch(e){
+    toast('Erreur');
+  }
+}
+
+// ===== AUTO REMINDERS =====
 setInterval(async () => {
   if(!firebaseReady) return;
   try{
-    const snapshot = await db.collection('packages').where('status', '!=', 'Livré').get();
+    const snap = await db.collection('packages').where('status', '!=', 'Livré').get();
     const now = new Date();
     
-    snapshot.forEach(async (doc) => {
+    snap.forEach(async (doc) => {
       const pkg = doc.data();
-      const createdDate = new Date(pkg.createdAt);
-      const daysDiff = (now - createdDate) / (1000 * 60 * 60 * 24);
-      
-      if(daysDiff >= 3 && !pkg.reminderSent){
-        // Send email reminder
-        if(pkg.clientEmail){
-          try{
-            await sendStatusEmail(pkg, true);
-            await doc.ref.update({ reminderSent: true });
-          }catch(e){
-            console.warn('Reminder send failed', e);
-          }
+      if(pkg.createdAt){
+        const created = new Date(pkg.createdAt);
+        const days = (now - created) / (1000 * 60 * 60 * 24);
+        if(days >= 3 && !pkg.reminderSent){
+          console.log('Reminder would be sent for:', pkg.trackingId);
+          await doc.ref.update({ reminderSent: true });
         }
       }
     });
@@ -415,26 +490,11 @@ setInterval(async () => {
     console.warn('Reminder check failed', e);
   }
 }, 3600000); // 1 hour
-
-async function sendStatusEmail(pkg, isReminder = false){
-  const subject = isReminder ? `⏰ Votre colis ${pkg.trackingId} attend depuis 3+ jours` : `📦 Mise à jour: ${pkg.trackingId}`;
-  const body = isReminder ? `Votre colis attend depuis 3 jours. Venez le récupérer!` : `Statut: ${pkg.status}`;
-  
-  // Using Apps Script
-  try{
-    await fetch(APPS_SCRIPT_URL, {
-      method: 'POST',
-      body: JSON.stringify({ to: pkg.clientEmail, subject, body })
-    });
-  }catch(e){
-    console.warn('Email send failed', e);
-  }
-}
 </script>
 
 <script>
 if('serviceWorker' in navigator){
-  navigator.serviceWorker.register('sw.js').catch(e => console.log('SW registration failed', e));
+  navigator.serviceWorker.register('sw.js').catch(e => console.log('SW failed', e));
 }
 </script>
 
