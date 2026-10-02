@@ -994,8 +994,9 @@ async function renderClient(){
         <p class="sub">Entrez vos informations pour retrouver uniquement vos colis chez Sam Trace Store.</p>
         <label>Nom complet</label>
         <input id="regName" placeholder="Votre nom">
-        <label>Adresse email</label>
+        <label>Adresse email <span style="color:var(--danger);">* obligatoire / obligatwa</span></label>
         <input id="regEmail" type="email" placeholder="vous@email.com">
+        <div id="regEmailError" style="display:none;margin:-6px 0 12px;padding:10px 12px;border-radius:10px;background:rgba(239,93,93,0.12);border:1px solid rgba(239,93,93,0.4);color:var(--danger);font-size:12.5px;line-height:1.5;"></div>
         <label>Numéro de téléphone</label>
         <input id="regPhone" type="tel" placeholder="Ex : 06 12 34 56 78">
         <button class="primary" id="btnRegister">Accéder à mes colis</button>
@@ -1069,8 +1070,27 @@ async function renderClient(){
       const name = document.getElementById('regName').value.trim();
       const email = document.getElementById('regEmail').value.trim();
       const phone = document.getElementById('regPhone').value.trim();
-      if(!name || !email || !phone){ toast("Merci de remplir tous les champs"); return; }
-      if(!email.includes('@')){ toast("Email invalide"); return; }
+      const emailInput = document.getElementById('regEmail');
+      const emailErr = document.getElementById('regEmailError');
+      emailErr.style.display = 'none';
+      emailInput.style.borderColor = '';
+      emailInput.oninput = ()=>{ emailErr.style.display = 'none'; emailInput.style.borderColor = ''; };
+      const showEmailError = (fr, ht)=>{
+        emailErr.innerHTML = '⚠️ ' + fr + '<br>' + ht;
+        emailErr.style.display = 'block';
+        emailInput.style.borderColor = 'var(--danger)';
+        emailInput.focus();
+        toast(fr);
+      };
+      if(!email){
+        showEmailError("L'email est obligatoire pour recevoir les messages sur vos colis.", "Imèl la obligatwa pou w ka resevwa mesaj sou kolis ou.");
+        return;
+      }
+      if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)){
+        showEmailError("Cette adresse email n'est pas valide. Exemple : nom@gmail.com", "Imèl sa a pa bon. Egzanp : non@gmail.com");
+        return;
+      }
+      if(!name || !phone){ toast("Merci de remplir tous les champs"); return; }
       try{
         const existing = await getClient(phone);
         if(existing && existing.email && existing.email.toLowerCase() !== email.toLowerCase()){
@@ -1122,6 +1142,155 @@ function compactCardHtml(id, gradient, icon, title, subtitle, listContentHtml){
       </div>
     </div>
     <div id="list-${id}" style="display:none;margin:-6px 0 14px;">${listContentHtml}</div>`;
+}
+
+// ===== COLIS A RELANCER (admin) =====
+const RELANCE_DAYS_KEY = 'sts_relance_days';
+const RELANCE_LANG_KEY = 'sts_relance_lang';
+
+function getRelanceDays(){
+  try{
+    const n = parseInt(localStorage.getItem(RELANCE_DAYS_KEY));
+    if(n >= 1 && n <= 365) return n;
+  }catch(e){}
+  return 3;
+}
+function getRelanceLang(){
+  try{
+    const l = localStorage.getItem(RELANCE_LANG_KEY);
+    if(l === 'ht' || l === 'fr') return l;
+  }catch(e){}
+  return 'ht';
+}
+function escHtml(v){
+  return String(v == null ? '' : v).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+function availableSince(p){
+  const hist = p.history || [];
+  for(let i = hist.length - 1; i >= 0; i--){
+    if(hist[i].status === 'disponible' && hist[i].date) return new Date(hist[i].date);
+  }
+  return new Date(p.updatedAt || Date.now());
+}
+function relanceWhatsappUrl(p, days, lang){
+  let digits = String(p.phone || '').replace(/\D/g, '');
+  if(digits.length === 8) digits = '509' + digits;
+  const name = p.name || '';
+  const text = lang === 'ht'
+    ? `Bonjou ${name}, kolis ou a (#${p.trackingId}) disponib nan biwo Sam Trace Store depi ${days} jou. Ou ka vini pran li. Mèsi !`
+    : `Bonjour ${name}, votre colis (#${p.trackingId}) est disponible au bureau Sam Trace Store depuis ${days} jour${days > 1 ? 's' : ''}. Vous pouvez venir le récupérer. Merci !`;
+  return 'https://wa.me/' + digits + '?text=' + encodeURIComponent(text);
+}
+async function hasRelanceEmail(p){
+  try{
+    const c = await getClient(p.phone);
+    if(c && c.email) return true;
+    const a = await getTrackingAlert(p.trackingId);
+    return !!(a && a.email);
+  }catch(e){ return false; }
+}
+
+async function renderRelanceCard(pkgs){
+  const wrap = document.getElementById('relanceCardWrap');
+  if(!wrap) return;
+  try{
+    const available = (pkgs || []).filter(p => p.status === 'disponible');
+    const emails = await Promise.all(available.map(hasRelanceEmail));
+
+    wrap.innerHTML = `
+      <div class="card" style="padding:0;overflow:hidden;">
+        <div style="background:linear-gradient(135deg,#EC4899,#F97316);padding:14px 16px;display:flex;align-items:center;gap:10px;">
+          <span style="font-size:22px;">⏰</span>
+          <div style="color:#fff;font-weight:700;font-size:16px;">Colis à relancer</div>
+        </div>
+        <div style="padding:14px 16px;">
+          <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:10px;">
+            <span class="sub" style="margin:0;">Relancer après</span>
+            <input id="relanceDays" type="number" min="1" max="365" inputmode="numeric" style="width:76px;margin:0;text-align:center;">
+            <span class="sub" style="margin:0;">jours</span>
+          </div>
+          <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:12px;">
+            <span class="sub" style="margin:0;">Message :</span>
+            <div class="modeSwitch"><button type="button" id="relLangHt">Kreyòl</button><button type="button" id="relLangFr">Français</button></div>
+          </div>
+          <div id="relanceList"></div>
+        </div>
+      </div>`;
+
+    const daysInput = document.getElementById('relanceDays');
+    daysInput.value = getRelanceDays();
+
+    function drawList(){
+      const n = getRelanceDays();
+      const lang = getRelanceLang();
+      document.getElementById('relLangHt').classList.toggle('active', lang === 'ht');
+      document.getElementById('relLangFr').classList.toggle('active', lang === 'fr');
+      const now = Date.now();
+      const rows = available.map((p, i) => {
+        const since = availableSince(p);
+        const d = Math.max(0, Math.floor((now - since.getTime()) / 86400000));
+        return {p, d, since, email: emails[i]};
+      }).filter(r => r.d >= n).sort((a, b) => b.d - a.d);
+
+      const list = document.getElementById('relanceList');
+      const summary = `<p class="sub" style="margin:0 0 12px;">${available.length} colis disponible${available.length > 1 ? 's' : ''} au bureau — <b style="color:var(--text);">${rows.length} à relancer</b></p>`;
+      if(rows.length === 0){
+        list.innerHTML = summary + `<div class="empty" style="padding:18px 10px;">✅ Aucun colis à relancer pour le moment.</div>`;
+        return;
+      }
+      list.innerHTML = summary + rows.map((r, i) => {
+        const urgent = r.d >= n * 2;
+        const color = urgent ? '#EF5D5D' : '#F5B93D';
+        const bg = urgent ? 'rgba(239,93,93,0.10)' : 'rgba(245,185,61,0.10)';
+        const dateTxt = r.since.toLocaleDateString('fr-FR', {day:'2-digit', month:'short'});
+        return `
+        <div style="background:${bg};border-left:4px solid ${color};border-radius:10px;padding:12px;margin-bottom:10px;">
+          <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;">
+            <div>
+              <div style="font-weight:700;font-size:14px;">#${escHtml(r.p.trackingId)}</div>
+              <div class="name" style="color:var(--muted);font-size:12px;">${escHtml(r.p.name)} · ${escHtml(r.p.phone)}</div>
+            </div>
+            <span style="background:${color};color:#0B1120;font-size:11px;font-weight:800;padding:4px 9px;border-radius:20px;white-space:nowrap;">${r.d} jour${r.d > 1 ? 's' : ''}</span>
+          </div>
+          <div class="sub" style="margin:6px 0 10px;font-size:11.5px;">Disponible au bureau depuis le ${dateTxt}</div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;">
+            <button type="button" class="miniBtn" style="color:#25D366;border-color:rgba(37,211,102,0.5);" data-wa="${i}">💬 Relancer (WhatsApp)</button>
+            ${r.email ? `<button type="button" class="miniBtn" style="color:var(--info);border-color:rgba(96,165,250,0.5);" data-mail="${i}">📧 Email</button>` : ''}
+          </div>
+        </div>`;
+      }).join('');
+
+      list.querySelectorAll('[data-wa]').forEach(b => {
+        b.onclick = () => {
+          const r = rows[parseInt(b.dataset.wa)];
+          window.open(relanceWhatsappUrl(r.p, r.d, getRelanceLang()), '_blank');
+        };
+      });
+      list.querySelectorAll('[data-mail]').forEach(b => {
+        b.onclick = async () => {
+          const r = rows[parseInt(b.dataset.mail)];
+          b.disabled = true;
+          try{ await sendStatusEmail(r.p); toast('📧 Email de rappel envoyé'); }
+          catch(e){ toast("Erreur d'envoi de l'email"); }
+          b.disabled = false;
+        };
+      });
+    }
+
+    daysInput.oninput = () => {
+      const n = parseInt(daysInput.value);
+      if(n >= 1 && n <= 365){
+        try{ localStorage.setItem(RELANCE_DAYS_KEY, String(n)); }catch(e){}
+        drawList();
+      }
+    };
+    document.getElementById('relLangHt').onclick = () => { try{ localStorage.setItem(RELANCE_LANG_KEY, 'ht'); }catch(e){} drawList(); };
+    document.getElementById('relLangFr').onclick = () => { try{ localStorage.setItem(RELANCE_LANG_KEY, 'fr'); }catch(e){} drawList(); };
+    drawList();
+  }catch(e){
+    console.warn('Carte relance', e);
+    wrap.innerHTML = `<div class="card"><div class="empty" style="padding:18px 10px;">⚠️ Impossible d'afficher les colis à relancer pour le moment.</div></div>`;
+  }
 }
 
 async function renderOwnerPanel(main){
@@ -1643,6 +1812,7 @@ async function renderOwnerPackages(){
       <div id="destStats" style="margin-top:14px;"><div class="empty">Chargement...</div></div>
       <div id="destFilterResults" style="margin-top:10px;"></div>
     </div>
+    <div id="relanceCardWrap"></div>
     <div class="card">
       <h2>Tous les colis</h2>
       <div id="adminList"><div class="empty">Chargement...</div></div>
@@ -1758,6 +1928,7 @@ async function renderOwnerPackages(){
 
   try{
     const pkgs = await getCompanyPackages(adminSession.code);
+    try{ await renderRelanceCard(pkgs); }catch(e){ console.warn('Carte relance', e); }
     const list = document.getElementById('adminList');
     if(pkgs.length===0){
       list.innerHTML = `<div class="empty">Aucun colis enregistré pour le moment.</div>`;
@@ -2342,6 +2513,7 @@ async function renderAdmin(){
       <select id="pStatus">${optionsHtml}</select>
       <button class="primary" id="btnSavePkg">${isEditing ? 'Mettre à jour le colis' : 'Enregistrer le colis'}</button>
     </div>
+    <div id="relanceCardWrap"></div>
     <div class="card">
       <h2>Tous les colis</h2>
       <div id="adminList"><div class="empty">Chargement...</div></div>
@@ -2419,6 +2591,7 @@ async function renderAdmin(){
 
   try{
     const pkgs = await getCompanyPackages(adminSession.code);
+    try{ await renderRelanceCard(pkgs); }catch(e){ console.warn('Carte relance', e); }
     const list = document.getElementById('adminList');
     if(pkgs.length===0){
       list.innerHTML = `<div class="empty">Aucun colis enregistré pour le moment.</div>`;
