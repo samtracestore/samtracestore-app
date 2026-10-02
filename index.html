@@ -1210,6 +1210,10 @@ async function renderRelanceCard(pkgs){
             <span class="sub" style="margin:0;">jours</span>
           </div>
           <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:12px;">
+            <button type="button" id="relanceSave"></button>
+            <span id="relanceSaveNote" style="font-size:11.5px;color:var(--muted);"></span>
+          </div>
+          <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:12px;">
             <span class="sub" style="margin:0;">Message :</span>
             <div class="modeSwitch"><button type="button" id="relLangHt">Kreyòl</button><button type="button" id="relLangFr">Français</button></div>
           </div>
@@ -1218,10 +1222,26 @@ async function renderRelanceCard(pkgs){
       </div>`;
 
     const daysInput = document.getElementById('relanceDays');
-    daysInput.value = getRelanceDays();
+    let savedDays = getRelanceDays();
+    let currentDays = savedDays;
+    daysInput.value = currentDays;
+
+    function updateSaveUI(){
+      const btn = document.getElementById('relanceSave');
+      const note = document.getElementById('relanceSaveNote');
+      if(currentDays === savedDays){
+        btn.textContent = '✅ Sauvegardé';
+        btn.style.cssText = 'background:transparent;border:1px solid rgba(62,207,142,0.5);color:var(--ok);border-radius:10px;padding:9px 14px;font-size:13px;font-weight:700;cursor:default;';
+        note.textContent = 'Enregistré sur ce téléphone';
+      } else {
+        btn.textContent = '💾 Sauvegarder';
+        btn.style.cssText = 'background:linear-gradient(135deg,#EC4899,#F97316);border:none;color:#fff;border-radius:10px;padding:9px 16px;font-size:13px;font-weight:700;cursor:pointer;box-shadow:0 4px 12px rgba(249,115,22,0.35);';
+        note.textContent = 'Modifié — appuyez sur Sauvegarder';
+      }
+    }
 
     function drawList(){
-      const n = getRelanceDays();
+      const n = currentDays;
       const lang = getRelanceLang();
       document.getElementById('relLangHt').classList.toggle('active', lang === 'ht');
       document.getElementById('relLangFr').classList.toggle('active', lang === 'fr');
@@ -1280,12 +1300,21 @@ async function renderRelanceCard(pkgs){
     daysInput.oninput = () => {
       const n = parseInt(daysInput.value);
       if(n >= 1 && n <= 365){
-        try{ localStorage.setItem(RELANCE_DAYS_KEY, String(n)); }catch(e){}
+        currentDays = n;
+        updateSaveUI();
         drawList();
       }
     };
+    document.getElementById('relanceSave').onclick = () => {
+      if(currentDays === savedDays) return;
+      try{ localStorage.setItem(RELANCE_DAYS_KEY, String(currentDays)); }catch(e){}
+      savedDays = currentDays;
+      updateSaveUI();
+      toast('✅ Enregistré : relance après ' + savedDays + ' jour' + (savedDays > 1 ? 's' : ''));
+    };
     document.getElementById('relLangHt').onclick = () => { try{ localStorage.setItem(RELANCE_LANG_KEY, 'ht'); }catch(e){} drawList(); };
     document.getElementById('relLangFr').onclick = () => { try{ localStorage.setItem(RELANCE_LANG_KEY, 'fr'); }catch(e){} drawList(); };
+    updateSaveUI();
     drawList();
   }catch(e){
     console.warn('Carte relance', e);
