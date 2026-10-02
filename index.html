@@ -1009,6 +1009,8 @@ async function renderClient(){
         <p class="sub">Vous avez juste un numéro de suivi ? Retrouvez ce colis directement, sans vous connecter.</p>
         <label>Numéro de suivi</label>
         <input id="quickTrackInput" placeholder="Ex : STS-2026-001">
+        <label>🔔 Email (facultatif) — pour être prévenu à chaque changement de statut</label>
+        <input id="quickTrackEmail" type="email" placeholder="votre@email.com">
         <button class="primary" id="btnQuickTrack" style="margin-top:8px;">Suivre ce colis</button>
         <div id="quickTrackResult" style="margin-top:10px;"></div>
       </div>
@@ -1017,7 +1019,9 @@ async function renderClient(){
       if(!firebaseReady){ toast("Firebase non configuré"); return; }
       const trackingId = document.getElementById('quickTrackInput').value.trim();
       const resultEl = document.getElementById('quickTrackResult');
+      const quickEmail = document.getElementById('quickTrackEmail').value.trim();
       if(!trackingId){ toast("Entrez un numéro de suivi"); return; }
+      if(quickEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(quickEmail)){ toast("Adresse email invalide"); return; }
       resultEl.innerHTML = `<div class="empty">Recherche...</div>`;
       try{
         const clean = trackingId.replace(/\s+/g,'').toUpperCase();
@@ -1027,6 +1031,20 @@ async function renderClient(){
         if(pkg){
           const btn = resultEl.querySelector('[data-pickup]');
           if(btn) btn.onclick = ()=> confirmPickup(btn.dataset.pickup);
+          if(quickEmail){
+            const okBox = document.createElement('div');
+            okBox.style.marginTop = '14px';
+            try{
+              await saveTrackingAlert(pkg.trackingId, quickEmail);
+              okBox.innerHTML = `<div class="empty">✅ Vous recevrez un email à chaque changement de statut.</div>`;
+              toast("✅ Vous serez prévenu par email");
+            }catch(e){
+              okBox.innerHTML = `<div class="empty">⚠️ Colis trouvé, mais l'email n'a pas pu être enregistré. Réessayez.</div>`;
+              toast("Erreur d'enregistrement de l'email");
+            }
+            resultEl.appendChild(okBox);
+            return;
+          }
           const box = document.createElement('div');
           box.style.marginTop = '14px';
           box.innerHTML = `
