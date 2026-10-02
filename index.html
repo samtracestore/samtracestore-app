@@ -1306,7 +1306,7 @@ async function renderRelanceCard(pkgs){
       }
     };
     document.getElementById('relanceSave').onclick = () => {
-      if(currentDays === savedDays) return;
+      if(currentDays === savedDays){ toast('✅ Déjà sauvegardé : relance après ' + savedDays + ' jour' + (savedDays > 1 ? 's' : '')); return; }
       try{ localStorage.setItem(RELANCE_DAYS_KEY, String(currentDays)); }catch(e){}
       savedDays = currentDays;
       updateSaveUI();
