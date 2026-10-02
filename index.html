@@ -2486,8 +2486,45 @@ function closeSupportModal(){
   if(m) m.remove();
 }
 
+const SUPPORT_LANG_KEY = 'sts_support_lang';
+const SUPPORT_TEXT = {
+  ht: {
+    title: '💬 Sipò',
+    hint: 'Ou gen yon pwoblèm ak kolis ou a (reta, estati...) ? Ekri mesaj ou anba a, n ap reponn ou sou WhatsApp.',
+    track: 'Nimewo swivi (si ou genyen) Ex : STS-2026-001',
+    msg: 'Ekri mesaj ou la... Ex : Kolis mwen an an reta, èske w ka verifye l ?',
+    send: 'Voye',
+    tooShort: 'Ekri mesaj ou anvan ou voye l',
+    opening: "N ap louvri WhatsApp... peze sou voye",
+    hello: 'Bonjou Sam Trace Store,',
+    trackLbl: 'Nimewo swivi : ',
+    phoneLbl: 'Nimewo mwen : '
+  },
+  fr: {
+    title: '💬 Support',
+    hint: 'Un souci avec votre colis (retard, statut...) ? Écrivez votre message ci-dessous, nous vous répondrons sur WhatsApp.',
+    track: 'Numéro de suivi (facultatif) Ex : STS-2026-001',
+    msg: 'Votre message... Ex : Mon colis est en retard, pouvez-vous vérifier ?',
+    send: 'Envoyer',
+    tooShort: "Écrivez votre message avant d'envoyer",
+    opening: 'Ouverture de WhatsApp... appuyez sur envoyer',
+    hello: 'Bonjour Sam Trace Store,',
+    trackLbl: 'Numéro de suivi : ',
+    phoneLbl: 'Mon numéro : '
+  }
+};
+
+function getSupportLang(){
+  try{
+    const l = localStorage.getItem(SUPPORT_LANG_KEY);
+    if(l === 'ht' || l === 'fr') return l;
+  }catch(e){}
+  return 'ht';
+}
+
 function openSupportModal(){
   closeSupportModal();
+  let lang = getSupportLang();
   const quickEl = document.getElementById('quickTrackInput');
   const prefillTrack = quickEl ? quickEl.value.trim() : '';
   const overlay = document.createElement('div');
@@ -2496,32 +2533,51 @@ function openSupportModal(){
   overlay.innerHTML = `
     <div style="width:100%;max-width:448px;background:var(--panel);border:1px solid var(--border);border-radius:20px;overflow:hidden;box-shadow:0 10px 40px rgba(0,0,0,0.5);max-height:92vh;overflow-y:auto;">
       <div style="background:linear-gradient(135deg,var(--accent),#FF5A1A);padding:18px 18px;display:flex;justify-content:space-between;align-items:center;">
-        <div style="color:#fff;font-weight:800;font-size:18px;">💬 Support</div>
+        <div id="supportTitle" style="color:#fff;font-weight:800;font-size:18px;"></div>
         <button type="button" id="supportClose" style="background:rgba(255,255,255,0.2);border:none;color:#fff;border-radius:50%;width:30px;height:30px;font-size:16px;cursor:pointer;">✕</button>
       </div>
       <div style="padding:14px 18px;border-bottom:1px solid var(--border);background:#131A2A;">
-        <p style="margin:0 0 10px;color:var(--muted);font-size:12.5px;line-height:1.5;">Un souci avec votre colis (retard, statut...) ? Écrivez votre message ci-dessous.</p>
-        <input id="supportTrack" placeholder="Numéro de suivi (facultatif) Ex : STS-2026-001" style="margin-bottom:0;">
+        <div class="modeSwitch" style="margin-bottom:12px;width:fit-content;">
+          <button type="button" id="langHt">Kreyòl</button>
+          <button type="button" id="langFr">Français</button>
+        </div>
+        <p id="supportHint" style="margin:0 0 10px;color:var(--muted);font-size:12.5px;line-height:1.5;"></p>
+        <input id="supportTrack" style="margin-bottom:0;">
       </div>
       <div style="padding:16px 18px 20px;">
-        <textarea id="supportMsg" rows="4" placeholder="Votre message..." style="width:100%;background:#fff;color:#111;border:1px solid var(--border);border-radius:10px;padding:12px 13px;font-size:14.5px;margin-bottom:14px;outline:none;font-family:inherit;resize:vertical;"></textarea>
-        <button type="button" class="primary" id="supportSend">Envoyer</button>
+        <textarea id="supportMsg" rows="4" style="width:100%;background:#fff;color:#111;border:1px solid var(--border);border-radius:10px;padding:12px 13px;font-size:14.5px;margin-bottom:14px;outline:none;font-family:inherit;resize:vertical;"></textarea>
+        <button type="button" class="primary" id="supportSend"></button>
       </div>
     </div>`;
   document.body.appendChild(overlay);
+
+  function applyLang(){
+    const t = SUPPORT_TEXT[lang];
+    document.getElementById('supportTitle').textContent = t.title;
+    document.getElementById('supportHint').textContent = t.hint;
+    document.getElementById('supportTrack').placeholder = t.track;
+    document.getElementById('supportMsg').placeholder = t.msg;
+    document.getElementById('supportSend').textContent = t.send;
+    document.getElementById('langHt').classList.toggle('active', lang === 'ht');
+    document.getElementById('langFr').classList.toggle('active', lang === 'fr');
+  }
+  applyLang();
   document.getElementById('supportTrack').value = prefillTrack;
+  document.getElementById('langHt').onclick = ()=>{ lang = 'ht'; try{ localStorage.setItem(SUPPORT_LANG_KEY, lang); }catch(e){} applyLang(); };
+  document.getElementById('langFr').onclick = ()=>{ lang = 'fr'; try{ localStorage.setItem(SUPPORT_LANG_KEY, lang); }catch(e){} applyLang(); };
   document.getElementById('supportClose').onclick = closeSupportModal;
   overlay.onclick = (e)=>{ if(e.target === overlay) closeSupportModal(); };
   document.getElementById('supportSend').onclick = ()=>{
+    const t = SUPPORT_TEXT[lang];
     const msg = document.getElementById('supportMsg').value.trim();
     const track = document.getElementById('supportTrack').value.trim();
-    if(msg.length < 5){ toast("Écrivez votre message avant d'envoyer"); return; }
-    let text = "Bonjour Sam Trace Store,\n\n" + msg;
-    if(track) text += "\n\nNuméro de suivi : " + track;
-    if(clientPhone) text += "\nMon numéro : " + clientPhone;
+    if(msg.length < 5){ toast(t.tooShort); return; }
+    let text = t.hello + "\n\n" + msg;
+    if(track) text += "\n\n" + t.trackLbl + track;
+    if(clientPhone) text += "\n" + t.phoneLbl + clientPhone;
     window.open('https://wa.me/' + WHATSAPP_NUMBER + '?text=' + encodeURIComponent(text), '_blank');
     closeSupportModal();
-    toast("Ouverture de WhatsApp... appuyez sur envoyer");
+    toast(t.opening);
   };
 }
 
@@ -2536,7 +2592,7 @@ function renderSupportButton(){
   btn.type = 'button';
   btn.id = 'clientSupportBtn';
   btn.style.cssText = 'position:fixed;bottom:20px;right:16px;display:flex;align-items:center;gap:8px;padding:8px 16px 8px 8px;border-radius:30px;border:none;cursor:pointer;background:linear-gradient(135deg,var(--accent),#FF5A1A);color:#fff;font-weight:700;font-size:13.5px;box-shadow:0 6px 18px rgba(255,122,26,0.45);z-index:60;';
-  btn.innerHTML = `${inner}<span>Support</span>`;
+  btn.innerHTML = `${inner}<span>Sipò · Support</span>`;
   btn.onclick = openSupportModal;
   document.body.appendChild(btn);
 }
