@@ -1190,6 +1190,32 @@ async function hasRelanceEmail(p){
   }catch(e){ return false; }
 }
 
+function relanceDocRef(){
+  const id = (adminSession && adminSession.isOwner) ? 'relance_owner' : 'relance_' + (adminSession ? adminSession.code : 'x');
+  return db.collection('settings').doc(id);
+}
+async function saveRelanceCloud(data){
+  try{ await relanceDocRef().set(data, {merge:true}); return true; }
+  catch(e){ console.warn('Réglages relance : enregistrement cloud impossible', e); return false; }
+}
+// Lit les réglages enregistrés dans la base (partagés entre tous les appareils).
+// Si rien n'existe encore, on envoie les réglages de ce téléphone pour que les autres appareils les reprennent.
+async function loadRelanceSettings(){
+  try{
+    const doc = await relanceDocRef().get();
+    if(doc.exists){
+      const d = doc.data() || {};
+      if(d.days >= 1 && d.days <= 365){ try{ localStorage.setItem(RELANCE_DAYS_KEY, String(d.days)); }catch(e){} }
+      if(d.lang === 'ht' || d.lang === 'fr'){ try{ localStorage.setItem(RELANCE_LANG_KEY, d.lang); }catch(e){} }
+    } else {
+      let hasLocal = false;
+      try{ hasLocal = localStorage.getItem(RELANCE_DAYS_KEY) !== null; }catch(e){}
+      if(hasLocal){ await saveRelanceCloud({days: getRelanceDays(), lang: getRelanceLang()}); }
+    }
+  }catch(e){ console.warn('Réglages relance (cloud) indisponibles', e); }
+  return { days: getRelanceDays(), lang: getRelanceLang() };
+}
+
 async function renderRelanceCard(pkgs){
   const wrap = document.getElementById('relanceCardWrap');
   if(!wrap) return;
@@ -1222,7 +1248,8 @@ async function renderRelanceCard(pkgs){
       </div>`;
 
     const daysInput = document.getElementById('relanceDays');
-    let savedDays = getRelanceDays();
+    const cfg = await loadRelanceSettings();
+    let savedDays = cfg.days;
     let currentDays = savedDays;
     daysInput.value = currentDays;
 
@@ -1232,7 +1259,7 @@ async function renderRelanceCard(pkgs){
       if(currentDays === savedDays){
         btn.textContent = '✅ Sauvegardé';
         btn.style.cssText = 'background:transparent;border:1px solid rgba(62,207,142,0.5);color:var(--ok);border-radius:10px;padding:9px 14px;font-size:13px;font-weight:700;cursor:default;';
-        note.textContent = 'Enregistré sur ce téléphone';
+        note.textContent = 'Enregistré sur tous vos appareils';
       } else {
         btn.textContent = '💾 Sauvegarder';
         btn.style.cssText = 'background:linear-gradient(135deg,#EC4899,#F97316);border:none;color:#fff;border-radius:10px;padding:9px 16px;font-size:13px;font-weight:700;cursor:pointer;box-shadow:0 4px 12px rgba(249,115,22,0.35);';
@@ -1305,15 +1332,24 @@ async function renderRelanceCard(pkgs){
         drawList();
       }
     };
-    document.getElementById('relanceSave').onclick = () => {
+    document.getElementById('relanceSave').onclick = async () => {
       if(currentDays === savedDays){ toast('✅ Déjà sauvegardé : relance après ' + savedDays + ' jour' + (savedDays > 1 ? 's' : '')); return; }
+      const btn = document.getElementById('relanceSave');
+      btn.disabled = true;
       try{ localStorage.setItem(RELANCE_DAYS_KEY, String(currentDays)); }catch(e){}
+      const ok = await saveRelanceCloud({days: currentDays, lang: getRelanceLang()});
+      btn.disabled = false;
       savedDays = currentDays;
       updateSaveUI();
-      toast('✅ Enregistré : relance après ' + savedDays + ' jour' + (savedDays > 1 ? 's' : ''));
+      const label = 'relance après ' + savedDays + ' jour' + (savedDays > 1 ? 's' : '');
+      if(ok){ toast('✅ Enregistré pour tous vos appareils : ' + label); }
+      else {
+        document.getElementById('relanceSaveNote').textContent = 'Enregistré sur ce téléphone seulement (pas de connexion)';
+        toast('⚠️ Enregistré seulement sur ce téléphone : ' + label);
+      }
     };
-    document.getElementById('relLangHt').onclick = () => { try{ localStorage.setItem(RELANCE_LANG_KEY, 'ht'); }catch(e){} drawList(); };
-    document.getElementById('relLangFr').onclick = () => { try{ localStorage.setItem(RELANCE_LANG_KEY, 'fr'); }catch(e){} drawList(); };
+    document.getElementById('relLangHt').onclick = () => { try{ localStorage.setItem(RELANCE_LANG_KEY, 'ht'); }catch(e){} saveRelanceCloud({lang:'ht'}); drawList(); };
+    document.getElementById('relLangFr').onclick = () => { try{ localStorage.setItem(RELANCE_LANG_KEY, 'fr'); }catch(e){} saveRelanceCloud({lang:'fr'}); drawList(); };
     updateSaveUI();
     drawList();
   }catch(e){
