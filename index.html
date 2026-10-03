@@ -1124,7 +1124,7 @@ async function renderClient(){
     } else {
       list.innerHTML = pkgs.map(p => {
         const n = nums[p.trackingId];
-        return pkgCardHTML(p, (n && n.total >= 2) ? ('Colis #' + n.num) : '');
+        return pkgCardHTML(p, colisLabel(n));
       }).join('') + `<button type="button" class="ghost" id="btnDeleteMyList" style="width:100%;margin-top:6px;padding:12px;color:var(--danger);border-color:rgba(239,93,93,0.4);">🗑️ Supprimer ma liste de colis</button>`;
       list.querySelectorAll('[data-pickup]').forEach(btn=>{
         btn.onclick = ()=> confirmPickup(btn.dataset.pickup);
@@ -1238,21 +1238,82 @@ function pkgCreatedAt(p){
   const h = (p.history || [])[0];
   return new Date((h && h.date) || p.updatedAt || 0).getTime();
 }
-// Regroupe les colis par client (même téléphone). Dans un groupe : du plus ancien (#1) au plus récent.
+let adminPkgsCache = [];
+let pendingNewColis = null;
+
+// Numéro de chaque colis d'un même client : le numéro saisi à la main est prioritaire,
+// les autres prennent les plus petits numéros libres (dans l'ordre de création).
+function assignColisNumbers(arr){
+  const sorted = arr.slice().sort((a, b) => pkgCreatedAt(a) - pkgCreatedAt(b));
+  const used = new Set();
+  sorted.forEach(p => { const n = parseInt(p.colisNum); if(n >= 1) used.add(n); });
+  let counter = 1;
+  const res = sorted.map(p => {
+    const n = parseInt(p.colisNum);
+    if(n >= 1) return {p, num: n, manual: true};
+    while(used.has(counter)) counter++;
+    used.add(counter);
+    return {p, num: counter, manual: false};
+  });
+  res.sort((a, b) => a.num - b.num);
+  return res;
+}
+// Regroupe les colis par client (même téléphone), classés par numéro de colis.
 function groupPackagesByClient(pkgs){
   const byPhone = {};
   (pkgs || []).forEach(p => { (byPhone[p.phone] = byPhone[p.phone] || []).push(p); });
-  const groups = Object.values(byPhone);
-  groups.forEach(arr => arr.sort((a, b) => pkgCreatedAt(a) - pkgCreatedAt(b)));
+  const groups = Object.values(byPhone).map(arr => assignColisNumbers(arr).map(x => x.p));
   const lastUpdate = arr => Math.max(...arr.map(x => new Date(x.updatedAt || 0).getTime()));
   groups.sort((a, b) => lastUpdate(b) - lastUpdate(a));
   return groups;
 }
-// numéro de chaque colis chez son client : { trackingId: {num, total} }
+// { trackingId: {num, total, manual} }
 function packageNumbers(pkgs){
+  const byPhone = {};
+  (pkgs || []).forEach(p => { (byPhone[p.phone] = byPhone[p.phone] || []).push(p); });
   const m = {};
-  groupPackagesByClient(pkgs).forEach(arr => arr.forEach((p, i) => { m[p.trackingId] = {num: i + 1, total: arr.length}; }));
+  Object.values(byPhone).forEach(arr => assignColisNumbers(arr).forEach(x => { m[x.p.trackingId] = {num: x.num, total: arr.length, manual: x.manual}; }));
   return m;
+}
+function colisLabel(n){
+  return (n && (n.total >= 2 || n.manual)) ? ('Colis #' + n.num) : '';
+}
+
+// Champ « Numéro du colis » du formulaire (juste au-dessus du téléphone)
+function initColisNumField(isEditing){
+  const phoneEl = document.getElementById('pPhone');
+  const numEl = document.getElementById('pColisNum');
+  const hint = document.getElementById('pColisHint');
+  if(!phoneEl || !numEl || !hint) return;
+  let touched = false;
+  let lastAuto = '';
+  numEl.addEventListener('input', () => { touched = true; });
+  function refresh(){
+    const phone = normalizePhone(phoneEl.value);
+    const others = (adminPkgsCache || []).filter(p => p.phone === phone && p.trackingId !== editingTrackingId);
+    if(!phone || others.length === 0){ hint.textContent = ''; return; }
+    const nums = assignColisNumbers(others).map(x => x.num);
+    const next = Math.max(...nums) + 1;
+    hint.textContent = 'Ce client a déjà ' + others.length + ' colis (' + nums.map(n => '#' + n).join(', ') + '). Numéro suggéré : #' + next;
+    if(!isEditing && !touched && (numEl.value === '' || numEl.value === lastAuto)){
+      numEl.value = String(next);
+      lastAuto = String(next);
+    }
+  }
+  phoneEl.addEventListener('input', refresh);
+  if(pendingNewColis){
+    const pn = pendingNewColis;
+    pendingNewColis = null;
+    document.getElementById('pName').value = pn.name || '';
+    phoneEl.value = pn.phone || '';
+    initLocationFields(pn.destCountry || '', pn.destDepartment || '', pn.destCommune || '');
+    refresh();
+    setTimeout(() => {
+      const t = document.getElementById('pTrack');
+      if(t){ t.scrollIntoView({behavior: 'smooth', block: 'center'}); t.focus(); }
+      toast('Nouveau colis : entrez le nouveau numéro de suivi');
+    }, 200);
+  }
 }
 async function setPackageHidden(trackingId, hidden){
   await db.collection('packages').doc(trackingId).set(
@@ -1285,12 +1346,16 @@ async function renderAdminPkgList(pkgs){
   const byId = {};
   pkgs.forEach(p => { byId[p.trackingId] = p; });
   const nums = packageNumbers(pkgs);
+  adminPkgsCache = pkgs.slice();
   const items = [];
-  groupPackagesByClient(pkgs).forEach(arr => arr.forEach((p, i) => items.push({p, first: i === 0, total: arr.length, num: i + 1})));
+  groupPackagesByClient(pkgs).forEach(arr => arr.forEach((p, i) => {
+    const n = nums[p.trackingId];
+    items.push({p, first: i === 0, total: arr.length, num: n.num, manual: n.manual});
+  }));
 
   const cards = await Promise.all(items.map(async it => {
     const p = it.p;
-    const numbered = it.total >= 2;
+    const numbered = it.total >= 2 || it.manual;
     const label = numbered ? ('Colis #' + it.num) : '';
     const hist = (p.history || []).slice().reverse().map(h =>
       `<div class="histline"><div class="dot"></div><div>${STATUS_LABEL[h.status] || h.status} — ${new Date(h.date).toLocaleDateString('fr-FR',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'})}</div></div>`
@@ -1305,7 +1370,7 @@ async function renderAdminPkgList(pkgs){
     const hiddenNote = p.hiddenByClient
       ? `<div style="margin-top:4px;font-size:11px;color:var(--danger);">🗑️ Supprimé de la liste par le client${p.hiddenByClientAt ? ' — ' + fmtDate(p.hiddenByClientAt) : ''}</div>`
       : '';
-    const header = (it.first && numbered)
+    const header = (it.first && it.total >= 2)
       ? `<div style="margin:14px 0 8px;font-size:12.5px;font-weight:700;color:var(--accent2);">👤 ${escHtml(p.name)} · ${escHtml(p.phone)} — ${it.total} colis</div>`
       : '';
     const numBadge = numbered
@@ -1315,12 +1380,14 @@ async function renderAdminPkgList(pkgs){
     <div class="pkgAdmin" style="flex-direction:column;align-items:stretch;">
       <div style="display:flex;justify-content:space-between;align-items:center;">
         <div class="info" data-edit="${escHtml(p.trackingId)}" style="cursor:pointer;flex:1;">
-          <div>${numBadge}<b>#${escHtml(p.trackingId)}</b> — ${STATUS_LABEL[p.status] || p.status}</div>
+          <div><b>#${escHtml(p.trackingId)}</b> — ${STATUS_LABEL[p.status] || p.status}</div>
+          ${numBadge ? `<div style="margin:5px 0 3px;">${numBadge}</div>` : ''}
           <div class="name">${escHtml(p.name)} · ${escHtml(p.phone)} <button type="button" class="waMini" data-send-wa="${escHtml(p.trackingId)}" style="margin-left:6px;background:rgba(37,211,102,0.12);border:1px solid rgba(37,211,102,0.5);color:#25D366;border-radius:8px;padding:3px 9px;font-size:11px;font-weight:700;cursor:pointer;">💬 WhatsApp</button></div>
           ${(p.destCommune || p.destDepartment) ? `<div class="sub" style="font-size:11px;">📍 ${[p.destCommune, p.destDepartment, p.destCountry].filter(Boolean).map(escHtml).join(', ')}</div>` : ''}
         </div>
         <button class="miniBtn" data-id="${escHtml(p.trackingId)}">Supprimer</button>
       </div>
+      <div style="margin-top:8px;"><button type="button" class="newMini" data-new-for="${escHtml(p.trackingId)}" style="background:rgba(255,122,26,0.12);border:1px solid rgba(255,122,26,0.5);color:var(--accent2);border-radius:8px;padding:5px 11px;font-size:11.5px;font-weight:700;cursor:pointer;">➕ Nouveau colis pour ce client</button></div>
       ${hist ? `<div style="margin-top:8px;border-top:1px solid var(--border);padding-top:8px;">${hist}</div>` : ''}
       <div style="margin-top:6px;font-size:11px;color:var(--muted);">${lastSeen}</div>
       ${pickupConfirm}
@@ -1343,13 +1410,23 @@ async function renderAdminPkgList(pkgs){
       renderAdmin();
     };
   });
+  list.querySelectorAll('[data-new-for]').forEach(b => {
+    b.onclick = (e) => {
+      e.stopPropagation();
+      const p = byId[b.dataset.newFor];
+      if(!p) return;
+      pendingNewColis = {name: p.name, phone: p.phone, destCountry: p.destCountry, destDepartment: p.destDepartment, destCommune: p.destCommune};
+      editingTrackingId = null;
+      renderAdmin();
+    };
+  });
   list.querySelectorAll('[data-send-wa]').forEach(b => {
     b.onclick = (e) => {
       e.stopPropagation();
       const p = byId[b.dataset.sendWa];
       if(!p) return;
       const n = nums[p.trackingId];
-      window.open(trackingWhatsappUrl(p, (n && n.total >= 2) ? ('Colis #' + n.num) : ''), '_blank');
+      window.open(trackingWhatsappUrl(p, colisLabel(n)), '_blank');
     };
   });
 }
@@ -1383,7 +1460,7 @@ function renderDeletedByClientCard(pkgs){
             <div class="sub" style="margin:2px 0 8px;font-size:11.5px;">A supprimé sa liste le ${last ? fmtDate(new Date(last).toISOString()) : '—'}</div>
             ${arr.map(p => {
               const n = nums[p.trackingId];
-              const lbl = (n && n.total >= 2) ? `<b style="color:var(--accent2);">Colis #${n.num}</b> · ` : '';
+              const lbl = colisLabel(n) ? `<b style="color:var(--accent2);">${colisLabel(n)}</b> · ` : '';
               return `<div style="font-size:12.5px;padding:3px 0;">${lbl}#${escHtml(p.trackingId)} — ${STATUS_LABEL[p.status] || p.status}</div>`;
             }).join('')}
             <button type="button" class="miniBtn" style="margin-top:8px;color:var(--info);border-color:rgba(96,165,250,0.5);" data-restore="${gi}">↩️ Restaurer sa liste</button>
@@ -2050,6 +2127,9 @@ async function renderOwnerPackages(){
       <input id="pTrack" placeholder="Ex : STS-2026-001" ${isEditing ? 'disabled' : ''}>
       <label>Nom du client</label>
       <input id="pName" placeholder="Ex : Marie Dupont">
+      <label>Numéro du colis de ce client <span style="color:var(--muted);font-weight:400;">(facultatif : 1, 2, 3...)</span></label>
+      <input id="pColisNum" type="number" min="1" inputmode="numeric" placeholder="Ex : 2 pour « Colis #2 »">
+      <div id="pColisHint" style="font-size:11.5px;color:var(--accent2);margin:-6px 0 12px;"></div>
       <label>Téléphone du client</label>
       <input id="pPhone" type="tel" placeholder="Ex : 06 12 34 56 78">
       ${buildLocationSelectsHTML()}
@@ -2073,6 +2153,7 @@ async function renderOwnerPackages(){
       <div id="adminList"><div class="empty">Chargement...</div></div>
     </div>`;
   initLocationFields('','','');
+  initColisNumField(isEditing);
 
   if(isEditing){
     try{
@@ -2082,6 +2163,7 @@ async function renderOwnerPackages(){
         document.getElementById('pName').value = existing.name || '';
         document.getElementById('pPhone').value = existing.phone || '';
         document.getElementById('pStatus').value = existing.status || 'preparation';
+        if(document.getElementById('pColisNum')) document.getElementById('pColisNum').value = existing.colisNum || '';
         initLocationFields(existing.destCountry||'', existing.destDepartment||'', existing.destCommune||'');
       }
     }catch(e){}
@@ -2098,6 +2180,14 @@ async function renderOwnerPackages(){
     const destDepartment = document.getElementById('pDept') ? document.getElementById('pDept').value : '';
     const destCommune = document.getElementById('pCommune') ? document.getElementById('pCommune').value : '';
     if(!trackingId || !phone || !name){ toast("Nom, numéro de suivi et téléphone requis"); return; }
+    const colisNumRaw = parseInt((document.getElementById('pColisNum') || {}).value);
+    const colisNum = colisNumRaw >= 1 ? colisNumRaw : null;
+    if(colisNum){
+      const phoneN = normalizePhone(phone);
+      const others = (adminPkgsCache || []).filter(p => p.phone === phoneN && p.trackingId !== trackingId);
+      const taken = assignColisNumbers(others).find(x => x.num === colisNum);
+      if(taken){ toast('Ce client a déjà un Colis #' + colisNum + ' (#' + taken.p.trackingId + '). Choisissez un autre numéro.'); return; }
+    }
     try{
       if(!isEditing){
         const dejaPris = await getPackage(trackingId);
@@ -2120,6 +2210,7 @@ async function renderOwnerPackages(){
       const pkg = {trackingId, name, phone: normalizePhone(phone), status, destCountry, destDepartment, destCommune, updatedAt:new Date().toISOString(), history, companyCode: adminSession.code};
       if(existingPickedUpAt) pkg.pickedUpAt = existingPickedUpAt;
       if(existingHidden){ pkg.hiddenByClient = true; pkg.hiddenByClientAt = (existingHidden === true) ? null : existingHidden; }
+      if(colisNum) pkg.colisNum = colisNum;
       await savePackage(pkg);
       if(statusChanged) sendStatusEmail(pkg);
       toast(isEditing ? "Colis mis à jour" : "Colis enregistré");
@@ -2721,6 +2812,9 @@ async function renderAdmin(){
       <input id="pTrack" placeholder="Ex : STS-2026-001" ${isEditing ? 'disabled' : ''}>
       <label>Nom du client</label>
       <input id="pName" placeholder="Ex : Marie Dupont">
+      <label>Numéro du colis de ce client <span style="color:var(--muted);font-weight:400;">(facultatif : 1, 2, 3...)</span></label>
+      <input id="pColisNum" type="number" min="1" inputmode="numeric" placeholder="Ex : 2 pour « Colis #2 »">
+      <div id="pColisHint" style="font-size:11.5px;color:var(--accent2);margin:-6px 0 12px;"></div>
       <label>Téléphone du client</label>
       <input id="pPhone" type="tel" placeholder="Ex : 06 12 34 56 78">
       ${buildLocationSelectsHTML()}
@@ -2736,6 +2830,7 @@ async function renderAdmin(){
     </div>
     ${whatsappBubbleHTML()}`;
   initLocationFields('','','');
+  initColisNumField(isEditing);
   document.getElementById('btnAdminLogout').onclick = ()=>{ adminSession=null; editingTrackingId=null; renderAdmin(); };
   if(showConfirmBanner){
     document.getElementById('btnDismissConfirm').onclick = async ()=>{
@@ -2762,6 +2857,7 @@ async function renderAdmin(){
         document.getElementById('pName').value = existing.name || '';
         document.getElementById('pPhone').value = existing.phone || '';
         document.getElementById('pStatus').value = existing.status || 'preparation';
+        if(document.getElementById('pColisNum')) document.getElementById('pColisNum').value = existing.colisNum || '';
         initLocationFields(existing.destCountry||'', existing.destDepartment||'', existing.destCommune||'');
       }
     }catch(e){}
@@ -2778,6 +2874,14 @@ async function renderAdmin(){
     const destDepartment = document.getElementById('pDept') ? document.getElementById('pDept').value : '';
     const destCommune = document.getElementById('pCommune') ? document.getElementById('pCommune').value : '';
     if(!trackingId || !phone || !name){ toast("Nom, numéro de suivi et téléphone requis"); return; }
+    const colisNumRaw = parseInt((document.getElementById('pColisNum') || {}).value);
+    const colisNum = colisNumRaw >= 1 ? colisNumRaw : null;
+    if(colisNum){
+      const phoneN = normalizePhone(phone);
+      const others = (adminPkgsCache || []).filter(p => p.phone === phoneN && p.trackingId !== trackingId);
+      const taken = assignColisNumbers(others).find(x => x.num === colisNum);
+      if(taken){ toast('Ce client a déjà un Colis #' + colisNum + ' (#' + taken.p.trackingId + '). Choisissez un autre numéro.'); return; }
+    }
     try{
       if(!isEditing){
         const dejaPris = await getPackage(trackingId);
@@ -2800,6 +2904,7 @@ async function renderAdmin(){
       const pkg = {trackingId, name, phone: normalizePhone(phone), status, destCountry, destDepartment, destCommune, updatedAt:new Date().toISOString(), history, companyCode: adminSession.code};
       if(existingPickedUpAt) pkg.pickedUpAt = existingPickedUpAt;
       if(existingHidden){ pkg.hiddenByClient = true; pkg.hiddenByClientAt = (existingHidden === true) ? null : existingHidden; }
+      if(colisNum) pkg.colisNum = colisNum;
       await savePackage(pkg);
       if(statusChanged) sendStatusEmail(pkg);
       toast(isEditing ? "Colis mis à jour" : "Colis enregistré");
