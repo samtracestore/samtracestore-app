@@ -944,7 +944,7 @@ function triggerConfetti(){
   }
 }
 
-function pkgCardHTML(p){
+function pkgCardHTML(p, label){
   const hist = (p.history||[]).slice().reverse().map(h=>
     `<div class="histline"><div class="dot"></div><div>${STATUS_LABEL[h.status]||h.status} — ${new Date(h.date).toLocaleDateString('fr-FR',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'})}</div></div>`
   ).join('');
@@ -954,6 +954,7 @@ function pkgCardHTML(p){
   return `<div class="pkg">
     <div class="row1">
       <div>
+        ${(label && typeof label === 'string') ? `<div style="display:inline-block;background:rgba(255,122,26,0.15);color:var(--accent2);border:1px solid var(--accent);border-radius:20px;padding:2px 10px;font-size:11px;font-weight:800;margin-bottom:6px;">${escHtml(label)}</div>` : ''}
         <div class="tid">#${p.trackingId}</div>
         <div class="desc">${p.name||''}</div>
         ${(p.destCommune||p.destDepartment) ? `<div class="sub" style="font-size:11px;margin-top:2px;">📍 ${[p.destCommune,p.destDepartment,p.destCountry].filter(Boolean).join(', ')}</div>` : ''}
@@ -1114,15 +1115,29 @@ async function renderClient(){
   markClientSeen(clientPhone);
 
   try{
-    const pkgs = await getPackagesForPhone(clientPhone);
+    const allPkgs = await getPackagesForPhone(clientPhone);
+    const nums = packageNumbers(allPkgs);
+    const pkgs = allPkgs.filter(p => !p.hiddenByClient).sort((a, b) => pkgCreatedAt(a) - pkgCreatedAt(b));
     const list = document.getElementById('pkgList');
     if(pkgs.length===0){
       list.innerHTML = `<div class="card"><div class="empty"><div class="big">📦</div>Aucun colis trouvé pour ce numéro pour le moment.</div></div>`;
     } else {
-      list.innerHTML = pkgs.map(pkgCardHTML).join('');
+      list.innerHTML = pkgs.map(p => {
+        const n = nums[p.trackingId];
+        return pkgCardHTML(p, (n && n.total >= 2) ? ('Colis #' + n.num) : '');
+      }).join('') + `<button type="button" class="ghost" id="btnDeleteMyList" style="width:100%;margin-top:6px;padding:12px;color:var(--danger);border-color:rgba(239,93,93,0.4);">🗑️ Supprimer ma liste de colis</button>`;
       list.querySelectorAll('[data-pickup]').forEach(btn=>{
         btn.onclick = ()=> confirmPickup(btn.dataset.pickup);
       });
+      document.getElementById('btnDeleteMyList').onclick = async ()=>{
+        const ok = confirm("Voulez-vous vraiment supprimer toute votre liste de colis ?\n\nÈske ou vle efase tout lis kolis ou a ?\n\nSam Trace Store gardera l'historique de cette suppression.");
+        if(!ok) return;
+        try{
+          await Promise.all(pkgs.map(p => setPackageHidden(p.trackingId, true)));
+          toast("Votre liste a été supprimée / Lis ou a efase");
+          renderClient();
+        }catch(e){ toast("Erreur, réessayez"); }
+      };
     }
   }catch(e){
     document.getElementById('pkgList').innerHTML = `<div class="card"><div class="empty"><div class="big">⚠️</div>Impossible de récupérer vos colis pour le moment.</div></div>`;
@@ -1214,6 +1229,180 @@ async function loadRelanceSettings(){
     }
   }catch(e){ console.warn('Réglages relance (cloud) indisponibles', e); }
   return { days: getRelanceDays(), lang: getRelanceLang() };
+}
+
+// ===== NUMEROTATION DES COLIS, WHATSAPP ADMIN, SUPPRESSION PAR LE CLIENT =====
+const APP_PUBLIC_URL = 'https://samtracestore.github.io/samtracestore-app/';
+
+function pkgCreatedAt(p){
+  const h = (p.history || [])[0];
+  return new Date((h && h.date) || p.updatedAt || 0).getTime();
+}
+// Regroupe les colis par client (même téléphone). Dans un groupe : du plus ancien (#1) au plus récent.
+function groupPackagesByClient(pkgs){
+  const byPhone = {};
+  (pkgs || []).forEach(p => { (byPhone[p.phone] = byPhone[p.phone] || []).push(p); });
+  const groups = Object.values(byPhone);
+  groups.forEach(arr => arr.sort((a, b) => pkgCreatedAt(a) - pkgCreatedAt(b)));
+  const lastUpdate = arr => Math.max(...arr.map(x => new Date(x.updatedAt || 0).getTime()));
+  groups.sort((a, b) => lastUpdate(b) - lastUpdate(a));
+  return groups;
+}
+// numéro de chaque colis chez son client : { trackingId: {num, total} }
+function packageNumbers(pkgs){
+  const m = {};
+  groupPackagesByClient(pkgs).forEach(arr => arr.forEach((p, i) => { m[p.trackingId] = {num: i + 1, total: arr.length}; }));
+  return m;
+}
+async function setPackageHidden(trackingId, hidden){
+  await db.collection('packages').doc(trackingId).set(
+    hidden ? {hiddenByClient: true, hiddenByClientAt: new Date().toISOString()}
+           : {hiddenByClient: false, hiddenByClientAt: null},
+    {merge: true}
+  );
+}
+function trackingWhatsappUrl(p, label){
+  let digits = String(p.phone || '').replace(/\D/g, '');
+  if(digits.length === 8) digits = '509' + digits;
+  const lang = getRelanceLang();
+  const name = p.name || '';
+  const text = lang === 'ht'
+    ? `Bonjou ${name}, men nimewo swivi kolis ou a${label ? ' (' + label.replace('Colis', 'Kolis') + ')' : ''} : ${p.trackingId}. Ou ka swiv li sou : ${APP_PUBLIC_URL}`
+    : `Bonjour ${name}, voici le numéro de suivi de votre colis${label ? ' (' + label + ')' : ''} : ${p.trackingId}. Vous pouvez le suivre ici : ${APP_PUBLIC_URL}`;
+  return 'https://wa.me/' + digits + '?text=' + encodeURIComponent(text);
+}
+function fmtDate(iso){
+  return new Date(iso).toLocaleDateString('fr-FR', {day:'2-digit', month:'short', hour:'2-digit', minute:'2-digit'});
+}
+
+async function renderAdminPkgList(pkgs){
+  const list = document.getElementById('adminList');
+  if(!list) return;
+  if(!pkgs || pkgs.length === 0){
+    list.innerHTML = `<div class="empty">Aucun colis enregistré pour le moment.</div>`;
+    return;
+  }
+  const byId = {};
+  pkgs.forEach(p => { byId[p.trackingId] = p; });
+  const nums = packageNumbers(pkgs);
+  const items = [];
+  groupPackagesByClient(pkgs).forEach(arr => arr.forEach((p, i) => items.push({p, first: i === 0, total: arr.length, num: i + 1})));
+
+  const cards = await Promise.all(items.map(async it => {
+    const p = it.p;
+    const numbered = it.total >= 2;
+    const label = numbered ? ('Colis #' + it.num) : '';
+    const hist = (p.history || []).slice().reverse().map(h =>
+      `<div class="histline"><div class="dot"></div><div>${STATUS_LABEL[h.status] || h.status} — ${new Date(h.date).toLocaleDateString('fr-FR',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'})}</div></div>`
+    ).join('');
+    const client = await getClient(p.phone);
+    const lastSeen = client && client.lastSeen
+      ? `Dernière visite client : ${new Date(client.lastSeen).toLocaleDateString('fr-FR',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'})}`
+      : `Ce client n'a pas encore consulté l'appli`;
+    const pickupConfirm = p.pickedUpAt
+      ? `<div style="margin-top:4px;font-size:11px;color:var(--ok);">✅ Récupération confirmée par le client — ${new Date(p.pickedUpAt).toLocaleDateString('fr-FR',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'})}</div>`
+      : '';
+    const hiddenNote = p.hiddenByClient
+      ? `<div style="margin-top:4px;font-size:11px;color:var(--danger);">🗑️ Supprimé de la liste par le client${p.hiddenByClientAt ? ' — ' + fmtDate(p.hiddenByClientAt) : ''}</div>`
+      : '';
+    const header = (it.first && numbered)
+      ? `<div style="margin:14px 0 8px;font-size:12.5px;font-weight:700;color:var(--accent2);">👤 ${escHtml(p.name)} · ${escHtml(p.phone)} — ${it.total} colis</div>`
+      : '';
+    const numBadge = numbered
+      ? `<span style="display:inline-block;background:rgba(255,122,26,0.15);color:var(--accent2);border:1px solid var(--accent);border-radius:20px;padding:1px 9px;font-size:10.5px;font-weight:800;margin-right:6px;">${label}</span>`
+      : '';
+    return header + `
+    <div class="pkgAdmin" style="flex-direction:column;align-items:stretch;">
+      <div style="display:flex;justify-content:space-between;align-items:center;">
+        <div class="info" data-edit="${escHtml(p.trackingId)}" style="cursor:pointer;flex:1;">
+          <div>${numBadge}<b>#${escHtml(p.trackingId)}</b> — ${STATUS_LABEL[p.status] || p.status}</div>
+          <div class="name">${escHtml(p.name)} · ${escHtml(p.phone)} <button type="button" class="waMini" data-send-wa="${escHtml(p.trackingId)}" style="margin-left:6px;background:rgba(37,211,102,0.12);border:1px solid rgba(37,211,102,0.5);color:#25D366;border-radius:8px;padding:3px 9px;font-size:11px;font-weight:700;cursor:pointer;">💬 WhatsApp</button></div>
+          ${(p.destCommune || p.destDepartment) ? `<div class="sub" style="font-size:11px;">📍 ${[p.destCommune, p.destDepartment, p.destCountry].filter(Boolean).map(escHtml).join(', ')}</div>` : ''}
+        </div>
+        <button class="miniBtn" data-id="${escHtml(p.trackingId)}">Supprimer</button>
+      </div>
+      ${hist ? `<div style="margin-top:8px;border-top:1px solid var(--border);padding-top:8px;">${hist}</div>` : ''}
+      <div style="margin-top:6px;font-size:11px;color:var(--muted);">${lastSeen}</div>
+      ${pickupConfirm}
+      ${hiddenNote}
+    </div>`;
+  }));
+  list.innerHTML = cards.join('');
+
+  list.querySelectorAll('.miniBtn').forEach(b => {
+    b.onclick = async (e) => {
+      e.stopPropagation();
+      await deletePackage(b.dataset.id);
+      toast("Colis supprimé");
+      renderAdmin();
+    };
+  });
+  list.querySelectorAll('.info[data-edit]').forEach(el => {
+    el.onclick = () => {
+      editingTrackingId = el.dataset.edit;
+      renderAdmin();
+    };
+  });
+  list.querySelectorAll('[data-send-wa]').forEach(b => {
+    b.onclick = (e) => {
+      e.stopPropagation();
+      const p = byId[b.dataset.sendWa];
+      if(!p) return;
+      const n = nums[p.trackingId];
+      window.open(trackingWhatsappUrl(p, (n && n.total >= 2) ? ('Colis #' + n.num) : ''), '_blank');
+    };
+  });
+}
+
+// Carte admin : colis que les clients ont retirés de leur liste
+function renderDeletedByClientCard(pkgs){
+  const wrap = document.getElementById('deletedByClientWrap');
+  if(!wrap) return;
+  const hidden = (pkgs || []).filter(p => p.hiddenByClient);
+  if(hidden.length === 0){ wrap.innerHTML = ''; return; }
+  const nums = packageNumbers(pkgs);
+  const byPhone = {};
+  hidden.forEach(p => { (byPhone[p.phone] = byPhone[p.phone] || []).push(p); });
+  const lastDel = arr => Math.max(...arr.map(x => new Date(x.hiddenByClientAt || 0).getTime()));
+  const groups = Object.values(byPhone).sort((a, b) => lastDel(b) - lastDel(a));
+  groups.forEach(arr => arr.sort((a, b) => pkgCreatedAt(a) - pkgCreatedAt(b)));
+
+  wrap.innerHTML = `
+    <div class="card" style="padding:0;overflow:hidden;">
+      <div style="background:linear-gradient(135deg,#EF4444,#7C3AED);padding:14px 16px;display:flex;align-items:center;gap:10px;">
+        <span style="font-size:22px;">🗑️</span>
+        <div style="color:#fff;font-weight:700;font-size:16px;">Colis supprimés par les clients</div>
+      </div>
+      <div style="padding:14px 16px;">
+        <p class="sub" style="margin:0 0 12px;">${groups.length} client${groups.length > 1 ? 's ont' : ' a'} supprimé sa liste. Les colis restent dans ton historique.</p>
+        ${groups.map((arr, gi) => {
+          const last = lastDel(arr);
+          return `
+          <div style="background:rgba(239,93,93,0.10);border-left:4px solid #EF5D5D;border-radius:10px;padding:12px;margin-bottom:10px;">
+            <div style="font-weight:700;font-size:14px;">${escHtml(arr[0].name)} · ${escHtml(arr[0].phone)}</div>
+            <div class="sub" style="margin:2px 0 8px;font-size:11.5px;">A supprimé sa liste le ${last ? fmtDate(new Date(last).toISOString()) : '—'}</div>
+            ${arr.map(p => {
+              const n = nums[p.trackingId];
+              const lbl = (n && n.total >= 2) ? `<b style="color:var(--accent2);">Colis #${n.num}</b> · ` : '';
+              return `<div style="font-size:12.5px;padding:3px 0;">${lbl}#${escHtml(p.trackingId)} — ${STATUS_LABEL[p.status] || p.status}</div>`;
+            }).join('')}
+            <button type="button" class="miniBtn" style="margin-top:8px;color:var(--info);border-color:rgba(96,165,250,0.5);" data-restore="${gi}">↩️ Restaurer sa liste</button>
+          </div>`;
+        }).join('')}
+      </div>
+    </div>`;
+
+  wrap.querySelectorAll('[data-restore]').forEach(b => {
+    b.onclick = async () => {
+      const arr = groups[parseInt(b.dataset.restore)];
+      b.disabled = true;
+      try{
+        await Promise.all(arr.map(p => setPackageHidden(p.trackingId, false)));
+        toast('↩️ Liste restaurée pour ' + (arr[0].name || 'ce client'));
+        renderAdmin();
+      }catch(e){ toast('Erreur, réessayez'); b.disabled = false; }
+    };
+  });
 }
 
 async function renderRelanceCard(pkgs){
@@ -1878,6 +2067,7 @@ async function renderOwnerPackages(){
       <div id="destFilterResults" style="margin-top:10px;"></div>
     </div>
     <div id="relanceCardWrap"></div>
+    <div id="deletedByClientWrap"></div>
     <div class="card">
       <h2>Tous les colis</h2>
       <div id="adminList"><div class="empty">Chargement...</div></div>
@@ -1915,10 +2105,12 @@ async function renderOwnerPackages(){
       }
       let history = [];
       let existingPickedUpAt = null;
+      let existingHidden = null;
       if(isEditing){
         const existing = await getPackage(trackingId);
         history = (existing && existing.history) ? existing.history : [];
         existingPickedUpAt = (existing && existing.pickedUpAt) ? existing.pickedUpAt : null;
+        existingHidden = (existing && existing.hiddenByClient) ? (existing.hiddenByClientAt || true) : null;
       }
       const lastStatus = history.length ? history[history.length-1].status : null;
       const statusChanged = status !== lastStatus;
@@ -1927,6 +2119,7 @@ async function renderOwnerPackages(){
       }
       const pkg = {trackingId, name, phone: normalizePhone(phone), status, destCountry, destDepartment, destCommune, updatedAt:new Date().toISOString(), history, companyCode: adminSession.code};
       if(existingPickedUpAt) pkg.pickedUpAt = existingPickedUpAt;
+      if(existingHidden){ pkg.hiddenByClient = true; pkg.hiddenByClientAt = (existingHidden === true) ? null : existingHidden; }
       await savePackage(pkg);
       if(statusChanged) sendStatusEmail(pkg);
       toast(isEditing ? "Colis mis à jour" : "Colis enregistré");
@@ -1994,51 +2187,8 @@ async function renderOwnerPackages(){
   try{
     const pkgs = await getCompanyPackages(adminSession.code);
     try{ await renderRelanceCard(pkgs); }catch(e){ console.warn('Carte relance', e); }
-    const list = document.getElementById('adminList');
-    if(pkgs.length===0){
-      list.innerHTML = `<div class="empty">Aucun colis enregistré pour le moment.</div>`;
-    } else {
-      list.innerHTML = (await Promise.all(pkgs.map(async p=>{
-        const hist = (p.history||[]).slice().reverse().map(h=>
-          `<div class="histline"><div class="dot"></div><div>${STATUS_LABEL[h.status]||h.status} — ${new Date(h.date).toLocaleDateString('fr-FR',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'})}</div></div>`
-        ).join('');
-        const client = await getClient(p.phone);
-        const lastSeen = client && client.lastSeen
-          ? `Dernière visite client : ${new Date(client.lastSeen).toLocaleDateString('fr-FR',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'})}`
-          : `Ce client n'a pas encore consulté l'appli`;
-        const pickupConfirm = p.pickedUpAt
-          ? `<div style="margin-top:4px;font-size:11px;color:var(--ok);">✅ Récupération confirmée par le client — ${new Date(p.pickedUpAt).toLocaleDateString('fr-FR',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'})}</div>`
-          : '';
-        return `
-        <div class="pkgAdmin" style="flex-direction:column;align-items:stretch;">
-          <div style="display:flex;justify-content:space-between;align-items:center;">
-            <div class="info" data-edit="${p.trackingId}" style="cursor:pointer;flex:1;">
-              <div><b>#${p.trackingId}</b> — ${STATUS_LABEL[p.status]||p.status}</div>
-              <div class="name">${p.name} · ${p.phone}</div>
-              ${(p.destCommune||p.destDepartment) ? `<div class="sub" style="font-size:11px;">📍 ${[p.destCommune,p.destDepartment,p.destCountry].filter(Boolean).join(', ')}</div>` : ''}
-            </div>
-            <button class="miniBtn" data-id="${p.trackingId}">Supprimer</button>
-          </div>
-          ${hist ? `<div style="margin-top:8px;border-top:1px solid var(--border);padding-top:8px;">${hist}</div>` : ''}
-          <div style="margin-top:6px;font-size:11px;color:var(--muted);">${lastSeen}</div>
-          ${pickupConfirm}
-        </div>`;
-      }))).join('');
-      list.querySelectorAll('.miniBtn').forEach(b=>{
-        b.onclick = async (e)=>{
-          e.stopPropagation();
-          await deletePackage(b.dataset.id);
-          toast("Colis supprimé");
-          renderAdmin();
-        };
-      });
-      list.querySelectorAll('.info[data-edit]').forEach(el=>{
-        el.onclick = ()=>{
-          editingTrackingId = el.dataset.edit;
-          renderAdmin();
-        };
-      });
-    }
+    try{ renderDeletedByClientCard(pkgs); }catch(e){ console.warn('Carte suppressions', e); }
+    await renderAdminPkgList(pkgs);
   }catch(e){
     document.getElementById('adminList').innerHTML = `<div class="empty">Impossible de charger les colis.</div>`;
   }
@@ -2579,6 +2729,7 @@ async function renderAdmin(){
       <button class="primary" id="btnSavePkg">${isEditing ? 'Mettre à jour le colis' : 'Enregistrer le colis'}</button>
     </div>
     <div id="relanceCardWrap"></div>
+    <div id="deletedByClientWrap"></div>
     <div class="card">
       <h2>Tous les colis</h2>
       <div id="adminList"><div class="empty">Chargement...</div></div>
@@ -2634,10 +2785,12 @@ async function renderAdmin(){
       }
       let history = [];
       let existingPickedUpAt = null;
+      let existingHidden = null;
       if(isEditing){
         const existing = await getPackage(trackingId);
         history = (existing && existing.history) ? existing.history : [];
         existingPickedUpAt = (existing && existing.pickedUpAt) ? existing.pickedUpAt : null;
+        existingHidden = (existing && existing.hiddenByClient) ? (existing.hiddenByClientAt || true) : null;
       }
       const lastStatus = history.length ? history[history.length-1].status : null;
       const statusChanged = status !== lastStatus;
@@ -2646,6 +2799,7 @@ async function renderAdmin(){
       }
       const pkg = {trackingId, name, phone: normalizePhone(phone), status, destCountry, destDepartment, destCommune, updatedAt:new Date().toISOString(), history, companyCode: adminSession.code};
       if(existingPickedUpAt) pkg.pickedUpAt = existingPickedUpAt;
+      if(existingHidden){ pkg.hiddenByClient = true; pkg.hiddenByClientAt = (existingHidden === true) ? null : existingHidden; }
       await savePackage(pkg);
       if(statusChanged) sendStatusEmail(pkg);
       toast(isEditing ? "Colis mis à jour" : "Colis enregistré");
@@ -2657,51 +2811,8 @@ async function renderAdmin(){
   try{
     const pkgs = await getCompanyPackages(adminSession.code);
     try{ await renderRelanceCard(pkgs); }catch(e){ console.warn('Carte relance', e); }
-    const list = document.getElementById('adminList');
-    if(pkgs.length===0){
-      list.innerHTML = `<div class="empty">Aucun colis enregistré pour le moment.</div>`;
-    } else {
-      list.innerHTML = (await Promise.all(pkgs.map(async p=>{
-        const hist = (p.history||[]).slice().reverse().map(h=>
-          `<div class="histline"><div class="dot"></div><div>${STATUS_LABEL[h.status]||h.status} — ${new Date(h.date).toLocaleDateString('fr-FR',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'})}</div></div>`
-        ).join('');
-        const client = await getClient(p.phone);
-        const lastSeen = client && client.lastSeen
-          ? `Dernière visite client : ${new Date(client.lastSeen).toLocaleDateString('fr-FR',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'})}`
-          : `Ce client n'a pas encore consulté l'appli`;
-        const pickupConfirm = p.pickedUpAt
-          ? `<div style="margin-top:4px;font-size:11px;color:var(--ok);">✅ Récupération confirmée par le client — ${new Date(p.pickedUpAt).toLocaleDateString('fr-FR',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'})}</div>`
-          : '';
-        return `
-        <div class="pkgAdmin" style="flex-direction:column;align-items:stretch;">
-          <div style="display:flex;justify-content:space-between;align-items:center;">
-            <div class="info" data-edit="${p.trackingId}" style="cursor:pointer;flex:1;">
-              <div><b>#${p.trackingId}</b> — ${STATUS_LABEL[p.status]||p.status}</div>
-              <div class="name">${p.name} · ${p.phone}</div>
-              ${(p.destCommune||p.destDepartment) ? `<div class="sub" style="font-size:11px;">📍 ${[p.destCommune,p.destDepartment,p.destCountry].filter(Boolean).join(', ')}</div>` : ''}
-            </div>
-            <button class="miniBtn" data-id="${p.trackingId}">Supprimer</button>
-          </div>
-          ${hist ? `<div style="margin-top:8px;border-top:1px solid var(--border);padding-top:8px;">${hist}</div>` : ''}
-          <div style="margin-top:6px;font-size:11px;color:var(--muted);">${lastSeen}</div>
-          ${pickupConfirm}
-        </div>`;
-      }))).join('');
-      list.querySelectorAll('.miniBtn').forEach(b=>{
-        b.onclick = async (e)=>{
-          e.stopPropagation();
-          await deletePackage(b.dataset.id);
-          toast("Colis supprimé");
-          renderAdmin();
-        };
-      });
-      list.querySelectorAll('.info[data-edit]').forEach(el=>{
-        el.onclick = ()=>{
-          editingTrackingId = el.dataset.edit;
-          renderAdmin();
-        };
-      });
-    }
+    try{ renderDeletedByClientCard(pkgs); }catch(e){ console.warn('Carte suppressions', e); }
+    await renderAdminPkgList(pkgs);
   }catch(e){
     document.getElementById('adminList').innerHTML = `<div class="empty">Impossible de charger les colis.</div>`;
   }
