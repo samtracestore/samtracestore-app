@@ -1029,15 +1029,17 @@ async function renderClient(){
         const clean = trackingId.replace(/\s+/g,'').toUpperCase();
         let pkg = await getPackage(clean);
         if(!pkg && clean !== trackingId) pkg = await getPackage(trackingId);
-        resultEl.innerHTML = pkg ? pkgCardHTML(pkg) : `<div class="empty">Aucun colis trouvé avec ce numéro.</div>`;
+        const family = pkg ? await getTrackingFamily(pkg) : [];
+        resultEl.innerHTML = pkg
+          ? family.map(f => pkgCardHTML(f.p, family.length >= 2 ? ('Colis #' + f.num) : '')).join('')
+          : `<div class="empty">Aucun colis trouvé avec ce numéro.</div>`;
         if(pkg){
-          const btn = resultEl.querySelector('[data-pickup]');
-          if(btn) btn.onclick = ()=> confirmPickup(btn.dataset.pickup);
+          resultEl.querySelectorAll('[data-pickup]').forEach(btn => { btn.onclick = ()=> confirmPickup(btn.dataset.pickup); });
           if(quickEmail){
             const okBox = document.createElement('div');
             okBox.style.marginTop = '14px';
             try{
-              await saveTrackingAlert(pkg.trackingId, quickEmail);
+              await Promise.all(family.map(f => saveTrackingAlert(f.p.trackingId, quickEmail)));
               okBox.innerHTML = `<div class="empty">✅ Vous recevrez un email à chaque changement de statut.</div>`;
               toast("✅ Vous serez prévenu par email");
             }catch(e){
@@ -1058,7 +1060,7 @@ async function renderClient(){
             const email = document.getElementById('alertEmail').value.trim();
             if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)){ toast("Adresse email invalide"); return; }
             try{
-              await saveTrackingAlert(pkg.trackingId, email);
+              await Promise.all(family.map(f => saveTrackingAlert(f.p.trackingId, email)));
               toast("✅ Vous serez prévenu par email");
               box.innerHTML = `<div class="empty">✅ Vous recevrez un email à chaque changement de statut.</div>`;
             }catch(e){ toast("Erreur, réessayez"); }
@@ -1279,6 +1281,29 @@ function colisLabel(n){
   return (n && (n.total >= 2 || n.manual)) ? ('Colis #' + n.num) : '';
 }
 
+// Si le numéro de suivi saisi existe déjà POUR LE MÊME CLIENT, on crée « NUMERO-#N » (N = numéro du colis).
+function resolveNewTracking(base, phoneN, colisNumRaw){
+  const existing = (adminPkgsCache || []).find(p => p.trackingId === base);
+  if(!existing) return {id: base, colisNum: colisNumRaw || null, derived: false, conflict: false};
+  if(existing.phone !== phoneN) return {id: base, colisNum: colisNumRaw || null, derived: false, conflict: true};
+  const others = (adminPkgsCache || []).filter(p => p.phone === phoneN);
+  const nums = assignColisNumbers(others).map(x => x.num);
+  const n = colisNumRaw || (Math.max(...nums) + 1);
+  const root = base.replace(/-#\d+$/, '');
+  return {id: root + '-#' + n, colisNum: n, derived: true, conflict: false};
+}
+// Côté client : retrouve tous les colis d'un même numéro de base (STS-1, STS-1-#2, STS-1-#3...)
+async function getTrackingFamily(pkg){
+  const root = pkg.trackingId.replace(/-#\d+$/, '');
+  const ids = [root];
+  for(let n = 2; n <= 8; n++) ids.push(root + '-#' + n);
+  const found = await Promise.all(ids.map(id => id === pkg.trackingId ? Promise.resolve(pkg) : getPackage(id).catch(() => null)));
+  const list = [];
+  found.forEach((p, i) => { if(p) list.push({p, num: i + 1}); });
+  if(list.length === 0) list.push({p: pkg, num: 1});
+  return list;
+}
+
 // Champ « Numéro du colis » du formulaire (juste au-dessus du téléphone)
 function initColisNumField(isEditing){
   const phoneEl = document.getElementById('pPhone');
@@ -1301,6 +1326,19 @@ function initColisNumField(isEditing){
     }
   }
   phoneEl.addEventListener('input', refresh);
+  const trackEl = document.getElementById('pTrack');
+  const tHint = document.getElementById('pTrackHint');
+  function refreshTrackHint(){
+    if(isEditing || !trackEl || !tHint) return;
+    const base = trackEl.value.replace(/\s+/g, '').toUpperCase();
+    if(!base){ tHint.textContent = ''; return; }
+    const raw = parseInt(numEl.value);
+    const r = resolveNewTracking(base, normalizePhone(phoneEl.value), raw >= 1 ? raw : null);
+    if(r.derived) tHint.textContent = '✅ Ce numéro existe déjà pour ce client : le colis sera enregistré sous ' + r.id;
+    else if(r.conflict) tHint.textContent = '⚠️ Ce numéro de suivi appartient à un autre client.';
+    else tHint.textContent = '';
+  }
+  [trackEl, phoneEl, numEl].forEach(el => { if(el) el.addEventListener('input', refreshTrackHint); });
   if(pendingNewColis){
     const pn = pendingNewColis;
     pendingNewColis = null;
@@ -2125,6 +2163,7 @@ async function renderOwnerPackages(){
       ${isEditing ? `<div class="editingBanner"><span>Modification de #${editingTrackingId}</span><button class="ghost" id="btnCancelEdit">Annuler</button></div>` : ''}
       <label>Numéro de suivi</label>
       <input id="pTrack" placeholder="Ex : STS-2026-001" ${isEditing ? 'disabled' : ''}>
+      <div id="pTrackHint" style="font-size:11.5px;color:var(--accent2);margin:-6px 0 12px;"></div>
       <label>Nom du client</label>
       <input id="pName" placeholder="Ex : Marie Dupont">
       <label>Numéro du colis de ce client <span style="color:var(--muted);font-weight:400;">(facultatif : 1, 2, 3...)</span></label>
@@ -2172,7 +2211,7 @@ async function renderOwnerPackages(){
 
   document.getElementById('btnSavePkg').onclick = async ()=>{
     if(!firebaseReady){ toast("Firebase non configuré"); return; }
-    const trackingId = isEditing ? editingTrackingId : document.getElementById('pTrack').value.replace(/\s+/g,'').toUpperCase();
+    let trackingId = isEditing ? editingTrackingId : document.getElementById('pTrack').value.replace(/\s+/g,'').toUpperCase();
     const name = document.getElementById('pName').value.trim();
     const phone = document.getElementById('pPhone').value.trim();
     const status = document.getElementById('pStatus').value;
@@ -2181,7 +2220,12 @@ async function renderOwnerPackages(){
     const destCommune = document.getElementById('pCommune') ? document.getElementById('pCommune').value : '';
     if(!trackingId || !phone || !name){ toast("Nom, numéro de suivi et téléphone requis"); return; }
     const colisNumRaw = parseInt((document.getElementById('pColisNum') || {}).value);
-    const colisNum = colisNumRaw >= 1 ? colisNumRaw : null;
+    let colisNum = colisNumRaw >= 1 ? colisNumRaw : null;
+    let derivedId = false;
+    if(!isEditing){
+      const r = resolveNewTracking(trackingId, normalizePhone(phone), colisNum);
+      if(r.derived){ trackingId = r.id; colisNum = r.colisNum; derivedId = true; }
+    }
     if(colisNum){
       const phoneN = normalizePhone(phone);
       const others = (adminPkgsCache || []).filter(p => p.phone === phoneN && p.trackingId !== trackingId);
@@ -2213,7 +2257,7 @@ async function renderOwnerPackages(){
       if(colisNum) pkg.colisNum = colisNum;
       await savePackage(pkg);
       if(statusChanged) sendStatusEmail(pkg);
-      toast(isEditing ? "Colis mis à jour" : "Colis enregistré");
+      toast(isEditing ? "Colis mis à jour" : (derivedId ? ("Colis enregistré sous " + trackingId) : "Colis enregistré"));
       editingTrackingId = null;
       renderAdmin();
     }catch(e){ toast("Erreur d'enregistrement"); }
@@ -2810,6 +2854,7 @@ async function renderAdmin(){
       ${isEditing ? `<div class="editingBanner"><span>Modification de #${editingTrackingId}</span><button class="ghost" id="btnCancelEdit">Annuler</button></div>` : ''}
       <label>Numéro de suivi</label>
       <input id="pTrack" placeholder="Ex : STS-2026-001" ${isEditing ? 'disabled' : ''}>
+      <div id="pTrackHint" style="font-size:11.5px;color:var(--accent2);margin:-6px 0 12px;"></div>
       <label>Nom du client</label>
       <input id="pName" placeholder="Ex : Marie Dupont">
       <label>Numéro du colis de ce client <span style="color:var(--muted);font-weight:400;">(facultatif : 1, 2, 3...)</span></label>
@@ -2866,7 +2911,7 @@ async function renderAdmin(){
 
   document.getElementById('btnSavePkg').onclick = async ()=>{
     if(!firebaseReady){ toast("Firebase non configuré"); return; }
-    const trackingId = isEditing ? editingTrackingId : document.getElementById('pTrack').value.replace(/\s+/g,'').toUpperCase();
+    let trackingId = isEditing ? editingTrackingId : document.getElementById('pTrack').value.replace(/\s+/g,'').toUpperCase();
     const name = document.getElementById('pName').value.trim();
     const phone = document.getElementById('pPhone').value.trim();
     const status = document.getElementById('pStatus').value;
@@ -2875,7 +2920,12 @@ async function renderAdmin(){
     const destCommune = document.getElementById('pCommune') ? document.getElementById('pCommune').value : '';
     if(!trackingId || !phone || !name){ toast("Nom, numéro de suivi et téléphone requis"); return; }
     const colisNumRaw = parseInt((document.getElementById('pColisNum') || {}).value);
-    const colisNum = colisNumRaw >= 1 ? colisNumRaw : null;
+    let colisNum = colisNumRaw >= 1 ? colisNumRaw : null;
+    let derivedId = false;
+    if(!isEditing){
+      const r = resolveNewTracking(trackingId, normalizePhone(phone), colisNum);
+      if(r.derived){ trackingId = r.id; colisNum = r.colisNum; derivedId = true; }
+    }
     if(colisNum){
       const phoneN = normalizePhone(phone);
       const others = (adminPkgsCache || []).filter(p => p.phone === phoneN && p.trackingId !== trackingId);
@@ -2907,7 +2957,7 @@ async function renderAdmin(){
       if(colisNum) pkg.colisNum = colisNum;
       await savePackage(pkg);
       if(statusChanged) sendStatusEmail(pkg);
-      toast(isEditing ? "Colis mis à jour" : "Colis enregistré");
+      toast(isEditing ? "Colis mis à jour" : (derivedId ? ("Colis enregistré sous " + trackingId) : "Colis enregistré"));
       editingTrackingId = null;
       renderAdmin();
     }catch(e){ toast("Erreur d'enregistrement"); }
