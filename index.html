@@ -958,6 +958,7 @@ function pkgCardHTML(p, label){
         <div class="tid">#${p.trackingId}</div>
         <div class="desc">${p.name||''}</div>
         ${(p.destCommune||p.destDepartment) ? `<div class="sub" style="font-size:11px;margin-top:2px;">📍 ${[p.destCommune,p.destDepartment,p.destCountry].filter(Boolean).join(', ')}</div>` : ''}
+        ${deliveryLine(p) ? `<div class="sub" style="font-size:12px;margin-top:4px;color:var(--accent2);font-weight:600;">📅 Livraison prévue : ${deliveryLine(p)}</div>` : ''}
       </div>
       <span class="badge ${p.status}">${STATUS_LABEL[p.status]||p.status}</span>
     </div>
@@ -1305,6 +1306,46 @@ async function getTrackingFamily(pkg){
   return list;
 }
 
+// ----- Livraison prévue : « Lundi 5 octobre 2026 (4 jours) » -----
+let editingDeliveryStored = null;
+function dateFromDays(n){
+  const d = new Date();
+  d.setDate(d.getDate() + n);
+  return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+}
+function formatDeliveryText(dateStr, days){
+  const parts = String(dateStr).split('-').map(Number);
+  let t = new Date(parts[0], parts[1] - 1, parts[2]).toLocaleDateString('fr-FR', {weekday: 'long', day: 'numeric', month: 'long', year: 'numeric'});
+  t = t.charAt(0).toUpperCase() + t.slice(1);
+  return t + ' (' + days + ' jour' + (days > 1 ? 's' : '') + ')';
+}
+function deliveryLine(p){
+  return (p && p.deliveryDate && p.deliveryDays) ? formatDeliveryText(p.deliveryDate, p.deliveryDays) : '';
+}
+function updateDeliveryPreview(){
+  const inp = document.getElementById('pDeliveryDays');
+  const hint = document.getElementById('pDeliveryPreview');
+  if(!inp || !hint) return;
+  const n = parseInt(inp.value);
+  if(!(n >= 1 && n <= 365)){ hint.textContent = ''; return; }
+  const stored = editingDeliveryStored;
+  const date = (stored && stored.days === n && stored.date) ? stored.date : dateFromDays(n);
+  hint.textContent = '📅 Livraison prévue : ' + formatDeliveryText(date, n);
+}
+
+// ----- Changer le statut d'un colis directement depuis la liste -----
+async function changePackageStatus(trackingId, newStatus){
+  const fresh = await getPackage(trackingId);
+  if(!fresh) throw new Error('Colis introuvable');
+  if(fresh.status === newStatus) return false;
+  const now = new Date().toISOString();
+  const history = (fresh.history || []).slice();
+  history.push({status: newStatus, date: now});
+  await db.collection('packages').doc(trackingId).set({status: newStatus, updatedAt: now, history: history}, {merge: true});
+  sendStatusEmail(Object.assign({}, fresh, {status: newStatus, updatedAt: now, history: history}));
+  return true;
+}
+
 // Champ « Numéro du colis » du formulaire (juste au-dessus du téléphone)
 function initColisNumField(isEditing){
   const phoneEl = document.getElementById('pPhone');
@@ -1327,6 +1368,9 @@ function initColisNumField(isEditing){
     }
   }
   phoneEl.addEventListener('input', refresh);
+  const delEl = document.getElementById('pDeliveryDays');
+  if(delEl) delEl.addEventListener('input', updateDeliveryPreview);
+  editingDeliveryStored = null;
   const trackEl = document.getElementById('pTrack');
   const tHint = document.getElementById('pTrackHint');
   function refreshTrackHint(){
@@ -1416,14 +1460,18 @@ async function renderAdminPkgList(pkgs){
     <div class="pkgAdmin" style="flex-direction:column;align-items:stretch;">
       <div style="display:flex;justify-content:space-between;align-items:center;">
         <div class="info" data-edit="${escHtml(p.trackingId)}" style="cursor:pointer;flex:1;">
-          <div><b>#${escHtml(p.trackingId)}</b> — ${STATUS_LABEL[p.status] || p.status}</div>
-          ${numBadge ? `<div style="margin:5px 0 3px;">${numBadge}</div>` : ''}
+          <div><b>#${escHtml(p.trackingId)}</b></div>
+          <div style="margin:5px 0 3px;display:flex;flex-wrap:wrap;gap:6px;align-items:center;">${numBadge}<select class="statusSelect" data-status-for="${escHtml(p.trackingId)}" data-current="${escHtml(p.status)}" style="background:rgba(255,122,26,0.12);border:1px solid var(--accent);color:var(--accent2);border-radius:20px;padding:4px 10px;font-size:12px;font-weight:700;width:auto;margin:0;">${STATUSES.map(st => `<option value="${st.key}" ${st.key === p.status ? 'selected' : ''}>${st.label}</option>`).join('')}</select></div>
           <div class="name">${escHtml(p.name)} · ${escHtml(p.phone)} <button type="button" class="waMini" data-send-wa="${escHtml(p.trackingId)}" style="margin-left:6px;background:rgba(37,211,102,0.12);border:1px solid rgba(37,211,102,0.5);color:#25D366;border-radius:8px;padding:3px 9px;font-size:11px;font-weight:700;cursor:pointer;">💬 WhatsApp</button></div>
           ${(p.destCommune || p.destDepartment) ? `<div class="sub" style="font-size:11px;">📍 ${[p.destCommune, p.destDepartment, p.destCountry].filter(Boolean).map(escHtml).join(', ')}</div>` : ''}
+          ${deliveryLine(p) ? `<div class="sub" style="font-size:11.5px;color:var(--accent2);">📅 Livraison prévue : ${deliveryLine(p)}</div>` : ''}
         </div>
         <button class="miniBtn" data-id="${escHtml(p.trackingId)}">Supprimer</button>
       </div>
-      <div style="margin-top:8px;"><button type="button" class="newMini" data-new-for="${escHtml(p.trackingId)}" style="background:rgba(255,122,26,0.12);border:1px solid rgba(255,122,26,0.5);color:var(--accent2);border-radius:8px;padding:5px 11px;font-size:11.5px;font-weight:700;cursor:pointer;">➕ Nouveau colis pour ce client</button></div>
+      <div style="margin-top:8px;display:flex;flex-wrap:wrap;gap:8px;">
+        <button type="button" class="editMini" data-edit-btn="${escHtml(p.trackingId)}" style="background:rgba(96,165,250,0.12);border:1px solid rgba(96,165,250,0.5);color:var(--info);border-radius:8px;padding:5px 11px;font-size:11.5px;font-weight:700;cursor:pointer;">✏️ Modifier</button>
+        <button type="button" class="newMini" data-new-for="${escHtml(p.trackingId)}" style="background:rgba(255,122,26,0.12);border:1px solid rgba(255,122,26,0.5);color:var(--accent2);border-radius:8px;padding:5px 11px;font-size:11.5px;font-weight:700;cursor:pointer;">➕ Nouveau colis pour ce client</button>
+      </div>
       ${hist ? `<div style="margin-top:8px;border-top:1px solid var(--border);padding-top:8px;">${hist}</div>` : ''}
       <div style="margin-top:6px;font-size:11px;color:var(--muted);">${lastSeen}</div>
       ${pickupConfirm}
@@ -1484,6 +1532,13 @@ async function renderAdminPkgList(pkgs){
       renderAdmin();
     };
   });
+  list.querySelectorAll('[data-edit-btn]').forEach(b => {
+    b.onclick = (e) => {
+      e.stopPropagation();
+      editingTrackingId = b.dataset.editBtn;
+      renderAdmin();
+    };
+  });
   list.querySelectorAll('[data-new-for]').forEach(b => {
     b.onclick = (e) => {
       e.stopPropagation();
@@ -1492,6 +1547,29 @@ async function renderAdminPkgList(pkgs){
       pendingNewColis = {name: p.name, phone: p.phone, destCountry: p.destCountry, destDepartment: p.destDepartment, destCommune: p.destCommune};
       editingTrackingId = null;
       renderAdmin();
+    };
+  });
+  list.querySelectorAll('select[data-status-for]').forEach(sel => {
+    sel.onclick = (e) => e.stopPropagation();
+    sel.onchange = async (e) => {
+      e.stopPropagation();
+      const id = sel.dataset.statusFor;
+      const newStatus = sel.value;
+      const label = STATUS_LABEL[newStatus] || newStatus;
+      if(!confirm('Changer le statut de #' + id + ' en « ' + label + ' » ?\n\nLe client sera prévenu par email s\'il a laissé son adresse.')){
+        sel.value = sel.dataset.current;
+        return;
+      }
+      sel.disabled = true;
+      try{
+        await changePackageStatus(id, newStatus);
+        toast('✅ Statut mis à jour : ' + label);
+        renderAdmin();
+      }catch(err){
+        toast('Erreur, réessayez');
+        sel.disabled = false;
+        sel.value = sel.dataset.current;
+      }
     };
   });
   list.querySelectorAll('[data-send-wa]').forEach(b => {
@@ -2222,6 +2300,9 @@ async function renderOwnerPackages(){
       ${buildLocationSelectsHTML()}
       <label>Statut</label>
       <select id="pStatus">${optionsHtml}</select>
+      <label>Livraison prévue dans (jours) <span style="color:var(--muted);font-weight:400;">(facultatif)</span></label>
+      <input id="pDeliveryDays" type="number" min="1" max="365" inputmode="numeric" placeholder="Ex : 4">
+      <div id="pDeliveryPreview" style="font-size:12px;color:var(--accent2);margin:-6px 0 12px;"></div>
       <button class="primary" id="btnSavePkg">${isEditing ? 'Mettre à jour le colis' : 'Enregistrer le colis'}</button>
     </div>
     <div class="card">
@@ -2251,6 +2332,11 @@ async function renderOwnerPackages(){
         document.getElementById('pPhone').value = existing.phone || '';
         document.getElementById('pStatus').value = existing.status || 'preparation';
         if(document.getElementById('pColisNum')) document.getElementById('pColisNum').value = existing.colisNum || '';
+        if(document.getElementById('pDeliveryDays')){
+          document.getElementById('pDeliveryDays').value = existing.deliveryDays || '';
+          editingDeliveryStored = existing.deliveryDays ? {days: existing.deliveryDays, date: existing.deliveryDate} : null;
+          updateDeliveryPreview();
+        }
         initLocationFields(existing.destCountry||'', existing.destDepartment||'', existing.destCommune||'');
       }
     }catch(e){}
@@ -2270,6 +2356,8 @@ async function renderOwnerPackages(){
     const colisNumRaw = parseInt((document.getElementById('pColisNum') || {}).value);
     let colisNum = colisNumRaw >= 1 ? colisNumRaw : null;
     let derivedId = false;
+    const deliveryRaw = parseInt((document.getElementById('pDeliveryDays') || {}).value);
+    const deliveryDays = (deliveryRaw >= 1 && deliveryRaw <= 365) ? deliveryRaw : null;
     if(!isEditing){
       const r = resolveNewTracking(trackingId, normalizePhone(phone), colisNum);
       if(r.derived){ trackingId = r.id; colisNum = r.colisNum; derivedId = true; }
@@ -2283,16 +2371,22 @@ async function renderOwnerPackages(){
     try{
       if(!isEditing){
         const dejaPris = await getPackage(trackingId);
-        if(dejaPris){ toast("Ce numéro de suivi existe déjà. Choisissez-en un autre."); return; }
+        if(dejaPris){
+          if(dejaPris.phone === normalizePhone(phone)) toast("Ce colis existe déjà. Pour changer son statut, utilise le menu de statut sur le colis dans « Tous les colis ».");
+          else toast("Ce numéro de suivi existe déjà. Choisissez-en un autre.");
+          return;
+        }
       }
       let history = [];
       let existingPickedUpAt = null;
       let existingHidden = null;
+      let existingDelivery = null;
       if(isEditing){
         const existing = await getPackage(trackingId);
         history = (existing && existing.history) ? existing.history : [];
         existingPickedUpAt = (existing && existing.pickedUpAt) ? existing.pickedUpAt : null;
         existingHidden = (existing && existing.hiddenByClient) ? (existing.hiddenByClientAt || true) : null;
+        existingDelivery = (existing && existing.deliveryDays) ? {days: existing.deliveryDays, date: existing.deliveryDate} : null;
       }
       const lastStatus = history.length ? history[history.length-1].status : null;
       const statusChanged = status !== lastStatus;
@@ -2303,6 +2397,10 @@ async function renderOwnerPackages(){
       if(existingPickedUpAt) pkg.pickedUpAt = existingPickedUpAt;
       if(existingHidden){ pkg.hiddenByClient = true; pkg.hiddenByClientAt = (existingHidden === true) ? null : existingHidden; }
       if(colisNum) pkg.colisNum = colisNum;
+      if(deliveryDays){
+        pkg.deliveryDays = deliveryDays;
+        pkg.deliveryDate = (existingDelivery && existingDelivery.days === deliveryDays && existingDelivery.date) ? existingDelivery.date : dateFromDays(deliveryDays);
+      }
       await savePackage(pkg);
       openClientGroups.add(pkg.phone);
       if(statusChanged) sendStatusEmail(pkg);
@@ -2914,6 +3012,9 @@ async function renderAdmin(){
       ${buildLocationSelectsHTML()}
       <label>Statut</label>
       <select id="pStatus">${optionsHtml}</select>
+      <label>Livraison prévue dans (jours) <span style="color:var(--muted);font-weight:400;">(facultatif)</span></label>
+      <input id="pDeliveryDays" type="number" min="1" max="365" inputmode="numeric" placeholder="Ex : 4">
+      <div id="pDeliveryPreview" style="font-size:12px;color:var(--accent2);margin:-6px 0 12px;"></div>
       <button class="primary" id="btnSavePkg">${isEditing ? 'Mettre à jour le colis' : 'Enregistrer le colis'}</button>
     </div>
     <div id="relanceCardWrap"></div>
@@ -2952,6 +3053,11 @@ async function renderAdmin(){
         document.getElementById('pPhone').value = existing.phone || '';
         document.getElementById('pStatus').value = existing.status || 'preparation';
         if(document.getElementById('pColisNum')) document.getElementById('pColisNum').value = existing.colisNum || '';
+        if(document.getElementById('pDeliveryDays')){
+          document.getElementById('pDeliveryDays').value = existing.deliveryDays || '';
+          editingDeliveryStored = existing.deliveryDays ? {days: existing.deliveryDays, date: existing.deliveryDate} : null;
+          updateDeliveryPreview();
+        }
         initLocationFields(existing.destCountry||'', existing.destDepartment||'', existing.destCommune||'');
       }
     }catch(e){}
@@ -2971,6 +3077,8 @@ async function renderAdmin(){
     const colisNumRaw = parseInt((document.getElementById('pColisNum') || {}).value);
     let colisNum = colisNumRaw >= 1 ? colisNumRaw : null;
     let derivedId = false;
+    const deliveryRaw = parseInt((document.getElementById('pDeliveryDays') || {}).value);
+    const deliveryDays = (deliveryRaw >= 1 && deliveryRaw <= 365) ? deliveryRaw : null;
     if(!isEditing){
       const r = resolveNewTracking(trackingId, normalizePhone(phone), colisNum);
       if(r.derived){ trackingId = r.id; colisNum = r.colisNum; derivedId = true; }
@@ -2984,16 +3092,22 @@ async function renderAdmin(){
     try{
       if(!isEditing){
         const dejaPris = await getPackage(trackingId);
-        if(dejaPris){ toast("Ce numéro de suivi existe déjà. Choisissez-en un autre."); return; }
+        if(dejaPris){
+          if(dejaPris.phone === normalizePhone(phone)) toast("Ce colis existe déjà. Pour changer son statut, utilise le menu de statut sur le colis dans « Tous les colis ».");
+          else toast("Ce numéro de suivi existe déjà. Choisissez-en un autre.");
+          return;
+        }
       }
       let history = [];
       let existingPickedUpAt = null;
       let existingHidden = null;
+      let existingDelivery = null;
       if(isEditing){
         const existing = await getPackage(trackingId);
         history = (existing && existing.history) ? existing.history : [];
         existingPickedUpAt = (existing && existing.pickedUpAt) ? existing.pickedUpAt : null;
         existingHidden = (existing && existing.hiddenByClient) ? (existing.hiddenByClientAt || true) : null;
+        existingDelivery = (existing && existing.deliveryDays) ? {days: existing.deliveryDays, date: existing.deliveryDate} : null;
       }
       const lastStatus = history.length ? history[history.length-1].status : null;
       const statusChanged = status !== lastStatus;
@@ -3004,6 +3118,10 @@ async function renderAdmin(){
       if(existingPickedUpAt) pkg.pickedUpAt = existingPickedUpAt;
       if(existingHidden){ pkg.hiddenByClient = true; pkg.hiddenByClientAt = (existingHidden === true) ? null : existingHidden; }
       if(colisNum) pkg.colisNum = colisNum;
+      if(deliveryDays){
+        pkg.deliveryDays = deliveryDays;
+        pkg.deliveryDate = (existingDelivery && existingDelivery.days === deliveryDays && existingDelivery.date) ? existingDelivery.date : dateFromDays(deliveryDays);
+      }
       await savePackage(pkg);
       openClientGroups.add(pkg.phone);
       if(statusChanged) sendStatusEmail(pkg);
