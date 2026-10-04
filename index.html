@@ -1241,6 +1241,7 @@ function pkgCreatedAt(p){
   return new Date((h && h.date) || p.updatedAt || 0).getTime();
 }
 let adminPkgsCache = [];
+const openClientGroups = new Set();
 let pendingNewColis = null;
 
 // Numéro de chaque colis d'un même client : le numéro saisi à la main est prioritaire,
@@ -1408,13 +1409,10 @@ async function renderAdminPkgList(pkgs){
     const hiddenNote = p.hiddenByClient
       ? `<div style="margin-top:4px;font-size:11px;color:var(--danger);">🗑️ Supprimé de la liste par le client${p.hiddenByClientAt ? ' — ' + fmtDate(p.hiddenByClientAt) : ''}</div>`
       : '';
-    const header = (it.first && it.total >= 2)
-      ? `<div style="margin:14px 0 8px;font-size:12.5px;font-weight:700;color:var(--accent2);">👤 ${escHtml(p.name)} · ${escHtml(p.phone)} — ${it.total} colis</div>`
-      : '';
     const numBadge = numbered
       ? `<span style="display:inline-block;background:rgba(255,122,26,0.15);color:var(--accent2);border:1px solid var(--accent);border-radius:20px;padding:1px 9px;font-size:10.5px;font-weight:800;margin-right:6px;">${label}</span>`
       : '';
-    return header + `
+    return `
     <div class="pkgAdmin" style="flex-direction:column;align-items:stretch;">
       <div style="display:flex;justify-content:space-between;align-items:center;">
         <div class="info" data-edit="${escHtml(p.trackingId)}" style="cursor:pointer;flex:1;">
@@ -1432,7 +1430,45 @@ async function renderAdminPkgList(pkgs){
       ${hiddenNote}
     </div>`;
   }));
-  list.innerHTML = cards.join('');
+  // une carte pliante par client
+  const groupBlocks = [];
+  let cur = null;
+  items.forEach((it, idx) => {
+    if(it.first){ cur = {phone: it.p.phone, name: it.p.name, items: [], cards: []}; groupBlocks.push(cur); }
+    cur.items.push(it);
+    cur.cards.push(cards[idx]);
+  });
+  list.innerHTML = groupBlocks.map(g => {
+    const open = openClientGroups.has(g.phone);
+    const chips = g.items.slice(0, 4).map(it =>
+      `<span style="background:rgba(255,255,255,0.06);border:1px solid var(--border);border-radius:20px;padding:2px 8px;font-size:10.5px;color:var(--muted);">${(g.items.length >= 2 || it.manual) ? '#' + it.num + ' · ' : ''}${STATUS_LABEL[it.p.status] || it.p.status}</span>`
+    ).join('') + (g.items.length > 4 ? `<span style="font-size:10.5px;color:var(--muted);align-self:center;">+${g.items.length - 4}</span>` : '');
+    const anyHidden = g.items.some(it => it.p.hiddenByClient);
+    return `
+    <div class="clientGroup" style="background:var(--panel);border:1px solid var(--border);border-radius:14px;margin-bottom:12px;overflow:hidden;">
+      <div class="clientGroupHead" data-toggle-group="${escHtml(g.phone)}" style="display:flex;align-items:center;gap:10px;padding:13px 14px;cursor:pointer;">
+        <span class="grpArrow" style="display:inline-block;font-size:14px;color:var(--accent2);transition:transform 0.2s;transform:rotate(${open ? 90 : 0}deg);">▶</span>
+        <div style="flex:1;min-width:0;">
+          <div style="font-weight:700;font-size:14px;">👤 ${escHtml(g.name)}${anyHidden ? ' 🗑️' : ''}</div>
+          <div style="color:var(--muted);font-size:11.5px;">${escHtml(g.phone)}</div>
+          <div style="display:flex;flex-wrap:wrap;gap:5px;margin-top:6px;">${chips}</div>
+        </div>
+        <span style="background:rgba(255,122,26,0.15);color:var(--accent2);border:1px solid var(--accent);border-radius:20px;padding:3px 10px;font-size:11px;font-weight:800;white-space:nowrap;">${g.items.length} colis</span>
+      </div>
+      <div class="clientGroupBody" style="display:${open ? 'block' : 'none'};padding:12px 12px 2px;border-top:1px solid var(--border);">${g.cards.join('')}</div>
+    </div>`;
+  }).join('');
+  list.querySelectorAll('[data-toggle-group]').forEach(h => {
+    h.onclick = () => {
+      const phone = h.dataset.toggleGroup;
+      const body = h.parentElement.querySelector('.clientGroupBody');
+      const arrow = h.querySelector('.grpArrow');
+      const willOpen = body.style.display === 'none';
+      body.style.display = willOpen ? 'block' : 'none';
+      arrow.style.transform = 'rotate(' + (willOpen ? 90 : 0) + 'deg)';
+      if(willOpen) openClientGroups.add(phone); else openClientGroups.delete(phone);
+    };
+  });
 
   list.querySelectorAll('.miniBtn').forEach(b => {
     b.onclick = async (e) => {
@@ -1474,7 +1510,19 @@ function renderDeletedByClientCard(pkgs){
   const wrap = document.getElementById('deletedByClientWrap');
   if(!wrap) return;
   const hidden = (pkgs || []).filter(p => p.hiddenByClient);
-  if(hidden.length === 0){ wrap.innerHTML = ''; return; }
+  if(hidden.length === 0){
+    wrap.innerHTML = `
+      <div class="card" style="padding:0;overflow:hidden;">
+        <div style="background:linear-gradient(135deg,#FACC15,#3B82F6);padding:14px 16px;display:flex;align-items:center;gap:10px;">
+          <span style="font-size:22px;">🗑️</span>
+          <div style="color:#0B1120;font-weight:800;font-size:16px;">Colis supprimés par les clients</div>
+        </div>
+        <div style="padding:14px 16px;">
+          <p class="sub" style="margin:0;">✅ Aucun client n'a supprimé sa liste pour le moment. Quand un client le fera, son nom et ses colis apparaîtront ici.</p>
+        </div>
+      </div>`;
+    return;
+  }
   const nums = packageNumbers(pkgs);
   const byPhone = {};
   hidden.forEach(p => { (byPhone[p.phone] = byPhone[p.phone] || []).push(p); });
@@ -1484,16 +1532,16 @@ function renderDeletedByClientCard(pkgs){
 
   wrap.innerHTML = `
     <div class="card" style="padding:0;overflow:hidden;">
-      <div style="background:linear-gradient(135deg,#EF4444,#7C3AED);padding:14px 16px;display:flex;align-items:center;gap:10px;">
+      <div style="background:linear-gradient(135deg,#FACC15,#3B82F6);padding:14px 16px;display:flex;align-items:center;gap:10px;">
         <span style="font-size:22px;">🗑️</span>
-        <div style="color:#fff;font-weight:700;font-size:16px;">Colis supprimés par les clients</div>
+        <div style="color:#0B1120;font-weight:800;font-size:16px;">Colis supprimés par les clients</div>
       </div>
       <div style="padding:14px 16px;">
         <p class="sub" style="margin:0 0 12px;">${groups.length} client${groups.length > 1 ? 's ont' : ' a'} supprimé sa liste. Les colis restent dans ton historique.</p>
         ${groups.map((arr, gi) => {
           const last = lastDel(arr);
           return `
-          <div style="background:rgba(239,93,93,0.10);border-left:4px solid #EF5D5D;border-radius:10px;padding:12px;margin-bottom:10px;">
+          <div style="background:rgba(59,130,246,0.10);border-left:4px solid #FACC15;border-radius:10px;padding:12px;margin-bottom:10px;">
             <div style="font-weight:700;font-size:14px;">${escHtml(arr[0].name)} · ${escHtml(arr[0].phone)}</div>
             <div class="sub" style="margin:2px 0 8px;font-size:11.5px;">A supprimé sa liste le ${last ? fmtDate(new Date(last).toISOString()) : '—'}</div>
             ${arr.map(p => {
@@ -2256,6 +2304,7 @@ async function renderOwnerPackages(){
       if(existingHidden){ pkg.hiddenByClient = true; pkg.hiddenByClientAt = (existingHidden === true) ? null : existingHidden; }
       if(colisNum) pkg.colisNum = colisNum;
       await savePackage(pkg);
+      openClientGroups.add(pkg.phone);
       if(statusChanged) sendStatusEmail(pkg);
       toast(isEditing ? "Colis mis à jour" : (derivedId ? ("Colis enregistré sous " + trackingId) : "Colis enregistré"));
       editingTrackingId = null;
@@ -2956,6 +3005,7 @@ async function renderAdmin(){
       if(existingHidden){ pkg.hiddenByClient = true; pkg.hiddenByClientAt = (existingHidden === true) ? null : existingHidden; }
       if(colisNum) pkg.colisNum = colisNum;
       await savePackage(pkg);
+      openClientGroups.add(pkg.phone);
       if(statusChanged) sendStatusEmail(pkg);
       toast(isEditing ? "Colis mis à jour" : (derivedId ? ("Colis enregistré sous " + trackingId) : "Colis enregistré"));
       editingTrackingId = null;
