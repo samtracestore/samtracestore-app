@@ -904,6 +904,10 @@ async function savePackage(pkg){
 
 async function deletePackage(trackingId){
   await db.collection('packages').doc(trackingId).delete();
+  try{
+    const snap = await db.collection('packagePhotos').where('trackingId', '==', trackingId).get();
+    await Promise.all(snap.docs.map(d => db.collection('packagePhotos').doc(d.id).delete()));
+  }catch(e){ console.warn('Suppression des photos du colis', e); }
 }
 
 let audioCtx = null;
@@ -963,6 +967,7 @@ function pkgCardHTML(p, label){
       <span class="badge ${p.status}">${STATUS_LABEL[p.status]||p.status}</span>
     </div>
     ${hist ? `<div style="margin-top:8px;border-top:1px solid var(--border);padding-top:8px;">${hist}</div>` : ''}
+    ${p.photoCount > 0 ? `<div class="photosWrap" data-photos-wrap-for="${escHtml(p.trackingId)}" style="margin-top:10px;"><button type="button" data-photos-for="${escHtml(p.trackingId)}" style="width:100%;background:rgba(255,122,26,0.12);border:1px solid var(--accent);color:var(--accent2);border-radius:10px;padding:10px;font-size:13px;font-weight:700;cursor:pointer;">📷 Voir les photos de mon colis (${p.photoCount})</button><div class="photosBox" style="display:none;"></div></div>` : ''}
     ${pickupBtn}
   </div>`;
 }
@@ -1242,6 +1247,7 @@ function pkgCreatedAt(p){
   return new Date((h && h.date) || p.updatedAt || 0).getTime();
 }
 let adminPkgsCache = [];
+let pendingScrollToForm = false;
 const openClientGroups = new Set();
 let pendingNewColis = null;
 
@@ -1346,6 +1352,155 @@ async function changePackageStatus(trackingId, newStatus){
   return true;
 }
 
+// ----- Photos des colis -----
+const MAX_PHOTOS = 6;
+let photoUploadTarget = null;
+
+function compressPhoto(file){
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const img = new Image();
+      img.onload = () => {
+        const maxSize = 1100;
+        let w = img.width, h = img.height;
+        if(w > h){ if(w > maxSize){ h = h * (maxSize / w); w = maxSize; } }
+        else { if(h > maxSize){ w = w * (maxSize / h); h = maxSize; } }
+        const canvas = document.createElement('canvas');
+        canvas.width = w; canvas.height = h;
+        canvas.getContext('2d').drawImage(img, 0, 0, w, h);
+        let out = canvas.toDataURL('image/jpeg', 0.7);
+        if(out.length > 900000) out = canvas.toDataURL('image/jpeg', 0.5);
+        if(out.length > 950000) reject(new Error('Photo trop lourde'));
+        else resolve(out);
+      };
+      img.onerror = reject;
+      img.src = e.target.result;
+    };
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+}
+async function getPackagePhotos(trackingId){
+  const snap = await db.collection('packagePhotos').where('trackingId', '==', trackingId).get();
+  const list = [];
+  snap.docs.forEach(d => { const x = d.data(); list.push({id: d.id, dataUrl: x.dataUrl, createdAt: x.createdAt || ''}); });
+  list.sort((a, b) => String(a.createdAt).localeCompare(String(b.createdAt)));
+  return list;
+}
+function pickPhotos(trackingId){
+  photoUploadTarget = trackingId;
+  let inp = document.getElementById('photoUploadInput');
+  if(!inp){
+    inp = document.createElement('input');
+    inp.type = 'file';
+    inp.accept = 'image/*';
+    inp.multiple = true;
+    inp.id = 'photoUploadInput';
+    inp.style.display = 'none';
+    document.body.appendChild(inp);
+    inp.onchange = async () => {
+      const files = Array.from(inp.files || []);
+      inp.value = '';
+      if(files.length && photoUploadTarget) await uploadPackagePhotos(photoUploadTarget, files);
+    };
+  }
+  inp.click();
+}
+async function uploadPackagePhotos(trackingId, files){
+  const fresh = await getPackage(trackingId);
+  let count = (fresh && fresh.photoCount) || 0;
+  let added = 0;
+  for(const f of files){
+    if(count >= MAX_PHOTOS){ toast('Maximum ' + MAX_PHOTOS + ' photos par colis'); break; }
+    if(!/^image\//.test(f.type)) continue;
+    try{
+      toast('📷 Envoi de la photo...');
+      const dataUrl = await compressPhoto(f);
+      await db.collection('packagePhotos').add({trackingId: trackingId, dataUrl: dataUrl, createdAt: new Date().toISOString()});
+      count++; added++;
+      await db.collection('packages').doc(trackingId).set({photoCount: count, photosUpdatedAt: new Date().toISOString()}, {merge: true});
+    }catch(err){
+      console.warn('Photo', err);
+      toast("Impossible d'enregistrer la photo (règles Firestore ou photo trop lourde)");
+      break;
+    }
+  }
+  if(added){
+    toast('✅ ' + added + ' photo' + (added > 1 ? 's' : '') + ' ajoutée' + (added > 1 ? 's' : ''));
+    renderAdmin();
+  }
+}
+async function renderPhotosBox(box, trackingId, isAdmin){
+  box.style.cssText = 'display:block;margin-top:8px;background:var(--panel2);border:1px solid var(--border);border-radius:12px;padding:10px;';
+  box.textContent = 'Chargement des photos...';
+  let photos = [];
+  try{ photos = await getPackagePhotos(trackingId); }
+  catch(e){ box.textContent = 'Impossible de charger les photos.'; return; }
+  box.textContent = '';
+  if(photos.length === 0){ box.textContent = 'Aucune photo pour ce colis.'; return; }
+  const grid = document.createElement('div');
+  grid.style.cssText = 'display:grid;grid-template-columns:repeat(3,1fr);gap:8px;';
+  photos.forEach(ph => {
+    const cell = document.createElement('div');
+    cell.style.cssText = 'position:relative;';
+    const img = document.createElement('img');
+    img.src = ph.dataUrl;
+    img.dataset.zoom = ph.dataUrl;
+    img.alt = 'Photo du colis';
+    img.style.cssText = 'width:100%;aspect-ratio:1/1;object-fit:cover;border-radius:10px;cursor:zoom-in;display:block;';
+    cell.appendChild(img);
+    if(isAdmin){
+      const del = document.createElement('button');
+      del.type = 'button';
+      del.textContent = '✕';
+      del.dataset.photoDel = ph.id;
+      del.style.cssText = 'position:absolute;top:4px;right:4px;width:24px;height:24px;border-radius:50%;border:none;background:rgba(0,0,0,0.65);color:#fff;font-size:12px;cursor:pointer;';
+      cell.appendChild(del);
+    }
+    grid.appendChild(cell);
+  });
+  box.appendChild(grid);
+  const hint = document.createElement('div');
+  hint.style.cssText = 'font-size:11px;color:var(--muted);margin-top:8px;';
+  hint.textContent = 'Appuie sur une photo pour l\'agrandir.';
+  box.appendChild(hint);
+}
+async function markPhotosViewed(trackingId){
+  try{ await db.collection('packages').doc(trackingId).set({photosViewedAt: new Date().toISOString()}, {merge: true}); }
+  catch(e){ console.warn('Photos vues', e); }
+}
+document.addEventListener('click', async (e) => {
+  const openBtn = e.target.closest('[data-photos-for]');
+  if(openBtn){
+    e.stopPropagation();
+    const id = openBtn.dataset.photosFor;
+    const box = openBtn.closest('.photosWrap').querySelector('.photosBox');
+    if(box.dataset.open === '1'){ box.style.display = 'none'; box.dataset.open = '0'; return; }
+    box.dataset.open = '1';
+    const isAdmin = (mode === 'admin' && !!adminSession);
+    await renderPhotosBox(box, id, isAdmin);
+    if(!isAdmin) markPhotosViewed(id);
+    return;
+  }
+  const addBtn = e.target.closest('[data-photo-add]');
+  if(addBtn){ e.stopPropagation(); pickPhotos(addBtn.dataset.photoAdd); return; }
+  const delBtn = e.target.closest('[data-photo-del]');
+  if(delBtn){
+    e.stopPropagation();
+    if(!confirm('Supprimer cette photo ?')) return;
+    const box = delBtn.closest('.photosBox');
+    const id = box.closest('.photosWrap').dataset.photosWrapFor;
+    try{
+      await db.collection('packagePhotos').doc(delBtn.dataset.photoDel).delete();
+      const left = await getPackagePhotos(id);
+      await db.collection('packages').doc(id).set({photoCount: left.length}, {merge: true});
+      toast('Photo supprimée');
+      renderAdmin();
+    }catch(err){ toast('Erreur, réessayez'); }
+  }
+});
+
 // Champ « Numéro du colis » du formulaire (juste au-dessus du téléphone)
 function initColisNumField(isEditing){
   const phoneEl = document.getElementById('pPhone');
@@ -1368,6 +1523,17 @@ function initColisNumField(isEditing){
     }
   }
   phoneEl.addEventListener('input', refresh);
+  if(pendingScrollToForm){
+    pendingScrollToForm = false;
+    setTimeout(() => {
+      const t = document.getElementById('pTrack');
+      if(t){
+        const card = t.closest('.card') || t;
+        window.scrollTo({top: Math.max(0, card.getBoundingClientRect().top + window.scrollY - 150), behavior: 'smooth'});
+      }
+      if(isEditing && editingTrackingId) toast('✏️ Modification de #' + editingTrackingId);
+    }, 250);
+  }
   const delEl = document.getElementById('pDeliveryDays');
   if(delEl) delEl.addEventListener('input', updateDeliveryPreview);
   editingDeliveryStored = null;
@@ -1450,6 +1616,13 @@ async function renderAdminPkgList(pkgs){
     const pickupConfirm = p.pickedUpAt
       ? `<div style="margin-top:4px;font-size:11px;color:var(--ok);">✅ Récupération confirmée par le client — ${new Date(p.pickedUpAt).toLocaleDateString('fr-FR',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'})}</div>`
       : '';
+    let photoSeen = '';
+    if(p.photoCount > 0){
+      const seen = p.photosViewedAt && (!p.photosUpdatedAt || p.photosViewedAt >= p.photosUpdatedAt);
+      photoSeen = seen
+        ? `<div style="margin-top:4px;font-size:11px;color:var(--ok);">👁️ Photos vues par le client — ${fmtDate(p.photosViewedAt)}</div>`
+        : `<div style="margin-top:4px;font-size:11px;color:var(--warn);">⏳ Photos pas encore vues par le client</div>`;
+    }
     const hiddenNote = p.hiddenByClient
       ? `<div style="margin-top:4px;font-size:11px;color:var(--danger);">🗑️ Supprimé de la liste par le client${p.hiddenByClientAt ? ' — ' + fmtDate(p.hiddenByClientAt) : ''}</div>`
       : '';
@@ -1458,20 +1631,25 @@ async function renderAdminPkgList(pkgs){
       : '';
     return `
     <div class="pkgAdmin" style="flex-direction:column;align-items:stretch;">
-      <div style="display:flex;justify-content:space-between;align-items:center;">
-        <div class="info" data-edit="${escHtml(p.trackingId)}" style="cursor:pointer;flex:1;">
-          <div><b>#${escHtml(p.trackingId)}</b></div>
-          <div style="margin:5px 0 3px;display:flex;flex-wrap:wrap;gap:6px;align-items:center;">${numBadge}<select class="statusSelect" data-status-for="${escHtml(p.trackingId)}" data-current="${escHtml(p.status)}" style="background:rgba(255,122,26,0.12);border:1px solid var(--accent);color:var(--accent2);border-radius:20px;padding:4px 10px;font-size:12px;font-weight:700;width:auto;margin:0;">${STATUSES.map(st => `<option value="${st.key}" ${st.key === p.status ? 'selected' : ''}>${st.label}</option>`).join('')}</select></div>
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;">
+        <div style="font-weight:700;font-size:14px;min-width:0;word-break:break-all;">#${escHtml(p.trackingId)}</div>
+        <button class="miniBtn" data-id="${escHtml(p.trackingId)}" style="flex-shrink:0;">Supprimer</button>
+      </div>
+      <div style="display:block;">
+        <div class="info" data-edit="${escHtml(p.trackingId)}" style="cursor:pointer;">
+          <div style="margin:6px 0 3px;display:flex;flex-wrap:wrap;gap:6px;align-items:center;">${numBadge}<select class="statusSelect" data-status-for="${escHtml(p.trackingId)}" data-current="${escHtml(p.status)}" style="background:rgba(255,122,26,0.12);border:1px solid var(--accent);color:var(--accent2);border-radius:20px;padding:4px 10px;font-size:12px;font-weight:700;width:auto;margin:0;">${STATUSES.map(st => `<option value="${st.key}" ${st.key === p.status ? 'selected' : ''}>${st.label}</option>`).join('')}</select></div>
           <div class="name">${escHtml(p.name)} · ${escHtml(p.phone)} <button type="button" class="waMini" data-send-wa="${escHtml(p.trackingId)}" style="margin-left:6px;background:rgba(37,211,102,0.12);border:1px solid rgba(37,211,102,0.5);color:#25D366;border-radius:8px;padding:3px 9px;font-size:11px;font-weight:700;cursor:pointer;">💬 WhatsApp</button></div>
           ${(p.destCommune || p.destDepartment) ? `<div class="sub" style="font-size:11px;">📍 ${[p.destCommune, p.destDepartment, p.destCountry].filter(Boolean).map(escHtml).join(', ')}</div>` : ''}
           ${deliveryLine(p) ? `<div class="sub" style="font-size:11.5px;color:var(--accent2);">📅 Livraison prévue : ${deliveryLine(p)}</div>` : ''}
         </div>
-        <button class="miniBtn" data-id="${escHtml(p.trackingId)}">Supprimer</button>
       </div>
       <div style="margin-top:8px;display:flex;flex-wrap:wrap;gap:8px;">
         <button type="button" class="editMini" data-edit-btn="${escHtml(p.trackingId)}" style="background:rgba(96,165,250,0.12);border:1px solid rgba(96,165,250,0.5);color:var(--info);border-radius:8px;padding:5px 11px;font-size:11.5px;font-weight:700;cursor:pointer;">✏️ Modifier</button>
+        <button type="button" class="photoAddMini" data-photo-add="${escHtml(p.trackingId)}" style="background:rgba(236,72,153,0.12);border:1px solid rgba(236,72,153,0.5);color:#EC4899;border-radius:8px;padding:5px 11px;font-size:11.5px;font-weight:700;cursor:pointer;">📷 Ajouter des photos</button>
         <button type="button" class="newMini" data-new-for="${escHtml(p.trackingId)}" style="background:rgba(255,122,26,0.12);border:1px solid rgba(255,122,26,0.5);color:var(--accent2);border-radius:8px;padding:5px 11px;font-size:11.5px;font-weight:700;cursor:pointer;">➕ Nouveau colis pour ce client</button>
       </div>
+      ${p.photoCount > 0 ? `<div class="photosWrap" data-photos-wrap-for="${escHtml(p.trackingId)}" style="margin-top:8px;"><button type="button" data-photos-for="${escHtml(p.trackingId)}" style="background:rgba(255,122,26,0.12);border:1px solid var(--accent);color:var(--accent2);border-radius:8px;padding:6px 12px;font-size:12px;font-weight:700;cursor:pointer;">🖼️ Voir les photos (${p.photoCount})</button><div class="photosBox" style="display:none;"></div></div>` : ''}
+      ${photoSeen}
       ${hist ? `<div style="margin-top:8px;border-top:1px solid var(--border);padding-top:8px;">${hist}</div>` : ''}
       <div style="margin-top:6px;font-size:11px;color:var(--muted);">${lastSeen}</div>
       ${pickupConfirm}
@@ -1529,6 +1707,7 @@ async function renderAdminPkgList(pkgs){
   list.querySelectorAll('.info[data-edit]').forEach(el => {
     el.onclick = () => {
       editingTrackingId = el.dataset.edit;
+      pendingScrollToForm = true;
       renderAdmin();
     };
   });
@@ -1536,6 +1715,7 @@ async function renderAdminPkgList(pkgs){
     b.onclick = (e) => {
       e.stopPropagation();
       editingTrackingId = b.dataset.editBtn;
+      pendingScrollToForm = true;
       renderAdmin();
     };
   });
@@ -2381,12 +2561,14 @@ async function renderOwnerPackages(){
       let existingPickedUpAt = null;
       let existingHidden = null;
       let existingDelivery = null;
+      let existingPhotoMeta = null;
       if(isEditing){
         const existing = await getPackage(trackingId);
         history = (existing && existing.history) ? existing.history : [];
         existingPickedUpAt = (existing && existing.pickedUpAt) ? existing.pickedUpAt : null;
         existingHidden = (existing && existing.hiddenByClient) ? (existing.hiddenByClientAt || true) : null;
         existingDelivery = (existing && existing.deliveryDays) ? {days: existing.deliveryDays, date: existing.deliveryDate} : null;
+        existingPhotoMeta = existing ? {photoCount: existing.photoCount, photosViewedAt: existing.photosViewedAt, photosUpdatedAt: existing.photosUpdatedAt} : null;
       }
       const lastStatus = history.length ? history[history.length-1].status : null;
       const statusChanged = status !== lastStatus;
@@ -2401,6 +2583,7 @@ async function renderOwnerPackages(){
         pkg.deliveryDays = deliveryDays;
         pkg.deliveryDate = (existingDelivery && existingDelivery.days === deliveryDays && existingDelivery.date) ? existingDelivery.date : dateFromDays(deliveryDays);
       }
+      if(existingPhotoMeta){ Object.keys(existingPhotoMeta).forEach(k => { if(existingPhotoMeta[k] !== undefined) pkg[k] = existingPhotoMeta[k]; }); }
       await savePackage(pkg);
       openClientGroups.add(pkg.phone);
       if(statusChanged) sendStatusEmail(pkg);
@@ -2468,9 +2651,9 @@ async function renderOwnerPackages(){
 
   try{
     const pkgs = await getCompanyPackages(adminSession.code);
-    try{ await renderRelanceCard(pkgs); }catch(e){ console.warn('Carte relance', e); }
     try{ renderDeletedByClientCard(pkgs); }catch(e){ console.warn('Carte suppressions', e); }
     await renderAdminPkgList(pkgs);
+    renderRelanceCard(pkgs).catch(e => console.warn('Carte relance', e));
   }catch(e){
     document.getElementById('adminList').innerHTML = `<div class="empty">Impossible de charger les colis.</div>`;
   }
@@ -3102,12 +3285,14 @@ async function renderAdmin(){
       let existingPickedUpAt = null;
       let existingHidden = null;
       let existingDelivery = null;
+      let existingPhotoMeta = null;
       if(isEditing){
         const existing = await getPackage(trackingId);
         history = (existing && existing.history) ? existing.history : [];
         existingPickedUpAt = (existing && existing.pickedUpAt) ? existing.pickedUpAt : null;
         existingHidden = (existing && existing.hiddenByClient) ? (existing.hiddenByClientAt || true) : null;
         existingDelivery = (existing && existing.deliveryDays) ? {days: existing.deliveryDays, date: existing.deliveryDate} : null;
+        existingPhotoMeta = existing ? {photoCount: existing.photoCount, photosViewedAt: existing.photosViewedAt, photosUpdatedAt: existing.photosUpdatedAt} : null;
       }
       const lastStatus = history.length ? history[history.length-1].status : null;
       const statusChanged = status !== lastStatus;
@@ -3122,6 +3307,7 @@ async function renderAdmin(){
         pkg.deliveryDays = deliveryDays;
         pkg.deliveryDate = (existingDelivery && existingDelivery.days === deliveryDays && existingDelivery.date) ? existingDelivery.date : dateFromDays(deliveryDays);
       }
+      if(existingPhotoMeta){ Object.keys(existingPhotoMeta).forEach(k => { if(existingPhotoMeta[k] !== undefined) pkg[k] = existingPhotoMeta[k]; }); }
       await savePackage(pkg);
       openClientGroups.add(pkg.phone);
       if(statusChanged) sendStatusEmail(pkg);
@@ -3133,9 +3319,9 @@ async function renderAdmin(){
 
   try{
     const pkgs = await getCompanyPackages(adminSession.code);
-    try{ await renderRelanceCard(pkgs); }catch(e){ console.warn('Carte relance', e); }
     try{ renderDeletedByClientCard(pkgs); }catch(e){ console.warn('Carte suppressions', e); }
     await renderAdminPkgList(pkgs);
+    renderRelanceCard(pkgs).catch(e => console.warn('Carte relance', e));
   }catch(e){
     document.getElementById('adminList').innerHTML = `<div class="empty">Impossible de charger les colis.</div>`;
   }
