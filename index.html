@@ -70,7 +70,8 @@
   .badge.attente{background:rgba(245,185,61,0.15);color:var(--warn);}
   .badge.disponible{background:rgba(219,39,119,0.15);color:#EC4899;}
   .courierStrip{display:flex;align-items:center;gap:12px;margin-top:12px;padding:12px 14px;border-radius:12px;background:rgba(255,122,26,0.10);border:1px solid rgba(255,122,26,0.35);}
-  .courierStrip .cAv{width:84px;height:84px;border-radius:50%;object-fit:cover;flex-shrink:0;border:2px solid var(--accent);}
+  .courierStrip .cAvWrap{width:84px;height:84px;border-radius:50%;overflow:hidden;flex-shrink:0;border:2px solid var(--accent);}
+  .courierStrip .cAv{width:100%;height:100%;object-fit:cover;display:block;}
   .courierStrip .cMoto{font-size:46px;line-height:1;display:inline-block;}
   .courierStrip.go .cMoto{animation:motoRide 1.6s ease-in-out infinite;}
   @keyframes motoRide{0%{transform:translateX(-4px)}50%{transform:translateX(8px)}100%{transform:translateX(-4px)}}
@@ -550,8 +551,12 @@ async function getCourierAvatar(){
   }catch(e){ courierGlobal = null; }
   return courierGlobal;
 }
-async function saveCourierAvatar(dataUrl, pos, posX, kind){
-  const data = kind === 'truck' ? {truckAvatar:dataUrl, truckPos:pos, truckPosX:posX} : {avatar:dataUrl, pos:pos, posX:posX};
+function courierImgStyle(x, y, z){
+  z = (z || 100) / 100;
+  return `object-position:${x}% ${y}%;transform:scale(${z});transform-origin:${x}% ${y}%;`;
+}
+async function saveCourierAvatar(dataUrl, pos, posX, kind, zoom){
+  const data = kind === 'truck' ? {truckAvatar:dataUrl, truckPos:pos, truckPosX:posX, truckZoom:zoom} : {avatar:dataUrl, pos:pos, posX:posX, zoom:zoom};
   const prev = (await getCourierAvatar()) || {};
   const merged = Object.assign({}, prev, data);
   await db.collection('settings').doc('courier_global').set(merged);
@@ -575,7 +580,8 @@ function courierStripHTML(p){
   const posX = (far ? av.truckPosX : av.posX) ?? 50;
   const vehicle = far ? '🚚' : '🏍️';
   const who = far ? 'chauffeur' : 'livreur';
-  const img = photo ? `<img class="cAv" src="${photo}" style="object-position:${posX}% ${posY}%;">` : '';
+  const zoom = (far ? av.truckZoom : av.zoom) || 100;
+  const img = photo ? `<span class="cAvWrap"><img class="cAv" src="${photo}" style="${courierImgStyle(posX, posY, zoom)}"></span>` : '';
   const txt = p.status === 'livraison' ? `Votre ${who} est en route` : (p.status === 'expedie' ? 'Votre colis est expédié' : 'Votre colis est en préparation');
   return `<div class="courierStrip ${p.status === 'livraison' ? 'go' : ''}">${img}<span class="cMoto">${vehicle}</span><span style="font-size:14px;font-weight:700;color:var(--accent2);line-height:1.3;">${txt}</span></div>`;
 }
@@ -585,14 +591,17 @@ function courierBlockHTML(av, kind){
   const photo = av ? (truck ? av.truckAvatar : av.avatar) : null;
   const posY = (av ? (truck ? av.truckPos : av.pos) : 50) ?? 50;
   const posX = (av ? (truck ? av.truckPosX : av.posX) : 50) ?? 50;
+  const zoomV = (av ? (truck ? av.truckZoom : av.zoom) : 100) || 100;
   return `<div style="border-top:1px solid var(--border);padding-top:14px;margin-top:14px;">
       <div style="font-weight:700;margin-bottom:4px;">${truck ? '🚚 Chauffeur — départements éloignés (hors Ouest)' : '🏍️ Livreur — livraisons proches (Ouest)'}</div>
-      ${photo ? `<img src="${photo}" style="width:72px;height:72px;border-radius:50%;object-fit:cover;object-position:${posX}% ${posY}%;margin:6px 0 10px;display:block;">` : ''}
+      ${photo ? `<div style="width:72px;height:72px;border-radius:50%;overflow:hidden;margin:6px 0 10px;"><img src="${photo}" style="width:100%;height:100%;object-fit:cover;display:block;${courierImgStyle(posX, posY, zoomV)}"></div>` : ''}
       <input type="file" accept="image/*" id="courierInput${k}" style="margin-bottom:12px;">
       <div id="courierEditor${k}" style="display:none;">
         <div style="width:130px;height:130px;border-radius:50%;overflow:hidden;margin-bottom:12px;border:1px solid var(--border);">
-          <img id="courierPreview${k}" style="width:100%;height:100%;object-fit:cover;object-position:50% 50%;">
+          <img id="courierPreview${k}" style="width:100%;height:100%;object-fit:cover;display:block;object-position:50% 50%;">
         </div>
+        <label>Zoom (utilisez-le pour pouvoir bouger haut ↕ bas)</label>
+        <input type="range" id="courierSliderZ${k}" min="100" max="250" value="100" style="width:100%;margin-bottom:10px;">
         <label>Gauche ↔ droite</label>
         <input type="range" id="courierSliderX${k}" min="0" max="100" value="50" style="width:100%;margin-bottom:10px;">
         <label>Haut ↕ bas</label>
@@ -622,13 +631,14 @@ function bindCourierAvatars(rerender){
         const prev = document.getElementById('courierPreview' + k);
         const sx = document.getElementById('courierSliderX' + k);
         const sy = document.getElementById('courierSliderY' + k);
-        prev.src = dataUrl; sx.value = 50; sy.value = 50;
-        const apply = ()=>{ prev.style.objectPosition = `${sx.value}% ${sy.value}%`; };
+        const sz = document.getElementById('courierSliderZ' + k);
+        prev.src = dataUrl; sx.value = 50; sy.value = 50; sz.value = 100;
+        const apply = ()=>{ prev.style.cssText = 'width:100%;height:100%;object-fit:cover;display:block;' + courierImgStyle(sx.value, sy.value, sz.value); };
         apply();
-        sx.oninput = apply; sy.oninput = apply;
+        sx.oninput = apply; sy.oninput = apply; sz.oninput = apply;
         document.getElementById('courierEditor' + k).style.display = 'block';
         document.getElementById('btnSaveCourier' + k).onclick = async ()=>{
-          try{ await saveCourierAvatar(dataUrl, parseInt(sy.value), parseInt(sx.value), kind); toast("Avatar enregistré"); rerender(); }
+          try{ await saveCourierAvatar(dataUrl, parseInt(sy.value), parseInt(sx.value), kind, parseInt(sz.value)); toast("Avatar enregistré"); rerender(); }
           catch(err){ toast("Erreur lors de l'envoi"); }
         };
       }catch(err){ toast("Erreur lors du chargement de l'image"); }
