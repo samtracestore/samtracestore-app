@@ -531,27 +531,35 @@ async function saveSupportAvatar(dataUrl, pos){
   supportAvatarPos = pos;
 }
 
-// ----- Avatar du livreur moto 🏍️ et du chauffeur camion 🚚 (par entreprise) -----
-const courierAvatarCache = {};
-async function getCourierAvatar(code){
-  if(!code) return null;
-  if(code in courierAvatarCache) return courierAvatarCache[code];
+// ----- Avatars livreur moto 🏍️ et chauffeur camion 🚚 (les mêmes pour toutes les entreprises) -----
+let courierGlobal = null;
+let courierLoaded = false;
+async function getCourierAvatar(){
+  if(courierLoaded) return courierGlobal;
   try{
-    const doc = await db.collection('settings').doc('courier_' + code).get();
-    courierAvatarCache[code] = doc.exists ? doc.data() : null;
-  }catch(e){ courierAvatarCache[code] = null; }
-  return courierAvatarCache[code];
+    let doc = await db.collection('settings').doc('courier_global').get();
+    if(!doc.exists){
+      // anciennes versions : avatar rangé sous le code du propriétaire
+      try{
+        const oc = await getOwnerCode();
+        if(oc) doc = await db.collection('settings').doc('courier_' + oc).get();
+      }catch(e){}
+    }
+    courierGlobal = doc && doc.exists ? doc.data() : null;
+    courierLoaded = true;
+  }catch(e){ courierGlobal = null; }
+  return courierGlobal;
 }
-async function saveCourierAvatar(code, dataUrl, pos, kind){
-  const data = kind === 'truck' ? {truckAvatar:dataUrl, truckPos:pos} : {avatar:dataUrl, pos:pos};
-  await db.collection('settings').doc('courier_' + code).set(data, {merge:true});
-  courierAvatarCache[code] = Object.assign({}, courierAvatarCache[code] || {}, data);
+async function saveCourierAvatar(dataUrl, pos, posX, kind){
+  const data = kind === 'truck' ? {truckAvatar:dataUrl, truckPos:pos, truckPosX:posX} : {avatar:dataUrl, pos:pos, posX:posX};
+  const prev = (await getCourierAvatar()) || {};
+  const merged = Object.assign({}, prev, data);
+  await db.collection('settings').doc('courier_global').set(merged);
+  courierGlobal = merged; courierLoaded = true;
 }
 async function preloadCourierAvatars(pkgs){
-  const ownerCode = await getOwnerCode();
-  const codes = [...new Set((pkgs||[]).map(p => p.companyCode || ownerCode).filter(Boolean))];
-  await Promise.all(codes.map(c => getCourierAvatar(c)));
-  return ownerCode;
+  await getCourierAvatar();
+  return null;
 }
 let courierOwnerCode = null;
 // Destination éloignée = Haïti, hors département de l'Ouest
@@ -560,56 +568,72 @@ function isFarDestination(p){
 }
 function courierStripHTML(p){
   if(!['preparation','expedie','livraison'].includes(p.status)) return '';
-  const av = courierAvatarCache[p.companyCode || courierOwnerCode] || {};
+  const av = courierGlobal || {};
   const far = isFarDestination(p);
   const photo = far ? av.truckAvatar : av.avatar;
-  const pos = (far ? av.truckPos : av.pos) ?? 50;
+  const posY = (far ? av.truckPos : av.pos) ?? 50;
+  const posX = (far ? av.truckPosX : av.posX) ?? 50;
   const vehicle = far ? '🚚' : '🏍️';
   const who = far ? 'chauffeur' : 'livreur';
-  const img = photo ? `<img class="cAv" src="${photo}" style="object-position:center ${pos}%;">` : '';
+  const img = photo ? `<img class="cAv" src="${photo}" style="object-position:${posX}% ${posY}%;">` : '';
   const txt = p.status === 'livraison' ? `Votre ${who} est en route` : (p.status === 'expedie' ? 'Votre colis est expédié' : 'Votre colis est en préparation');
   return `<div class="courierStrip ${p.status === 'livraison' ? 'go' : ''}">${img}<span class="cMoto">${vehicle}</span><span style="font-size:14px;font-weight:700;color:var(--accent2);line-height:1.3;">${txt}</span></div>`;
 }
-function courierAvatarCardHTML(av, kind){
+function courierBlockHTML(av, kind){
   const truck = kind === 'truck';
-  const photo = av ? (truck ? av.truckAvatar : av.avatar) : null;
-  const pos = (av ? (truck ? av.truckPos : av.pos) : 50) ?? 50;
   const k = truck ? 'Truck' : 'Moto';
-  return `<div class="card">
-      <h2>${truck ? 'Avatar du chauffeur 🚚' : 'Avatar du livreur 🏍️'}</h2>
-      <p class="sub">${truck ? "Pour les colis envoyés dans les départements éloignés (hors Ouest). Vos clients verront cette photo avec le camion." : "Pour les livraisons proches (Ouest). Vos clients verront cette photo avec la moto."}</p>
-      ${photo ? `<img src="${photo}" style="width:72px;height:72px;border-radius:50%;object-fit:cover;object-position:center ${pos}%;margin-bottom:10px;">` : ''}
+  const photo = av ? (truck ? av.truckAvatar : av.avatar) : null;
+  const posY = (av ? (truck ? av.truckPos : av.pos) : 50) ?? 50;
+  const posX = (av ? (truck ? av.truckPosX : av.posX) : 50) ?? 50;
+  return `<div style="border-top:1px solid var(--border);padding-top:14px;margin-top:14px;">
+      <div style="font-weight:700;margin-bottom:4px;">${truck ? '🚚 Chauffeur — départements éloignés (hors Ouest)' : '🏍️ Livreur — livraisons proches (Ouest)'}</div>
+      ${photo ? `<img src="${photo}" style="width:72px;height:72px;border-radius:50%;object-fit:cover;object-position:${posX}% ${posY}%;margin:6px 0 10px;display:block;">` : ''}
       <input type="file" accept="image/*" id="courierInput${k}" style="margin-bottom:12px;">
       <div id="courierEditor${k}" style="display:none;">
         <div style="width:130px;height:130px;border-radius:50%;overflow:hidden;margin-bottom:12px;border:1px solid var(--border);">
-          <img id="courierPreview${k}" style="width:100%;height:100%;object-fit:cover;object-position:center 50%;">
+          <img id="courierPreview${k}" style="width:100%;height:100%;object-fit:cover;object-position:50% 50%;">
         </div>
-        <label>Ajuster la position du visage</label>
-        <input type="range" id="courierSlider${k}" min="0" max="100" value="50" style="width:100%;margin-bottom:12px;">
-        <button class="primary" id="btnSaveCourier${k}">💾 Enregistrer mon avatar</button>
+        <label>Gauche ↔ droite</label>
+        <input type="range" id="courierSliderX${k}" min="0" max="100" value="50" style="width:100%;margin-bottom:10px;">
+        <label>Haut ↕ bas</label>
+        <input type="range" id="courierSliderY${k}" min="0" max="100" value="50" style="width:100%;margin-bottom:12px;">
+        <button class="primary" id="btnSaveCourier${k}">💾 Enregistrer</button>
       </div>
     </div>`;
 }
-function bindCourierAvatar(code, rerender, kind){
-  const k = kind === 'truck' ? 'Truck' : 'Moto';
-  const input = document.getElementById('courierInput' + k);
-  if(!input) return;
-  input.onchange = async (e)=>{
-    const file = e.target.files[0];
-    if(!file) return;
-    try{
-      const dataUrl = await compressImage(file);
-      const prev = document.getElementById('courierPreview' + k);
-      const slider = document.getElementById('courierSlider' + k);
-      prev.src = dataUrl; slider.value = 50; prev.style.objectPosition = 'center 50%';
-      document.getElementById('courierEditor' + k).style.display = 'block';
-      slider.oninput = ()=>{ prev.style.objectPosition = `center ${slider.value}%`; };
-      document.getElementById('btnSaveCourier' + k).onclick = async ()=>{
-        try{ await saveCourierAvatar(code, dataUrl, parseInt(slider.value), kind); toast("Avatar enregistré"); rerender(); }
-        catch(err){ toast("Erreur lors de l'envoi"); }
-      };
-    }catch(err){ toast("Erreur lors du chargement de l'image"); }
-  };
+function courierAvatarCardHTML(av){
+  return `<div class="card">
+      <h2>Avatars de livraison</h2>
+      <p class="sub">Ces avatars sont utilisés par toutes les entreprises. Quand vous les changez ici, ils changent pour tout le monde, côté client aussi.</p>
+      ${courierBlockHTML(av, 'moto')}
+      ${courierBlockHTML(av, 'truck')}
+    </div>`;
+}
+function bindCourierAvatars(rerender){
+  ['moto','truck'].forEach(kind=>{
+    const k = kind === 'truck' ? 'Truck' : 'Moto';
+    const input = document.getElementById('courierInput' + k);
+    if(!input) return;
+    input.onchange = async (e)=>{
+      const file = e.target.files[0];
+      if(!file) return;
+      try{
+        const dataUrl = await compressImage(file);
+        const prev = document.getElementById('courierPreview' + k);
+        const sx = document.getElementById('courierSliderX' + k);
+        const sy = document.getElementById('courierSliderY' + k);
+        prev.src = dataUrl; sx.value = 50; sy.value = 50;
+        const apply = ()=>{ prev.style.objectPosition = `${sx.value}% ${sy.value}%`; };
+        apply();
+        sx.oninput = apply; sy.oninput = apply;
+        document.getElementById('courierEditor' + k).style.display = 'block';
+        document.getElementById('btnSaveCourier' + k).onclick = async ()=>{
+          try{ await saveCourierAvatar(dataUrl, parseInt(sy.value), parseInt(sx.value), kind); toast("Avatar enregistré"); rerender(); }
+          catch(err){ toast("Erreur lors de l'envoi"); }
+        };
+      }catch(err){ toast("Erreur lors du chargement de l'image"); }
+    };
+  });
 }
 
 async function getPackagesForPhone(phone){
@@ -2100,6 +2124,7 @@ async function renderOwnerPayments(){
   content.innerHTML = `<div class="card"><div class="empty">Chargement...</div></div>`;
   try{
     const settings = await getPaymentSettings();
+    const courierAv = await getCourierAvatar();
     const pending = await getPendingDeposits();
     const pendingReg = await getPendingRegistrations();
 
@@ -2295,7 +2320,9 @@ async function renderOwnerPayments(){
           <p class="sub" style="margin:0 0 12px;">Déplacez le curseur si le visage est coupé — haut / bas</p>
           <button class="primary" id="btnSaveAvatarPos">💾 Sauvegarder la position</button>
         </div>
-      </div>`;
+      </div>
+      ${courierAvatarCardHTML(courierAv)}`;
+    bindCourierAvatars(()=>renderOwnerPayments());
 
     content.querySelectorAll('[data-validate-reg]').forEach(b=>{
       b.onclick = async ()=>{
@@ -2553,12 +2580,9 @@ async function renderCompanyPackagesView(code, companyName){
 
 async function renderOwnerPackages(){
   const content = document.getElementById('ownerContent');
-  const courierAv = await getCourierAvatar(adminSession.code);
   const optionsHtml = STATUSES.map(s=>`<option value="${s.key}">${s.label}</option>`).join('');
   const isEditing = !!editingTrackingId;
   content.innerHTML = `
-    ${courierAvatarCardHTML(courierAv, 'moto')}
-    ${courierAvatarCardHTML(courierAv, 'truck')}
     <div class="card">
       <h2>${isEditing ? 'Modifier le colis' : 'Ajouter un colis'}</h2>
       ${isEditing ? `<div class="editingBanner"><span>Modification de #${editingTrackingId}</span><button class="ghost" id="btnCancelEdit">Annuler</button></div>` : ''}
@@ -2618,8 +2642,6 @@ async function renderOwnerPackages(){
     document.getElementById('btnCancelEdit').onclick = ()=>{ editingTrackingId = null; renderAdmin(); };
   }
 
-  bindCourierAvatar(adminSession.code, ()=>renderOwnerPackages());
-  bindCourierAvatar(adminSession.code, ()=>renderOwnerPackages(), 'truck');
   document.getElementById('btnSavePkg').onclick = async ()=>{
     if(!firebaseReady){ toast("Firebase non configuré"); return; }
     let trackingId = isEditing ? editingTrackingId : document.getElementById('pTrack').value.replace(/\s+/g,'').toUpperCase();
@@ -3255,7 +3277,6 @@ async function renderAdmin(){
       <div style="background:var(--accent);color:#0B1120;border-radius:10px;padding:10px;text-align:center;font-weight:700;">✅ Notification activée</div>
     </div>`;
 
-  const courierAv = await getCourierAvatar(adminSession.code);
   const optionsHtml = STATUSES.map(s=>`<option value="${s.key}">${s.label}</option>`).join('');
   const isEditing = !!editingTrackingId;
   const myCompany = gateCompany;
@@ -3277,8 +3298,6 @@ async function renderAdmin(){
       ${logoImg ? `<img src="${logoImg}" style="width:72px;height:72px;border-radius:14px;object-fit:cover;margin-bottom:12px;">` : ''}
       <input type="file" id="logoInput" accept="image/*" style="margin-bottom:12px;">
     </div>
-    ${courierAvatarCardHTML(courierAv, 'moto')}
-    ${courierAvatarCardHTML(courierAv, 'truck')}
     <div class="card">
       <h2>${isEditing ? 'Modifier le colis' : 'Ajouter un colis'}</h2>
       ${isEditing ? `<div class="editingBanner"><span>Modification de #${editingTrackingId}</span><button class="ghost" id="btnCancelEdit">Annuler</button></div>` : ''}
@@ -3347,8 +3366,6 @@ async function renderAdmin(){
     document.getElementById('btnCancelEdit').onclick = ()=>{ editingTrackingId = null; renderAdmin(); };
   }
 
-  bindCourierAvatar(adminSession.code, ()=>renderAdmin());
-  bindCourierAvatar(adminSession.code, ()=>renderAdmin(), 'truck');
   document.getElementById('btnSavePkg').onclick = async ()=>{
     if(!firebaseReady){ toast("Firebase non configuré"); return; }
     let trackingId = isEditing ? editingTrackingId : document.getElementById('pTrack').value.replace(/\s+/g,'').toUpperCase();
