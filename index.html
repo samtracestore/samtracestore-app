@@ -69,8 +69,9 @@
   .badge.livraison{background:rgba(255,122,26,0.18);color:#FF9A4D;}
   .badge.attente{background:rgba(245,185,61,0.15);color:var(--warn);}
   .badge.disponible{background:rgba(219,39,119,0.15);color:#EC4899;}
-  .courierStrip{display:flex;align-items:center;gap:12px;margin-top:12px;padding:12px 14px;border-radius:12px;background:rgba(255,122,26,0.10);border:1px solid rgba(255,122,26,0.35);}
+  .courierStrip{display:flex;flex-wrap:wrap;align-items:center;gap:12px;margin-top:12px;padding:12px 14px;border-radius:12px;background:rgba(255,122,26,0.10);border:1px solid rgba(255,122,26,0.35);}
   .courierStrip .cAvWrap{width:84px;height:84px;border-radius:50%;overflow:hidden;flex-shrink:0;border:2px solid var(--accent);}
+  .courierStrip .cAvWrap.wide{width:150px;height:84px;border-radius:14px;}
   .courierStrip .cAv{width:100%;height:100%;object-fit:cover;display:block;}
   .courierStrip .cMoto{font-size:46px;line-height:1;display:inline-block;}
   .courierStrip.go .cMoto{animation:motoRide 1.6s ease-in-out infinite;}
@@ -581,9 +582,9 @@ function courierStripHTML(p){
   const vehicle = far ? '🚚' : '🏍️';
   const who = far ? 'chauffeur' : 'livreur';
   const zoom = (far ? av.truckZoom : av.zoom) || 100;
-  const img = photo ? `<span class="cAvWrap"><img class="cAv" src="${photo}" style="${courierImgStyle(posX, posY, zoom)}"></span>` : '';
+  const img = photo ? `<span class="cAvWrap${far ? ' wide' : ''}"><img class="cAv" src="${photo}" style="${courierImgStyle(posX, posY, zoom)}"></span>` : '';
   const txt = p.status === 'livraison' ? `Votre ${who} est en route` : (p.status === 'expedie' ? 'Votre colis est expédié' : 'Votre colis est en préparation');
-  return `<div class="courierStrip ${p.status === 'livraison' ? 'go' : ''}">${img}<span class="cMoto">${vehicle}</span><span style="font-size:14px;font-weight:700;color:var(--accent2);line-height:1.3;">${txt}</span></div>`;
+  return `<div class="courierStrip ${p.status === 'livraison' ? 'go' : ''}">${img}<span class="cMoto">${vehicle}</span><span style="font-size:14px;font-weight:700;color:var(--accent2);line-height:1.3;flex:1 1 130px;">${txt}</span></div>`;
 }
 function courierBlockHTML(av, kind){
   const truck = kind === 'truck';
@@ -592,15 +593,17 @@ function courierBlockHTML(av, kind){
   const posY = (av ? (truck ? av.truckPos : av.pos) : 50) ?? 50;
   const posX = (av ? (truck ? av.truckPosX : av.posX) : 50) ?? 50;
   const zoomV = (av ? (truck ? av.truckZoom : av.zoom) : 100) || 100;
+  const shapeSm = truck ? 'width:112px;height:63px;border-radius:10px;' : 'width:72px;height:72px;border-radius:50%;';
+  const shapeLg = truck ? 'width:224px;height:126px;border-radius:14px;' : 'width:130px;height:130px;border-radius:50%;';
   return `<div style="border-top:1px solid var(--border);padding-top:14px;margin-top:14px;">
-      <div style="font-weight:700;margin-bottom:4px;">${truck ? '🚚 Chauffeur — départements éloignés (hors Ouest)' : '🏍️ Livreur — livraisons proches (Ouest)'}</div>
-      ${photo ? `<div style="width:72px;height:72px;border-radius:50%;overflow:hidden;margin:6px 0 10px;"><img src="${photo}" style="width:100%;height:100%;object-fit:cover;display:block;${courierImgStyle(posX, posY, zoomV)}"></div>` : ''}
+      <div style="font-weight:700;margin-bottom:4px;">${truck ? '🚚 Chauffeur — départements éloignés (hors Ouest) · cadre large' : '🏍️ Livreur — livraisons proches (Ouest)'}</div>
+      ${photo ? `<div style="${shapeSm}overflow:hidden;margin:6px 0 10px;"><img src="${photo}" style="width:100%;height:100%;object-fit:cover;display:block;${courierImgStyle(posX, posY, zoomV)}"></div>` : ''}
       <input type="file" accept="image/*" id="courierInput${k}" style="margin-bottom:12px;">
       <div id="courierEditor${k}" style="display:none;">
-        <div style="width:130px;height:130px;border-radius:50%;overflow:hidden;margin-bottom:12px;border:1px solid var(--border);">
+        <div style="${shapeLg}overflow:hidden;margin-bottom:12px;border:1px solid var(--border);">
           <img id="courierPreview${k}" style="width:100%;height:100%;object-fit:cover;display:block;object-position:50% 50%;">
         </div>
-        <label>Zoom (utilisez-le pour pouvoir bouger haut ↕ bas)</label>
+        <label>Zoom (100 = image entière ; augmentez pour bouger haut ↕ bas)</label>
         <input type="range" id="courierSliderZ${k}" min="100" max="250" value="100" style="width:100%;margin-bottom:10px;">
         <label>Gauche ↔ droite</label>
         <input type="range" id="courierSliderX${k}" min="0" max="100" value="50" style="width:100%;margin-bottom:10px;">
@@ -627,7 +630,7 @@ function bindCourierAvatars(rerender){
       const file = e.target.files[0];
       if(!file) return;
       try{
-        const dataUrl = await compressImage(file);
+        const dataUrl = await compressImage(file, 480);
         const prev = document.getElementById('courierPreview' + k);
         const sx = document.getElementById('courierSliderX' + k);
         const sy = document.getElementById('courierSliderY' + k);
@@ -669,13 +672,13 @@ async function getCompanyPackages(code){
   return all.filter(p => (p.companyCode || ownerCode) === code);
 }
 
-function compressImage(file){
+function compressImage(file, maxSizeArg){
   return new Promise((resolve, reject)=>{
     const reader = new FileReader();
     reader.onload = (e)=>{
       const img = new Image();
       img.onload = ()=>{
-        const maxSize = 200;
+        const maxSize = maxSizeArg || 200;
         let w = img.width, h = img.height;
         if(w > h){ if(w > maxSize){ h = h*(maxSize/w); w = maxSize; } }
         else { if(h > maxSize){ w = w*(maxSize/h); h = maxSize; } }
