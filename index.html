@@ -69,9 +69,9 @@
   .badge.livraison{background:rgba(255,122,26,0.18);color:#FF9A4D;}
   .badge.attente{background:rgba(245,185,61,0.15);color:var(--warn);}
   .badge.disponible{background:rgba(219,39,119,0.15);color:#EC4899;}
-  .courierStrip{display:flex;align-items:center;gap:10px;margin-top:10px;padding:8px 12px;border-radius:12px;background:rgba(255,122,26,0.10);border:1px solid rgba(255,122,26,0.35);}
-  .courierStrip .cAv{width:38px;height:38px;border-radius:50%;object-fit:cover;flex-shrink:0;border:2px solid var(--accent);}
-  .courierStrip .cMoto{font-size:26px;display:inline-block;}
+  .courierStrip{display:flex;align-items:center;gap:12px;margin-top:12px;padding:12px 14px;border-radius:12px;background:rgba(255,122,26,0.10);border:1px solid rgba(255,122,26,0.35);}
+  .courierStrip .cAv{width:84px;height:84px;border-radius:50%;object-fit:cover;flex-shrink:0;border:2px solid var(--accent);}
+  .courierStrip .cMoto{font-size:46px;line-height:1;display:inline-block;}
   .courierStrip.go .cMoto{animation:motoRide 1.6s ease-in-out infinite;}
   @keyframes motoRide{0%{transform:translateX(-4px)}50%{transform:translateX(8px)}100%{transform:translateX(-4px)}}
   .badge.livre{background:rgba(62,207,142,0.15);color:var(--ok);}
@@ -531,7 +531,7 @@ async function saveSupportAvatar(dataUrl, pos){
   supportAvatarPos = pos;
 }
 
-// ----- Avatar du livreur (par entreprise) -----
+// ----- Avatar du livreur moto 🏍️ et du chauffeur camion 🚚 (par entreprise) -----
 const courierAvatarCache = {};
 async function getCourierAvatar(code){
   if(!code) return null;
@@ -542,9 +542,10 @@ async function getCourierAvatar(code){
   }catch(e){ courierAvatarCache[code] = null; }
   return courierAvatarCache[code];
 }
-async function saveCourierAvatar(code, dataUrl, pos){
-  await db.collection('settings').doc('courier_' + code).set({avatar:dataUrl, pos:pos});
-  courierAvatarCache[code] = {avatar:dataUrl, pos:pos};
+async function saveCourierAvatar(code, dataUrl, pos, kind){
+  const data = kind === 'truck' ? {truckAvatar:dataUrl, truckPos:pos} : {avatar:dataUrl, pos:pos};
+  await db.collection('settings').doc('courier_' + code).set(data, {merge:true});
+  courierAvatarCache[code] = Object.assign({}, courierAvatarCache[code] || {}, data);
 }
 async function preloadCourierAvatars(pkgs){
   const ownerCode = await getOwnerCode();
@@ -553,44 +554,58 @@ async function preloadCourierAvatars(pkgs){
   return ownerCode;
 }
 let courierOwnerCode = null;
+// Destination éloignée = Haïti, hors département de l'Ouest
+function isFarDestination(p){
+  return p.destCountry === 'Haïti' && !!p.destDepartment && p.destDepartment !== 'Ouest';
+}
 function courierStripHTML(p){
   if(!['preparation','expedie','livraison'].includes(p.status)) return '';
-  const av = courierAvatarCache[p.companyCode || courierOwnerCode];
-  const img = av && av.avatar ? `<img class="cAv" src="${av.avatar}" style="object-position:center ${av.pos ?? 50}%;">` : '';
-  const txt = p.status === 'livraison' ? 'Votre livreur est en route' : (p.status === 'expedie' ? 'Votre colis est expédié' : 'Votre colis est en préparation');
-  return `<div class="courierStrip ${p.status === 'livraison' ? 'go' : ''}">${img}<span class="cMoto">🏍️</span><span style="font-size:12.5px;font-weight:700;color:var(--accent2);">${txt}</span></div>`;
+  const av = courierAvatarCache[p.companyCode || courierOwnerCode] || {};
+  const far = isFarDestination(p);
+  const photo = far ? av.truckAvatar : av.avatar;
+  const pos = (far ? av.truckPos : av.pos) ?? 50;
+  const vehicle = far ? '🚚' : '🏍️';
+  const who = far ? 'chauffeur' : 'livreur';
+  const img = photo ? `<img class="cAv" src="${photo}" style="object-position:center ${pos}%;">` : '';
+  const txt = p.status === 'livraison' ? `Votre ${who} est en route` : (p.status === 'expedie' ? 'Votre colis est expédié' : 'Votre colis est en préparation');
+  return `<div class="courierStrip ${p.status === 'livraison' ? 'go' : ''}">${img}<span class="cMoto">${vehicle}</span><span style="font-size:14px;font-weight:700;color:var(--accent2);line-height:1.3;">${txt}</span></div>`;
 }
-function courierAvatarCardHTML(av){
+function courierAvatarCardHTML(av, kind){
+  const truck = kind === 'truck';
+  const photo = av ? (truck ? av.truckAvatar : av.avatar) : null;
+  const pos = (av ? (truck ? av.truckPos : av.pos) : 50) ?? 50;
+  const k = truck ? 'Truck' : 'Moto';
   return `<div class="card">
-      <h2>Avatar du livreur 🏍️</h2>
-      <p class="sub">Choisissez votre photo. Vos clients la verront à côté de leur colis, avec la moto.</p>
-      ${av && av.avatar ? `<img src="${av.avatar}" style="width:56px;height:56px;border-radius:50%;object-fit:cover;object-position:center ${av.pos ?? 50}%;margin-bottom:10px;">` : ''}
-      <input type="file" accept="image/*" id="courierAvatarInput" style="margin-bottom:12px;">
-      <div id="courierEditor" style="display:none;">
-        <div style="width:110px;height:110px;border-radius:50%;overflow:hidden;margin-bottom:12px;border:1px solid var(--border);">
-          <img id="courierPreviewImg" style="width:100%;height:100%;object-fit:cover;object-position:center 50%;">
+      <h2>${truck ? 'Avatar du chauffeur 🚚' : 'Avatar du livreur 🏍️'}</h2>
+      <p class="sub">${truck ? "Pour les colis envoyés dans les départements éloignés (hors Ouest). Vos clients verront cette photo avec le camion." : "Pour les livraisons proches (Ouest). Vos clients verront cette photo avec la moto."}</p>
+      ${photo ? `<img src="${photo}" style="width:72px;height:72px;border-radius:50%;object-fit:cover;object-position:center ${pos}%;margin-bottom:10px;">` : ''}
+      <input type="file" accept="image/*" id="courierInput${k}" style="margin-bottom:12px;">
+      <div id="courierEditor${k}" style="display:none;">
+        <div style="width:130px;height:130px;border-radius:50%;overflow:hidden;margin-bottom:12px;border:1px solid var(--border);">
+          <img id="courierPreview${k}" style="width:100%;height:100%;object-fit:cover;object-position:center 50%;">
         </div>
         <label>Ajuster la position du visage</label>
-        <input type="range" id="courierPosSlider" min="0" max="100" value="50" style="width:100%;margin-bottom:12px;">
-        <button class="primary" id="btnSaveCourier">💾 Enregistrer mon avatar</button>
+        <input type="range" id="courierSlider${k}" min="0" max="100" value="50" style="width:100%;margin-bottom:12px;">
+        <button class="primary" id="btnSaveCourier${k}">💾 Enregistrer mon avatar</button>
       </div>
     </div>`;
 }
-function bindCourierAvatar(code, rerender){
-  const input = document.getElementById('courierAvatarInput');
+function bindCourierAvatar(code, rerender, kind){
+  const k = kind === 'truck' ? 'Truck' : 'Moto';
+  const input = document.getElementById('courierInput' + k);
   if(!input) return;
   input.onchange = async (e)=>{
     const file = e.target.files[0];
     if(!file) return;
     try{
       const dataUrl = await compressImage(file);
-      const prev = document.getElementById('courierPreviewImg');
-      const slider = document.getElementById('courierPosSlider');
+      const prev = document.getElementById('courierPreview' + k);
+      const slider = document.getElementById('courierSlider' + k);
       prev.src = dataUrl; slider.value = 50; prev.style.objectPosition = 'center 50%';
-      document.getElementById('courierEditor').style.display = 'block';
+      document.getElementById('courierEditor' + k).style.display = 'block';
       slider.oninput = ()=>{ prev.style.objectPosition = `center ${slider.value}%`; };
-      document.getElementById('btnSaveCourier').onclick = async ()=>{
-        try{ await saveCourierAvatar(code, dataUrl, parseInt(slider.value)); toast("Avatar enregistré"); rerender(); }
+      document.getElementById('btnSaveCourier' + k).onclick = async ()=>{
+        try{ await saveCourierAvatar(code, dataUrl, parseInt(slider.value), kind); toast("Avatar enregistré"); rerender(); }
         catch(err){ toast("Erreur lors de l'envoi"); }
       };
     }catch(err){ toast("Erreur lors du chargement de l'image"); }
@@ -2542,7 +2557,8 @@ async function renderOwnerPackages(){
   const optionsHtml = STATUSES.map(s=>`<option value="${s.key}">${s.label}</option>`).join('');
   const isEditing = !!editingTrackingId;
   content.innerHTML = `
-    ${courierAvatarCardHTML(courierAv)}
+    ${courierAvatarCardHTML(courierAv, 'moto')}
+    ${courierAvatarCardHTML(courierAv, 'truck')}
     <div class="card">
       <h2>${isEditing ? 'Modifier le colis' : 'Ajouter un colis'}</h2>
       ${isEditing ? `<div class="editingBanner"><span>Modification de #${editingTrackingId}</span><button class="ghost" id="btnCancelEdit">Annuler</button></div>` : ''}
@@ -2603,6 +2619,7 @@ async function renderOwnerPackages(){
   }
 
   bindCourierAvatar(adminSession.code, ()=>renderOwnerPackages());
+  bindCourierAvatar(adminSession.code, ()=>renderOwnerPackages(), 'truck');
   document.getElementById('btnSavePkg').onclick = async ()=>{
     if(!firebaseReady){ toast("Firebase non configuré"); return; }
     let trackingId = isEditing ? editingTrackingId : document.getElementById('pTrack').value.replace(/\s+/g,'').toUpperCase();
@@ -3260,7 +3277,8 @@ async function renderAdmin(){
       ${logoImg ? `<img src="${logoImg}" style="width:72px;height:72px;border-radius:14px;object-fit:cover;margin-bottom:12px;">` : ''}
       <input type="file" id="logoInput" accept="image/*" style="margin-bottom:12px;">
     </div>
-    ${courierAvatarCardHTML(courierAv)}
+    ${courierAvatarCardHTML(courierAv, 'moto')}
+    ${courierAvatarCardHTML(courierAv, 'truck')}
     <div class="card">
       <h2>${isEditing ? 'Modifier le colis' : 'Ajouter un colis'}</h2>
       ${isEditing ? `<div class="editingBanner"><span>Modification de #${editingTrackingId}</span><button class="ghost" id="btnCancelEdit">Annuler</button></div>` : ''}
@@ -3330,6 +3348,7 @@ async function renderAdmin(){
   }
 
   bindCourierAvatar(adminSession.code, ()=>renderAdmin());
+  bindCourierAvatar(adminSession.code, ()=>renderAdmin(), 'truck');
   document.getElementById('btnSavePkg').onclick = async ()=>{
     if(!firebaseReady){ toast("Firebase non configuré"); return; }
     let trackingId = isEditing ? editingTrackingId : document.getElementById('pTrack').value.replace(/\s+/g,'').toUpperCase();
