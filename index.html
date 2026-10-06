@@ -66,8 +66,14 @@
   .badge{font-size:11px;font-weight:700;padding:5px 10px;border-radius:20px;white-space:nowrap;}
   .badge.preparation{background:rgba(139,149,168,0.18);color:var(--muted);}
   .badge.expedie{background:rgba(96,165,250,0.15);color:var(--info);}
+  .badge.livraison{background:rgba(255,122,26,0.18);color:#FF9A4D;}
   .badge.attente{background:rgba(245,185,61,0.15);color:var(--warn);}
   .badge.disponible{background:rgba(219,39,119,0.15);color:#EC4899;}
+  .courierStrip{display:flex;align-items:center;gap:10px;margin-top:10px;padding:8px 12px;border-radius:12px;background:rgba(255,122,26,0.10);border:1px solid rgba(255,122,26,0.35);}
+  .courierStrip .cAv{width:38px;height:38px;border-radius:50%;object-fit:cover;flex-shrink:0;border:2px solid var(--accent);}
+  .courierStrip .cMoto{font-size:26px;display:inline-block;}
+  .courierStrip.go .cMoto{animation:motoRide 1.6s ease-in-out infinite;}
+  @keyframes motoRide{0%{transform:translateX(-4px)}50%{transform:translateX(8px)}100%{transform:translateX(-4px)}}
   .badge.livre{background:rgba(62,207,142,0.15);color:var(--ok);}
   .empty{text-align:center;padding:40px 20px;color:var(--muted);}
   .empty .big{font-size:36px;margin-bottom:10px;}
@@ -278,6 +284,7 @@ async function getTrackingAlert(trackingId){
 const STATUSES = [
   {key:"preparation", label:"En préparation"},
   {key:"expedie", label:"Expédié"},
+  {key:"livraison", label:"🏍️ En cours de livraison"},
   {key:"attente", label:"En attente"},
   {key:"disponible", label:"🏢 Disponible au bureau"},
   {key:"livre", label:"Livré"}
@@ -286,6 +293,7 @@ const STATUS_LABEL = Object.fromEntries(STATUSES.map(s=>[s.key,s.label]));
 const STATUS_EMAIL_MESSAGE = {
   preparation: "Votre colis est actuellement en cours de préparation.",
   expedie: "Bonne nouvelle ! Votre colis vient d'être expédié.",
+  livraison: "🏍️ Votre colis est en cours de livraison. Notre livreur est en route, soyez disponible !",
   attente: "Votre colis est actuellement en attente.",
   disponible: "🏢 Votre colis est disponible au bureau. Vous pouvez venir le récupérer dès maintenant.",
   livre: "✅ Votre colis a été livré. Merci de votre confiance !"
@@ -521,6 +529,72 @@ async function saveSupportAvatar(dataUrl, pos){
   await db.collection('settings').doc('payment').set({supportAvatar:dataUrl, supportAvatarPos:pos}, {merge:true});
   supportAvatarUrl = dataUrl;
   supportAvatarPos = pos;
+}
+
+// ----- Avatar du livreur (par entreprise) -----
+const courierAvatarCache = {};
+async function getCourierAvatar(code){
+  if(!code) return null;
+  if(code in courierAvatarCache) return courierAvatarCache[code];
+  try{
+    const doc = await db.collection('settings').doc('courier_' + code).get();
+    courierAvatarCache[code] = doc.exists ? doc.data() : null;
+  }catch(e){ courierAvatarCache[code] = null; }
+  return courierAvatarCache[code];
+}
+async function saveCourierAvatar(code, dataUrl, pos){
+  await db.collection('settings').doc('courier_' + code).set({avatar:dataUrl, pos:pos});
+  courierAvatarCache[code] = {avatar:dataUrl, pos:pos};
+}
+async function preloadCourierAvatars(pkgs){
+  const ownerCode = await getOwnerCode();
+  const codes = [...new Set((pkgs||[]).map(p => p.companyCode || ownerCode).filter(Boolean))];
+  await Promise.all(codes.map(c => getCourierAvatar(c)));
+  return ownerCode;
+}
+let courierOwnerCode = null;
+function courierStripHTML(p){
+  if(!['preparation','expedie','livraison'].includes(p.status)) return '';
+  const av = courierAvatarCache[p.companyCode || courierOwnerCode];
+  const img = av && av.avatar ? `<img class="cAv" src="${av.avatar}" style="object-position:center ${av.pos ?? 50}%;">` : '';
+  const txt = p.status === 'livraison' ? 'Votre livreur est en route' : (p.status === 'expedie' ? 'Votre colis est expédié' : 'Votre colis est en préparation');
+  return `<div class="courierStrip ${p.status === 'livraison' ? 'go' : ''}">${img}<span class="cMoto">🏍️</span><span style="font-size:12.5px;font-weight:700;color:var(--accent2);">${txt}</span></div>`;
+}
+function courierAvatarCardHTML(av){
+  return `<div class="card">
+      <h2>Avatar du livreur 🏍️</h2>
+      <p class="sub">Choisissez votre photo. Vos clients la verront à côté de leur colis, avec la moto.</p>
+      ${av && av.avatar ? `<img src="${av.avatar}" style="width:56px;height:56px;border-radius:50%;object-fit:cover;object-position:center ${av.pos ?? 50}%;margin-bottom:10px;">` : ''}
+      <input type="file" accept="image/*" id="courierAvatarInput" style="margin-bottom:12px;">
+      <div id="courierEditor" style="display:none;">
+        <div style="width:110px;height:110px;border-radius:50%;overflow:hidden;margin-bottom:12px;border:1px solid var(--border);">
+          <img id="courierPreviewImg" style="width:100%;height:100%;object-fit:cover;object-position:center 50%;">
+        </div>
+        <label>Ajuster la position du visage</label>
+        <input type="range" id="courierPosSlider" min="0" max="100" value="50" style="width:100%;margin-bottom:12px;">
+        <button class="primary" id="btnSaveCourier">💾 Enregistrer mon avatar</button>
+      </div>
+    </div>`;
+}
+function bindCourierAvatar(code, rerender){
+  const input = document.getElementById('courierAvatarInput');
+  if(!input) return;
+  input.onchange = async (e)=>{
+    const file = e.target.files[0];
+    if(!file) return;
+    try{
+      const dataUrl = await compressImage(file);
+      const prev = document.getElementById('courierPreviewImg');
+      const slider = document.getElementById('courierPosSlider');
+      prev.src = dataUrl; slider.value = 50; prev.style.objectPosition = 'center 50%';
+      document.getElementById('courierEditor').style.display = 'block';
+      slider.oninput = ()=>{ prev.style.objectPosition = `center ${slider.value}%`; };
+      document.getElementById('btnSaveCourier').onclick = async ()=>{
+        try{ await saveCourierAvatar(code, dataUrl, parseInt(slider.value)); toast("Avatar enregistré"); rerender(); }
+        catch(err){ toast("Erreur lors de l'envoi"); }
+      };
+    }catch(err){ toast("Erreur lors du chargement de l'image"); }
+  };
 }
 
 async function getPackagesForPhone(phone){
@@ -952,7 +1026,7 @@ function pkgCardHTML(p, label){
   const hist = (p.history||[]).slice().reverse().map(h=>
     `<div class="histline"><div class="dot"></div><div>${STATUS_LABEL[h.status]||h.status} — ${new Date(h.date).toLocaleDateString('fr-FR',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'})}</div></div>`
   ).join('');
-  const pickupBtn = p.status === 'disponible'
+  const pickupBtn = (p.status === 'disponible' || p.status === 'livraison')
     ? `<button class="pickupBtn" data-pickup="${p.trackingId}">🎉 J'ai récupéré mon colis</button>`
     : '';
   return `<div class="pkg">
@@ -966,6 +1040,7 @@ function pkgCardHTML(p, label){
       </div>
       <span class="badge ${p.status}">${STATUS_LABEL[p.status]||p.status}</span>
     </div>
+    ${courierStripHTML(p)}
     ${hist ? `<div style="margin-top:8px;border-top:1px solid var(--border);padding-top:8px;">${hist}</div>` : ''}
     ${p.photoCount > 0 ? `<div class="photosWrap" data-photos-wrap-for="${escHtml(p.trackingId)}" style="margin-top:10px;"><button type="button" data-photos-for="${escHtml(p.trackingId)}" style="width:100%;background:rgba(255,122,26,0.12);border:1px solid var(--accent);color:var(--accent2);border-radius:10px;padding:10px;font-size:13px;font-weight:700;cursor:pointer;">📷 Voir les photos de mon colis (${p.photoCount})</button><div class="photosBox" style="display:none;"></div></div>` : ''}
     ${pickupBtn}
@@ -1036,6 +1111,7 @@ async function renderClient(){
         let pkg = await getPackage(clean);
         if(!pkg && clean !== trackingId) pkg = await getPackage(trackingId);
         const family = pkg ? await getTrackingFamily(pkg) : [];
+        courierOwnerCode = await preloadCourierAvatars(family.map(f => f.p));
         resultEl.innerHTML = pkg
           ? family.map(f => pkgCardHTML(f.p, family.length >= 2 ? ('Colis #' + f.num) : '')).join('')
           : `<div class="empty">Aucun colis trouvé avec ce numéro.</div>`;
@@ -1124,6 +1200,7 @@ async function renderClient(){
 
   try{
     const allPkgs = await getPackagesForPhone(clientPhone);
+    courierOwnerCode = await preloadCourierAvatars(allPkgs);
     const nums = packageNumbers(allPkgs);
     const pkgs = allPkgs.filter(p => !p.hiddenByClient).sort((a, b) => pkgCreatedAt(a) - pkgCreatedAt(b));
     const list = document.getElementById('pkgList');
@@ -2461,9 +2538,11 @@ async function renderCompanyPackagesView(code, companyName){
 
 async function renderOwnerPackages(){
   const content = document.getElementById('ownerContent');
+  const courierAv = await getCourierAvatar(adminSession.code);
   const optionsHtml = STATUSES.map(s=>`<option value="${s.key}">${s.label}</option>`).join('');
   const isEditing = !!editingTrackingId;
   content.innerHTML = `
+    ${courierAvatarCardHTML(courierAv)}
     <div class="card">
       <h2>${isEditing ? 'Modifier le colis' : 'Ajouter un colis'}</h2>
       ${isEditing ? `<div class="editingBanner"><span>Modification de #${editingTrackingId}</span><button class="ghost" id="btnCancelEdit">Annuler</button></div>` : ''}
@@ -2523,6 +2602,7 @@ async function renderOwnerPackages(){
     document.getElementById('btnCancelEdit').onclick = ()=>{ editingTrackingId = null; renderAdmin(); };
   }
 
+  bindCourierAvatar(adminSession.code, ()=>renderOwnerPackages());
   document.getElementById('btnSavePkg').onclick = async ()=>{
     if(!firebaseReady){ toast("Firebase non configuré"); return; }
     let trackingId = isEditing ? editingTrackingId : document.getElementById('pTrack').value.replace(/\s+/g,'').toUpperCase();
@@ -3158,6 +3238,7 @@ async function renderAdmin(){
       <div style="background:var(--accent);color:#0B1120;border-radius:10px;padding:10px;text-align:center;font-weight:700;">✅ Notification activée</div>
     </div>`;
 
+  const courierAv = await getCourierAvatar(adminSession.code);
   const optionsHtml = STATUSES.map(s=>`<option value="${s.key}">${s.label}</option>`).join('');
   const isEditing = !!editingTrackingId;
   const myCompany = gateCompany;
@@ -3179,6 +3260,7 @@ async function renderAdmin(){
       ${logoImg ? `<img src="${logoImg}" style="width:72px;height:72px;border-radius:14px;object-fit:cover;margin-bottom:12px;">` : ''}
       <input type="file" id="logoInput" accept="image/*" style="margin-bottom:12px;">
     </div>
+    ${courierAvatarCardHTML(courierAv)}
     <div class="card">
       <h2>${isEditing ? 'Modifier le colis' : 'Ajouter un colis'}</h2>
       ${isEditing ? `<div class="editingBanner"><span>Modification de #${editingTrackingId}</span><button class="ghost" id="btnCancelEdit">Annuler</button></div>` : ''}
@@ -3247,6 +3329,7 @@ async function renderAdmin(){
     document.getElementById('btnCancelEdit').onclick = ()=>{ editingTrackingId = null; renderAdmin(); };
   }
 
+  bindCourierAvatar(adminSession.code, ()=>renderAdmin());
   document.getElementById('btnSavePkg').onclick = async ()=>{
     if(!firebaseReady){ toast("Firebase non configuré"); return; }
     let trackingId = isEditing ? editingTrackingId : document.getElementById('pTrack').value.replace(/\s+/g,'').toUpperCase();
