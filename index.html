@@ -31,7 +31,7 @@
     -webkit-tap-highlight-color:transparent;}
   #app{max-width:480px;margin:0 auto;min-height:100vh;display:flex;flex-direction:column;
     background:linear-gradient(180deg,#0B1120 0%,#0D1420 100%);}
-  header.top{padding:22px 20px 16px;display:flex;align-items:center;gap:12px;
+  header.top{padding:18px 20px 14px;display:flex;flex-wrap:wrap;align-items:center;gap:12px;
     border-bottom:1px solid var(--border);position:sticky;top:0;background:rgba(11,17,32,0.92);
     backdrop-filter:blur(8px);z-index:10;}
   .logo{width:42px;height:42px;border-radius:12px;background:linear-gradient(135deg,var(--accent),#FF4D1A);
@@ -40,7 +40,11 @@
   header.top .titles{flex:1;}
   header.top h1{font-size:20px;margin:0;font-weight:700;letter-spacing:-0.2px;}
   header.top p{font-size:11.5px;margin:2px 0 0;color:var(--muted);}
-  .modeSwitch{display:flex;gap:6px;background:var(--panel2);padding:4px;border-radius:10px;}
+  .modeSwitch{display:flex;gap:6px;background:var(--panel2);padding:4px;border-radius:10px;order:3;width:100%;}
+  .modeSwitch button{flex:1;}
+  #companyBar{display:none;padding:10px 20px 0;}
+  .bigOrange{display:flex;align-items:center;gap:12px;text-align:left;font-size:16px;padding:18px 16px;margin-bottom:12px;}
+  .bigOrange .bi{font-size:28px;line-height:1;}
   .modeSwitch button{border:none;background:transparent;color:var(--muted);font-size:12px;
     padding:6px 10px;border-radius:8px;cursor:pointer;font-weight:600;}
   .modeSwitch button.active{background:var(--accent);color:#0B1120;}
@@ -140,8 +144,10 @@
     <div class="modeSwitch">
       <button id="btnClientMode" class="active">Client</button>
       <button id="btnAdminMode">Admin</button>
+      <button id="btnCompanyMode">Entreprise</button>
     </div>
   </header>
+  <div id="companyBar"></div>
   <main id="main"></main>
   <div class="toast" id="toast"></div>
   <div class="lightbox" id="lightbox">
@@ -353,6 +359,9 @@ let clientPhone = null;
 let adminSession = null; // {code, isOwner, companyName}
 let editingTrackingId = null;
 let showCompanyRegister = false;
+let companySession = null; // {code, companyName}
+let companyScreen = 'home'; // home | colis | settings | client
+let adminStash = null;
 
 function toast(msg){
   const t = document.getElementById('toast');
@@ -603,7 +612,7 @@ function courierBlockHTML(av, kind){
         <div style="${shapeLg}overflow:hidden;margin-bottom:12px;border:1px solid var(--border);">
           <img id="courierPreview${k}" style="width:100%;height:100%;object-fit:cover;display:block;object-position:50% 50%;">
         </div>
-        <label>Zoom — à 100 l'image est entière ; augmentez pour activer le curseur haut ↕ bas</label>
+        <label>Zoom (100 = image entière)</label>
         <input type="range" id="courierSliderZ${k}" min="100" max="250" value="100" style="width:100%;margin-bottom:10px;">
         <label>Haut ↕ bas</label>
         <input type="range" id="courierSliderY${k}" min="0" max="100" value="50" style="width:100%;margin-bottom:12px;">
@@ -613,7 +622,7 @@ function courierBlockHTML(av, kind){
 }
 function courierAvatarCardHTML(av){
   return `<div class="card">
-      <h2>Avatars de livraison <span style="font-size:11px;color:var(--muted);font-weight:400;">(v7 oct. 21h)</span></h2>
+      <h2>Avatars de livraison <span style="font-size:11px;color:var(--muted);font-weight:400;">(v7 oct. 23h)</span></h2>
       <p class="sub">Ces avatars sont utilisés par toutes les entreprises. Quand vous les changez ici, ils changent pour tout le monde, côté client aussi.</p>
       ${courierBlockHTML(av, 'moto')}
       ${courierBlockHTML(av, 'truck')}
@@ -636,11 +645,10 @@ function bindCourierAvatars(rerender){
         prev.src = dataUrl; sx.value = 50; sy.value = 50; sz.value = 100;
         const apply = ()=>{
           prev.style.cssText = 'width:100%;height:100%;object-fit:cover;display:block;' + courierImgStyle(sx.value, sy.value, sz.value);
-          const off = parseInt(sz.value) <= 100;
-          sy.disabled = off; sy.style.opacity = off ? '0.35' : '1';
         };
         apply();
-        sx.oninput = apply; sy.oninput = apply; sz.oninput = apply;
+        sx.oninput = apply; sz.oninput = apply;
+        sy.oninput = ()=>{ if(parseInt(sz.value) <= 100) sz.value = 125; apply(); };
         document.getElementById('courierEditor' + k).style.display = 'block';
         document.getElementById('btnSaveCourier' + k).onclick = async ()=>{
           try{ await saveCourierAvatar(dataUrl, parseInt(sy.value), parseInt(sx.value), kind, parseInt(sz.value)); toast("Avatar enregistré"); rerender(); }
@@ -1609,7 +1617,7 @@ document.addEventListener('click', async (e) => {
     const box = openBtn.closest('.photosWrap').querySelector('.photosBox');
     if(box.dataset.open === '1'){ box.style.display = 'none'; box.dataset.open = '0'; return; }
     box.dataset.open = '1';
-    const isAdmin = (mode === 'admin' && !!adminSession);
+    const isAdmin = ((mode === 'admin' || mode === 'company') && !!adminSession);
     await renderPhotosBox(box, id, isAdmin);
     if(!isAdmin) markPhotosViewed(id);
     return;
@@ -2529,6 +2537,7 @@ async function renderOwnerCompanies(){
               <div>
                 <div><b>${c.companyName}</b> ${!c.seenByOwner ? '<span class="badge disponible" style="margin-left:6px;">🆕 Nouveau</span>' : ''}</div>
                 <div class="name">Code : ${c.code} · ${c.companyPhone}</div>
+                ${c.codeChangedAt ? `<div class="name" style="color:var(--accent2);">🔑 Code modifié le ${new Date(c.codeChangedAt).toLocaleDateString('fr-FR',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'})}</div>` : ''}
                 <div class="name">${c.adminName} · ${c.adminEmail}</div>
               </div>
             </div>
@@ -3114,7 +3123,7 @@ async function renderRegistrationGate(main, company, status){
   });
 }
 
-async function renderAdmin(){
+async function renderAdminCore(){
   const main = document.getElementById('main');
   if(!adminSession){
     if(showCompanyRegister){
@@ -3589,24 +3598,218 @@ function renderSupportButton(){
   document.body.appendChild(btn);
 }
 
+
+// ================= Espace ENTREPRISE (3e bouton) =================
+async function renderAdmin(){
+  if(mode === 'company'){
+    if(companyScreen === 'colis' && adminSession){
+      await renderAdminCore();
+      companyFixLogoutBtn();
+      return;
+    }
+    return renderCompany();
+  }
+  return renderAdminCore();
+}
+
+function companyFixLogoutBtn(){
+  const lb = document.getElementById('btnAdminLogout');
+  if(lb){
+    lb.textContent = '← Menu';
+    lb.onclick = ()=>{ adminSession = null; editingTrackingId = null; companyScreen = 'home'; renderCompany(); };
+  }
+}
+
+function updateCompanyBar(){
+  const bar = document.getElementById('companyBar');
+  if(!bar) return;
+  if(mode === 'company' && companySession && companyScreen !== 'home'){
+    const titles = {colis:'📦 Colis', settings:'⚙️ Paramètre', client:'👤 Client'};
+    bar.style.display = 'block';
+    bar.innerHTML = `<div style="display:flex;align-items:center;gap:10px;"><button class="ghost" id="btnCompanyBack" style="width:auto;padding:8px 14px;">← Menu</button><b style="font-size:14px;">${titles[companyScreen] || ''}</b></div>`;
+    document.getElementById('btnCompanyBack').onclick = ()=>{ adminSession = null; editingTrackingId = null; companyScreen = 'home'; renderCompany(); };
+  } else {
+    bar.style.display = 'none';
+    bar.innerHTML = '';
+  }
+}
+
+async function changeCompanyCode(oldCode, newCode){
+  if(!/^\d{4}$/.test(newCode)){ const e = new Error('FORMAT'); e.code = 'FORMAT'; throw e; }
+  if(newCode === oldCode){ const e = new Error('SAME'); e.code = 'SAME'; throw e; }
+  const ownerCode = await getOwnerCode();
+  const taken = await db.collection('companies').doc(newCode).get();
+  if(taken.exists || (ownerCode && ownerCode === newCode)){ const e = new Error('TAKEN'); e.code = 'TAKEN'; throw e; }
+  const oldDoc = await db.collection('companies').doc(oldCode).get();
+  if(!oldDoc.exists){ const e = new Error('MISSING'); e.code = 'MISSING'; throw e; }
+  const data = Object.assign({}, oldDoc.data(), {code:newCode, codeChangedAt:new Date().toISOString()});
+  await db.collection('companies').doc(newCode).set(data);
+  const snap = await db.collection('packages').where('companyCode','==',oldCode).get();
+  for(let i=0; i<snap.docs.length; i+=400){
+    const batch = db.batch();
+    snap.docs.slice(i, i+400).forEach(d=> batch.update(d.ref, {companyCode:newCode}));
+    await batch.commit();
+  }
+  await db.collection('companies').doc(oldCode).delete();
+}
+
+async function renderCompanySettings(main){
+  const company = await getCompanyByCode(companySession.code);
+  main.innerHTML = `
+    <div class="card">
+      <h2>🔑 Mon code d'accès</h2>
+      <p class="sub">Ce code sert à vous connecter avec le bouton Entreprise. Il est visible par SamTraceStore dans l'espace Admin.</p>
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px;">
+        <div id="curCode" style="font-size:22px;font-weight:800;letter-spacing:4px;">••••</div>
+        <button class="ghost" id="btnShowCode" style="width:auto;padding:6px 12px;">👁️ Voir</button>
+      </div>
+      <label>Nouveau code (4 chiffres)</label>
+      <input id="newCode" type="text" inputmode="numeric" maxlength="4" placeholder="Ex : 7788">
+      <label>Confirmer le nouveau code</label>
+      <input id="newCode2" type="text" inputmode="numeric" maxlength="4" placeholder="Répétez le code">
+      <button class="primary" id="btnChangeCode">Changer mon code</button>
+    </div>
+    <div class="card">
+      <h2>📄 Guide de l'entreprise</h2>
+      <p class="sub">Un guide PDF qui explique comment utiliser la partie Entreprise.</p>
+      <a href="guide-entreprise.pdf" target="_blank" rel="noopener" style="display:block;text-align:center;text-decoration:none;" class="primary">📄 Ouvrir le guide PDF</a>
+    </div>`;
+  let shown = false;
+  document.getElementById('btnShowCode').onclick = ()=>{
+    shown = !shown;
+    document.getElementById('curCode').textContent = shown ? companySession.code : '••••';
+    document.getElementById('btnShowCode').textContent = shown ? '🙈 Cacher' : '👁️ Voir';
+  };
+  document.getElementById('btnChangeCode').onclick = async ()=>{
+    const c1 = document.getElementById('newCode').value.trim();
+    const c2 = document.getElementById('newCode2').value.trim();
+    if(!/^\d{4}$/.test(c1)){ toast("Le code doit avoir exactement 4 chiffres"); return; }
+    if(c1 !== c2){ toast("Les deux codes ne sont pas pareils"); return; }
+    if(!confirm("Changer votre code ? Vous devrez utiliser le nouveau code pour vous connecter.")) return;
+    try{
+      await changeCompanyCode(companySession.code, c1);
+      companySession.code = c1;
+      toast("✅ Code changé. Nouveau code : " + c1);
+      renderCompany();
+    }catch(e){
+      if(e.code === 'TAKEN') toast("Ce code est déjà utilisé. Choisissez-en un autre.");
+      else if(e.code === 'SAME') toast("C'est déjà votre code actuel.");
+      else if(e.code === 'FORMAT') toast("Le code doit avoir exactement 4 chiffres");
+      else toast("Erreur, réessayez");
+    }
+  };
+}
+
+async function renderCompany(){
+  const main = document.getElementById('main');
+  if(!companySession){
+    adminSession = null;
+    updateCompanyBar();
+    const lockoutMinutes = checkLoginLockout();
+    main.innerHTML = `
+      ${firebaseWarningHTML()}
+      <div class="card">
+        <h2>Espace Entreprise</h2>
+        ${lockoutMinutes > 0 ? `<div class="warnBox" style="color:var(--danger);border-color:rgba(239,93,93,0.3);background:rgba(239,93,93,0.1);">🔒 Trop de tentatives échouées. Réessayez dans ${lockoutMinutes} minute${lockoutMinutes>1?'s':''}.</div>` : `
+        <p class="sub">Entrez le code de votre entreprise. Pas encore inscrit ? Inscrivez-vous d'abord avec le bouton Admin.</p>
+        <label>Code (4 chiffres)</label>
+        <div style="position:relative;">
+          <input id="coPin" type="text" inputmode="numeric" maxlength="4" placeholder="••••" style="padding-right:46px;-webkit-text-security:disc;">
+          <button type="button" id="coTogglePin" style="position:absolute;right:10px;top:9px;background:none;border:none;color:var(--muted);font-size:16px;cursor:pointer;">🙈</button>
+        </div>
+        <button class="primary" id="coUnlock">Accéder</button>
+        <button class="ghost" style="margin-top:10px;width:100%;" id="coGoRegister">Nouvelle entreprise ? S'inscrire (Admin)</button>`}
+      </div>
+      ${whatsappBubbleHTML()}`;
+    if(lockoutMinutes > 0) return;
+    document.getElementById('coGoRegister').onclick = ()=>{ showCompanyRegister = true; setMode('admin'); };
+    document.getElementById('coTogglePin').onclick = ()=>{
+      const inp = document.getElementById('coPin'); const btn = document.getElementById('coTogglePin');
+      const hidden = inp.style.webkitTextSecurity !== 'none';
+      inp.style.webkitTextSecurity = hidden ? 'none' : 'disc'; btn.textContent = hidden ? '👁️' : '🙈';
+    };
+    document.getElementById('coUnlock').onclick = async ()=>{
+      const code = document.getElementById('coPin').value.trim();
+      if(!firebaseReady){ toast("Firebase non configuré"); return; }
+      if(!/^\d{4}$/.test(code)){ toast("Entrez les 4 chiffres de votre code"); return; }
+      try{
+        const company = await getCompanyByCode(code);
+        if(!company){
+          registerFailedLogin();
+          toast("Code invalide. Inscrivez d'abord votre entreprise avec le bouton Admin.");
+          renderCompany();
+          return;
+        }
+        clearLoginLockout();
+        if(company.blocked){
+          main.innerHTML = `<div class="card"><div class="warnBox" style="color:var(--danger);border-color:rgba(239,93,93,0.3);background:rgba(239,93,93,0.1);">
+            🚫 Vous avez été temporairement bloqué par SamTraceStore. Veuillez contacter le support.</div></div>${whatsappBubbleHTML()}`;
+          return;
+        }
+        if(company.justUnblocked){
+          await db.collection('companies').doc(code).set({justUnblocked:false},{merge:true});
+          toast("✅ SamTraceStore a débloqué votre accès");
+        }
+        companySession = {code, companyName: company.companyName};
+        companyScreen = 'home';
+        renderCompany();
+      }catch(e){ toast("Erreur, réessayez"); }
+    };
+    return;
+  }
+
+  if(companyScreen === 'colis'){
+    adminSession = {code: companySession.code, isOwner:false, companyName: companySession.companyName};
+    updateCompanyBar();
+    await renderAdminCore();
+    companyFixLogoutBtn();
+    return;
+  }
+  adminSession = null;
+  updateCompanyBar();
+  if(companyScreen === 'client'){ await renderClient(); return; }
+  if(companyScreen === 'settings'){ await renderCompanySettings(main); return; }
+
+  const co = await getCompanyByCode(companySession.code);
+  const logo = co && co.logoUrl ? `<img src="${co.logoUrl}" style="width:40px;height:40px;border-radius:10px;object-fit:cover;">` : '';
+  main.innerHTML = `
+    <div class="card" style="display:flex;justify-content:space-between;align-items:center;">
+      <div style="display:flex;align-items:center;gap:10px;">${logo}<div><p class="sub" style="margin:0">Entreprise</p><b>${escHtml(companySession.companyName || '')}</b></div></div>
+      <button class="ghost" id="btnCompanyLogout">Déconnexion</button>
+    </div>
+    <button class="primary bigOrange" id="coBtnColis"><span class="bi">📦</span><span>Colis<br><span style="font-size:12px;font-weight:500;opacity:.85;">Ajouter et suivre vos colis</span></span></button>
+    <button class="primary bigOrange" id="coBtnSettings"><span class="bi">⚙️</span><span>Paramètre<br><span style="font-size:12px;font-weight:500;opacity:.85;">Mon code et guide PDF</span></span></button>
+    <button class="primary bigOrange" id="coBtnClient"><span class="bi">👤</span><span>Client<br><span style="font-size:12px;font-weight:500;opacity:.85;">Voir comme vos clients et tester</span></span></button>
+    ${whatsappBubbleHTML()}`;
+  document.getElementById('coBtnColis').onclick = ()=>{ companyScreen = 'colis'; renderCompany(); };
+  document.getElementById('coBtnSettings').onclick = ()=>{ companyScreen = 'settings'; renderCompany(); };
+  document.getElementById('coBtnClient').onclick = ()=>{ companyScreen = 'client'; renderCompany(); };
+  document.getElementById('btnCompanyLogout').onclick = ()=>{ companySession = null; companyScreen = 'home'; renderCompany(); };
+}
+
+function setMode(m){
+  if(mode === 'admin') adminStash = adminSession;
+  mode = m;
+  adminSession = (m === 'admin') ? adminStash : null;
+  if(m === 'company') companyScreen = 'home';
+  document.getElementById('btnClientMode').classList.toggle('active', m === 'client');
+  document.getElementById('btnAdminMode').classList.toggle('active', m === 'admin');
+  document.getElementById('btnCompanyMode').classList.toggle('active', m === 'company');
+  updateCompanyBar();
+  render();
+}
+
 function render(){
-  if(mode === 'client') renderClient(); else renderAdmin();
+  if(mode === 'client') renderClient();
+  else if(mode === 'company') renderCompany();
+  else renderAdmin();
   renderShareFooter();
   renderSupportButton();
 }
 
-document.getElementById('btnClientMode').onclick = ()=>{
-  mode='client';
-  document.getElementById('btnClientMode').classList.add('active');
-  document.getElementById('btnAdminMode').classList.remove('active');
-  render();
-};
-document.getElementById('btnAdminMode').onclick = ()=>{
-  mode='admin';
-  document.getElementById('btnAdminMode').classList.add('active');
-  document.getElementById('btnClientMode').classList.remove('active');
-  render();
-};
+document.getElementById('btnClientMode').onclick = ()=>{ setMode('client'); };
+document.getElementById('btnAdminMode').onclick = ()=>{ setMode('admin'); };
+document.getElementById('btnCompanyMode').onclick = ()=>{ setMode('company'); };
 
 render();
 loadSupportAvatar().then(()=>{ if(supportAvatarUrl) render(); });
