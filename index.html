@@ -393,6 +393,10 @@ function buildLocationSelectsHTML(){
         <option value="">Choisir un pays</option>
         ${COUNTRIES.map(c=>`<option value="${c}">${c}</option>`).join('')}
       </select>
+      <div id="pCountryOtherWrap" style="display:none;">
+        <label>Nom du pays</label>
+        <input id="pCountryOther" placeholder="Ex : France, Brésil, Chili...">
+      </div>
       <label>Département / Région</label>
       <div id="pDeptWrap"><input id="pDept" placeholder="Département / Région"></div>
       <label>Commune / Ville</label>
@@ -425,13 +429,32 @@ function updateCommuneField(country, dept, selectedCommune){
   }
 }
 
+function toggleOtherCountry(){
+  const sel = document.getElementById('pCountry');
+  const wrap = document.getElementById('pCountryOtherWrap');
+  if(sel && wrap) wrap.style.display = (sel.value === 'Autre') ? 'block' : 'none';
+}
+// Pays à enregistrer : le nom écrit si « Autre » ; null si « Autre » sans nom
+function getDestCountryValue(){
+  const sel = document.getElementById('pCountry');
+  if(!sel) return '';
+  if(sel.value !== 'Autre') return sel.value;
+  const other = document.getElementById('pCountryOther');
+  const v = other ? other.value.trim() : '';
+  return v ? v : null;
+}
 function initLocationFields(prefillCountry, prefillDept, prefillCommune){
   const countrySel = document.getElementById('pCountry');
   if(!countrySel) return;
-  countrySel.value = prefillCountry || '';
+  const known = !prefillCountry || COUNTRIES.includes(prefillCountry);
+  countrySel.value = known ? (prefillCountry || '') : 'Autre';
+  const otherEl = document.getElementById('pCountryOther');
+  if(otherEl) otherEl.value = known ? '' : prefillCountry;
+  toggleOtherCountry();
   updateDeptField(countrySel.value, prefillDept);
   updateCommuneField(countrySel.value, prefillDept, prefillCommune);
   countrySel.onchange = ()=>{
+    toggleOtherCountry();
     updateDeptField(countrySel.value, '');
     updateCommuneField(countrySel.value, '', '');
   };
@@ -622,7 +645,7 @@ function courierBlockHTML(av, kind){
 }
 function courierAvatarCardHTML(av){
   return `<div class="card">
-      <h2>Avatars de livraison <span style="font-size:11px;color:var(--muted);font-weight:400;">(v7 oct. 23h)</span></h2>
+      <h2>Avatars de livraison <span style="font-size:11px;color:var(--muted);font-weight:400;">(v8 oct.)</span></h2>
       <p class="sub">Ces avatars sont utilisés par toutes les entreprises. Quand vous les changez ici, ils changent pour tout le monde, côté client aussi.</p>
       ${courierBlockHTML(av, 'moto')}
       ${courierBlockHTML(av, 'truck')}
@@ -657,6 +680,17 @@ function bindCourierAvatars(rerender){
       }catch(err){ toast("Erreur lors du chargement de l'image"); }
     };
   });
+}
+
+const companyNameCache = {};
+async function getCompanyNamesFor(pkgs){
+  const codes = [...new Set((pkgs||[]).map(p => p.companyCode || ''))];
+  await Promise.all(codes.map(async c => {
+    if(c in companyNameCache) return;
+    if(!c){ companyNameCache[c] = 'Sam Trace Store'; return; }
+    try{ const co = await getCompanyByCode(c); companyNameCache[c] = co && co.companyName ? co.companyName : ''; }
+    catch(e){ companyNameCache[c] = ''; }
+  }));
 }
 
 async function getPackagesForPhone(phone){
@@ -1263,6 +1297,8 @@ async function renderClient(){
   try{
     const allPkgs = await getPackagesForPhone(clientPhone);
     courierOwnerCode = await preloadCourierAvatars(allPkgs);
+    await getCompanyNamesFor(allPkgs);
+    const multiCompanies = new Set(allPkgs.filter(p => !p.hiddenByClient).map(p => p.companyCode || '')).size >= 2;
     const nums = packageNumbers(allPkgs);
     const pkgs = allPkgs.filter(p => !p.hiddenByClient).sort((a, b) => pkgCreatedAt(a) - pkgCreatedAt(b));
     const list = document.getElementById('pkgList');
@@ -1271,7 +1307,8 @@ async function renderClient(){
     } else {
       list.innerHTML = pkgs.map(p => {
         const n = nums[p.trackingId];
-        return pkgCardHTML(p, colisLabel(n));
+        const coName = multiCompanies ? (companyNameCache[p.companyCode || ''] || '') : '';
+        return pkgCardHTML(p, [colisLabel(n), coName].filter(Boolean).join(' · '));
       }).join('') + `<button type="button" class="ghost" id="btnDeleteMyList" style="width:100%;margin-top:6px;padding:12px;color:var(--danger);border-color:rgba(239,93,93,0.4);">🗑️ Supprimer ma liste de colis</button>`;
       list.querySelectorAll('[data-pickup]').forEach(btn=>{
         btn.onclick = ()=> confirmPickup(btn.dataset.pickup);
@@ -1419,7 +1456,7 @@ function groupPackagesByClient(pkgs){
 // { trackingId: {num, total, manual} }
 function packageNumbers(pkgs){
   const byPhone = {};
-  (pkgs || []).forEach(p => { (byPhone[p.phone] = byPhone[p.phone] || []).push(p); });
+  (pkgs || []).forEach(p => { const k = p.phone + '|' + (p.companyCode || ''); (byPhone[k] = byPhone[k] || []).push(p); });
   const m = {};
   Object.values(byPhone).forEach(arr => assignColisNumbers(arr).forEach(x => { m[x.p.trackingId] = {num: x.num, total: arr.length, manual: x.manual}; }));
   return m;
@@ -1684,7 +1721,8 @@ function initColisNumField(isEditing){
     if(!base){ tHint.textContent = ''; return; }
     const raw = parseInt(numEl.value);
     const r = resolveNewTracking(base, normalizePhone(phoneEl.value), raw >= 1 ? raw : null);
-    if(r.derived) tHint.textContent = '✅ Ce numéro existe déjà pour ce client : le colis sera enregistré sous ' + r.id;
+    if(!phoneEl.value.trim() && (r.derived || r.conflict)) tHint.textContent = 'ℹ️ Ce numéro de suivi existe déjà. Entrez le téléphone du client pour continuer.';
+    else if(r.derived) tHint.textContent = '✅ Ce numéro existe déjà pour ce client : le colis sera enregistré sous ' + r.id;
     else if(r.conflict) tHint.textContent = '⚠️ Ce numéro de suivi appartient à un autre client.';
     else tHint.textContent = '';
   }
@@ -2672,7 +2710,8 @@ async function renderOwnerPackages(){
     const name = document.getElementById('pName').value.trim();
     const phone = document.getElementById('pPhone').value.trim();
     const status = document.getElementById('pStatus').value;
-    const destCountry = document.getElementById('pCountry').value;
+    const destCountry = getDestCountryValue();
+    if(destCountry === null){ toast("Écrivez le nom du pays"); return; }
     const destDepartment = document.getElementById('pDept') ? document.getElementById('pDept').value : '';
     const destCommune = document.getElementById('pCommune') ? document.getElementById('pCommune').value : '';
     if(!trackingId || !phone || !name){ toast("Nom, numéro de suivi et téléphone requis"); return; }
@@ -3396,7 +3435,8 @@ async function renderAdminCore(){
     const name = document.getElementById('pName').value.trim();
     const phone = document.getElementById('pPhone').value.trim();
     const status = document.getElementById('pStatus').value;
-    const destCountry = document.getElementById('pCountry').value;
+    const destCountry = getDestCountryValue();
+    if(destCountry === null){ toast("Écrivez le nom du pays"); return; }
     const destDepartment = document.getElementById('pDept') ? document.getElementById('pDept').value : '';
     const destCommune = document.getElementById('pCommune') ? document.getElementById('pCommune').value : '';
     if(!trackingId || !phone || !name){ toast("Nom, numéro de suivi et téléphone requis"); return; }
@@ -3573,10 +3613,10 @@ function openSupportModal(){
     const msg = document.getElementById('supportMsg').value.trim();
     const track = document.getElementById('supportTrack').value.trim();
     if(msg.length < 5){ toast(t.tooShort); return; }
-    let text = t.hello + "\n\n" + msg;
+    let text = ((mode === 'company' && companySession && companySession.companyName) ? t.hello.replace('Sam Trace Store', companySession.companyName) : t.hello) + "\n\n" + msg;
     if(track) text += "\n\n" + t.trackLbl + track;
     if(clientPhone) text += "\n" + t.phoneLbl + clientPhone;
-    window.open('https://wa.me/' + WHATSAPP_NUMBER + '?text=' + encodeURIComponent(text), '_blank');
+    window.open('https://wa.me/' + supportTargetNumber() + '?text=' + encodeURIComponent(text), '_blank');
     closeSupportModal();
     toast(t.opening);
   };
@@ -3585,7 +3625,8 @@ function openSupportModal(){
 function renderSupportButton(){
   const existing = document.getElementById('clientSupportBtn');
   if(existing) existing.remove();
-  if(mode !== 'client') return;
+  const companyClientView = (mode === 'company' && !!companySession && companyScreen === 'client');
+  if(mode !== 'client' && !companyClientView) return;
   const inner = supportAvatarUrl
     ? `<img src="${supportAvatarUrl}" style="width:34px;height:34px;border-radius:50%;object-fit:cover;object-position:center ${supportAvatarPos}%;flex-shrink:0;">`
     : `<span style="font-size:20px;line-height:1;">💬</span>`;
@@ -3632,6 +3673,16 @@ function updateCompanyBar(){
     bar.style.display = 'none';
     bar.innerHTML = '';
   }
+  renderSupportButton();
+}
+// Numéro WhatsApp du support : celui de l'entreprise dans son espace Client, sinon SamTraceStore
+function supportTargetNumber(){
+  if(mode === 'company' && companySession && companySession.phone){
+    let d = String(companySession.phone).replace(/\D/g, '');
+    if(d.length === 8) d = '509' + d;
+    return d;
+  }
+  return WHATSAPP_NUMBER;
 }
 
 async function changeCompanyCode(oldCode, newCode){
@@ -3750,7 +3801,7 @@ async function renderCompany(){
           await db.collection('companies').doc(code).set({justUnblocked:false},{merge:true});
           toast("✅ SamTraceStore a débloqué votre accès");
         }
-        companySession = {code, companyName: company.companyName};
+        companySession = {code, companyName: company.companyName, phone: company.companyPhone};
         companyScreen = 'home';
         renderCompany();
       }catch(e){ toast("Erreur, réessayez"); }
