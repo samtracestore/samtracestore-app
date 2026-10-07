@@ -603,10 +603,8 @@ function courierBlockHTML(av, kind){
         <div style="${shapeLg}overflow:hidden;margin-bottom:12px;border:1px solid var(--border);">
           <img id="courierPreview${k}" style="width:100%;height:100%;object-fit:cover;display:block;object-position:50% 50%;">
         </div>
-        <label>Zoom (100 = image entière ; augmentez pour bouger haut ↕ bas)</label>
+        <label>Zoom — à 100 l'image est entière ; augmentez pour activer le curseur haut ↕ bas</label>
         <input type="range" id="courierSliderZ${k}" min="100" max="250" value="100" style="width:100%;margin-bottom:10px;">
-        <label>Gauche ↔ droite</label>
-        <input type="range" id="courierSliderX${k}" min="0" max="100" value="50" style="width:100%;margin-bottom:10px;">
         <label>Haut ↕ bas</label>
         <input type="range" id="courierSliderY${k}" min="0" max="100" value="50" style="width:100%;margin-bottom:12px;">
         <button class="primary" id="btnSaveCourier${k}">💾 Enregistrer</button>
@@ -615,7 +613,7 @@ function courierBlockHTML(av, kind){
 }
 function courierAvatarCardHTML(av){
   return `<div class="card">
-      <h2>Avatars de livraison</h2>
+      <h2>Avatars de livraison <span style="font-size:11px;color:var(--muted);font-weight:400;">(v7 oct. 21h)</span></h2>
       <p class="sub">Ces avatars sont utilisés par toutes les entreprises. Quand vous les changez ici, ils changent pour tout le monde, côté client aussi.</p>
       ${courierBlockHTML(av, 'moto')}
       ${courierBlockHTML(av, 'truck')}
@@ -632,11 +630,15 @@ function bindCourierAvatars(rerender){
       try{
         const dataUrl = await compressImage(file, 480);
         const prev = document.getElementById('courierPreview' + k);
-        const sx = document.getElementById('courierSliderX' + k);
+        const sx = {value:50};
         const sy = document.getElementById('courierSliderY' + k);
         const sz = document.getElementById('courierSliderZ' + k);
         prev.src = dataUrl; sx.value = 50; sy.value = 50; sz.value = 100;
-        const apply = ()=>{ prev.style.cssText = 'width:100%;height:100%;object-fit:cover;display:block;' + courierImgStyle(sx.value, sy.value, sz.value); };
+        const apply = ()=>{
+          prev.style.cssText = 'width:100%;height:100%;object-fit:cover;display:block;' + courierImgStyle(sx.value, sy.value, sz.value);
+          const off = parseInt(sz.value) <= 100;
+          sy.disabled = off; sy.style.opacity = off ? '0.35' : '1';
+        };
         apply();
         sx.oninput = apply; sy.oninput = apply; sz.oninput = apply;
         document.getElementById('courierEditor' + k).style.display = 'block';
