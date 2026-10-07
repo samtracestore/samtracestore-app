@@ -645,7 +645,7 @@ function courierBlockHTML(av, kind){
 }
 function courierAvatarCardHTML(av){
   return `<div class="card">
-      <h2>Avatars de livraison <span style="font-size:11px;color:var(--muted);font-weight:400;">(v9 oct.)</span></h2>
+      <h2>Avatars de livraison <span style="font-size:11px;color:var(--muted);font-weight:400;">(v11 oct.)</span></h2>
       <p class="sub">Ces avatars sont utilisés par toutes les entreprises. Quand vous les changez ici, ils changent pour tout le monde, côté client aussi.</p>
       ${courierBlockHTML(av, 'moto')}
       ${courierBlockHTML(av, 'truck')}
@@ -709,6 +709,22 @@ async function getPackagesForPhone(phone){
 // Dans l'espace Entreprise > Client, on ne voit que les colis de cette entreprise
 function clientScopeCode(){
   return (mode === 'company' && companySession && companyScreen === 'client') ? companySession.code : null;
+}
+// Suivi rapide : dans Entreprise > Client, retrouve le colis de l'entreprise même si le client tape le numéro sans les initiales (-SS)
+async function quickFindPackage(clean, raw){
+  let pkg = await getPackage(clean);
+  if(!pkg && clean !== raw) pkg = await getPackage(raw);
+  const scope = clientScopeCode();
+  if(!scope) return pkg;
+  if(pkg && await pkgInClientScope(pkg)) return pkg;
+  const tag = companyTag(companySession.companyName);
+  const cands = [clean + '-' + tag];
+  for(let n = 2; n <= 5; n++) cands.push(clean + '-' + tag + n);
+  for(const c of cands){
+    const p = await getPackage(c);
+    if(p && await pkgInClientScope(p)) return p;
+  }
+  return null;
 }
 async function pkgInClientScope(p){
   const scope = clientScopeCode();
@@ -1219,9 +1235,7 @@ async function renderClient(){
       resultEl.innerHTML = `<div class="empty">Recherche...</div>`;
       try{
         const clean = trackingId.replace(/\s+/g,'').toUpperCase();
-        let pkg = await getPackage(clean);
-        if(!pkg && clean !== trackingId) pkg = await getPackage(trackingId);
-        if(pkg && !(await pkgInClientScope(pkg))) pkg = null;
+        let pkg = await quickFindPackage(clean, trackingId);
         const family = pkg ? await getTrackingFamily(pkg) : [];
         courierOwnerCode = await preloadCourierAvatars(family.map(f => f.p));
         resultEl.innerHTML = pkg
@@ -1852,7 +1866,7 @@ async function renderAdminPkgList(pkgs){
       <div style="display:block;">
         <div class="info" data-edit="${escHtml(p.trackingId)}" style="cursor:pointer;">
           <div style="margin:6px 0 3px;display:flex;flex-wrap:wrap;gap:6px;align-items:center;">${numBadge}<select class="statusSelect" data-status-for="${escHtml(p.trackingId)}" data-current="${escHtml(p.status)}" style="background:rgba(255,122,26,0.12);border:1px solid var(--accent);color:var(--accent2);border-radius:20px;padding:4px 10px;font-size:12px;font-weight:700;width:auto;margin:0;">${STATUSES.map(st => `<option value="${st.key}" ${st.key === p.status ? 'selected' : ''}>${st.label}</option>`).join('')}</select></div>
-          <div class="name">${escHtml(p.name)} · ${escHtml(p.phone)} <button type="button" class="waMini" data-send-wa="${escHtml(p.trackingId)}" style="margin-left:6px;background:rgba(37,211,102,0.12);border:1px solid rgba(37,211,102,0.5);color:#25D366;border-radius:8px;padding:3px 9px;font-size:11px;font-weight:700;cursor:pointer;">💬 WhatsApp</button></div>
+          <div class="name">${escHtml(p.name)} · ${escHtml(p.phone)} <button type="button" class="waMini" data-send-wa="${escHtml(p.trackingId)}" style="margin-left:6px;background:rgba(37,211,102,0.12);border:1px solid rgba(37,211,102,0.5);color:#25D366;border-radius:8px;padding:3px 9px;font-size:11px;font-weight:700;cursor:pointer;">💬 WhatsApp</button> <button type="button" class="waMini" data-send-mail="${escHtml(p.trackingId)}" style="margin-left:4px;background:rgba(96,165,250,0.12);border:1px solid rgba(96,165,250,0.5);color:var(--info);border-radius:8px;padding:3px 9px;font-size:11px;font-weight:700;cursor:pointer;">📧 Email</button></div>
           ${(p.destCommune || p.destDepartment) ? `<div class="sub" style="font-size:11px;">📍 ${[p.destCommune, p.destDepartment, p.destCountry].filter(Boolean).map(escHtml).join(', ')}</div>` : ''}
           ${deliveryLine(p) ? `<div class="sub" style="font-size:11.5px;color:var(--accent2);">📅 Livraison prévue : ${deliveryLine(p)}</div>` : ''}
         </div>
@@ -1975,6 +1989,58 @@ async function renderAdminPkgList(pkgs){
       window.open(trackingWhatsappUrl(p, colisLabel(n)), '_blank');
     };
   });
+  list.querySelectorAll('[data-send-mail]').forEach(b => {
+    b.onclick = (e) => {
+      e.stopPropagation();
+      const p = byId[b.dataset.sendMail];
+      if(p) openTrackingEmailModal(p);
+    };
+  });
+}
+
+// Envoyer le numéro de suivi par email (pour un client qui n'a pas WhatsApp)
+async function openTrackingEmailModal(p){
+  const old = document.getElementById('trackMailModal'); if(old) old.remove();
+  let prefill = '';
+  try{
+    const alertSub = await getTrackingAlert(p.trackingId);
+    const client = await getClient(p.phone);
+    prefill = (alertSub && alertSub.email) || (client && client.email) || '';
+  }catch(e){}
+  const overlay = document.createElement('div');
+  overlay.id = 'trackMailModal';
+  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:210;display:flex;align-items:center;justify-content:center;padding:16px;';
+  overlay.innerHTML = `
+    <div style="width:100%;max-width:420px;background:var(--panel);border:1px solid var(--border);border-radius:18px;padding:18px;">
+      <h2 style="margin:0 0 6px;">📧 Envoyer par email</h2>
+      <p class="sub" style="margin:0 0 12px;">Le numéro de suivi <b>#${escHtml(p.trackingId)}</b> sera envoyé à ${escHtml(p.name)}. Il recevra aussi un email à chaque changement de statut.</p>
+      <label>Email du client</label>
+      <input id="trackMailInput" type="email" placeholder="client@email.com" value="${escHtml(prefill)}">
+      <div style="display:flex;gap:8px;margin-top:6px;">
+        <button class="ghost" id="trackMailCancel" style="flex:1;">Annuler</button>
+        <button class="primary" id="trackMailSend" style="flex:2;">Envoyer</button>
+      </div>
+    </div>`;
+  document.body.appendChild(overlay);
+  const close = ()=> overlay.remove();
+  overlay.onclick = (e)=>{ if(e.target === overlay) close(); };
+  document.getElementById('trackMailCancel').onclick = close;
+  document.getElementById('trackMailSend').onclick = async ()=>{
+    const email = document.getElementById('trackMailInput').value.trim();
+    if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)){ toast("Adresse email invalide"); return; }
+    if(!emailjsReady && !appsScriptReady){ toast("L'envoi d'email n'est pas configuré"); return; }
+    const btn = document.getElementById('trackMailSend');
+    btn.disabled = true; btn.textContent = 'Envoi...';
+    try{
+      await saveTrackingAlert(p.trackingId, email);
+      await sendStatusEmail(p);
+      toast("📧 Email envoyé à " + email);
+      close();
+    }catch(e){
+      toast("Erreur, réessayez");
+      btn.disabled = false; btn.textContent = 'Envoyer';
+    }
+  };
 }
 
 // Carte admin : colis que les clients ont retirés de leur liste
@@ -2664,13 +2730,25 @@ async function renderCompanyPackagesView(code, companyName){
       view.innerHTML = `<div class="card"><h2>Colis — ${companyName}</h2><div class="empty">Aucun colis pour cette entreprise.</div></div>`;
     } else {
       view.innerHTML = `<div class="card"><h2>Colis — ${companyName}</h2>` + pkgs.map(p=>`
-        <div class="pkgAdmin">
-          <div class="info">
+        <div class="pkgAdmin" style="align-items:center;gap:10px;">
+          <div class="info" style="flex:1;">
             <div><b>#${p.trackingId}</b> — ${STATUS_LABEL[p.status]||p.status}</div>
             <div class="name">${p.name} · ${p.phone}</div>
             ${(p.destCommune||p.destDepartment) ? `<div class="sub" style="font-size:11px;">📍 ${[p.destCommune,p.destDepartment,p.destCountry].filter(Boolean).join(', ')}</div>` : ''}
           </div>
+          <button class="miniBtn" style="color:var(--danger);border-color:rgba(239,93,93,0.4);flex-shrink:0;" data-delpkg="${p.trackingId}">Supprimer</button>
         </div>`).join('') + `</div>`;
+      view.querySelectorAll('[data-delpkg]').forEach(b=>{
+        b.onclick = async ()=>{
+          const id = b.dataset.delpkg;
+          if(!confirm('Supprimer définitivement le colis #' + id + ' ? Cette action est irréversible.')) return;
+          try{
+            await deletePackage(id);
+            toast("Colis supprimé");
+            renderCompanyPackagesView(code, companyName);
+          }catch(e){ toast("Erreur, réessayez"); }
+        };
+      });
     }
   }catch(e){
     view.innerHTML = `<div class="card"><div class="empty">Impossible de charger les colis.</div></div>`;
