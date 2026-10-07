@@ -88,7 +88,7 @@
   .waBtn{width:100%;background:#25D366;color:#06210F;border:none;border-radius:12px;
     padding:14px;font-size:14px;font-weight:700;display:flex;align-items:center;justify-content:center;
     gap:8px;cursor:pointer;box-shadow:0 6px 18px rgba(37,211,102,0.35);pointer-events:auto;}
-  .menuBackBtn{width:auto;padding:9px 16px;border:none;border-radius:12px;cursor:pointer;font-weight:800;font-size:14px;color:#fff;background:linear-gradient(135deg,var(--accent),#FF5A1A);box-shadow:0 4px 14px rgba(255,106,0,0.4);}
+  .menuBackBtn{display:inline-flex;align-items:center;gap:8px;width:auto;padding:9px 16px;border:none;border-radius:12px;cursor:pointer;font-weight:800;font-size:14px;color:#fff;background:linear-gradient(135deg,var(--accent),#FF5A1A);box-shadow:0 4px 14px rgba(255,106,0,0.4);}
   .toast{position:fixed;bottom:100px;left:50%;transform:translateX(-50%);background:#1A2333;
     border:1px solid var(--border);padding:10px 18px;border-radius:10px;font-size:13px;
     opacity:0;transition:opacity 0.3s;pointer-events:none;z-index:50;max-width:90%;text-align:center;}
@@ -2694,9 +2694,9 @@ async function renderOwnerCompanies(){
     const companies = await getAllCompanies();
     const srHtml = await supportRequestsHTML();
     if(companies.length===0){
-      content.innerHTML = srHtml + `<div class="card"><div class="empty">Aucune entreprise inscrite pour le moment.</div></div>`;
+      content.innerHTML = `<div class="card"><div class="empty">Aucune entreprise inscrite pour le moment.</div></div>` + srHtml;
     } else {
-      content.innerHTML = srHtml + `<div class="card"><h2>Entreprises inscrites</h2>` + companies.map(c=>`
+      content.innerHTML = `<div class="card"><h2>Entreprises inscrites</h2>` + companies.map(c=>`
         <div class="pkgAdmin" style="flex-direction:column;align-items:stretch;">
           <div style="display:flex;justify-content:space-between;align-items:center;">
             <div class="info" data-view="${c.code}" data-name="${c.companyName}" style="cursor:pointer;flex:1;display:flex;align-items:center;gap:10px;">
@@ -2717,7 +2717,7 @@ async function renderOwnerCompanies(){
               </button>
             </div>
           </div>
-        </div>`).join('') + `</div><div id="companyPkgView"></div>`;
+        </div>`).join('') + `</div><div id="companyPkgView"></div>` + srHtml;
       content.querySelectorAll('[data-toggle]').forEach(b=>{
         b.onclick = async (e)=>{
           e.stopPropagation();
@@ -2760,11 +2760,23 @@ async function renderCompanyPackagesView(code, companyName){
         <div class="pkgAdmin" style="align-items:center;gap:10px;">
           <div class="info" style="flex:1;">
             <div><b>#${p.trackingId}</b> — ${STATUS_LABEL[p.status]||p.status}</div>
-            <div class="name">${p.name} · ${p.phone}</div>
+            <div style="font-size:14px;font-weight:700;margin-top:2px;">👤 ${escHtml(p.name||'—')} <span class="name" style="font-weight:400;">· ${escHtml(p.phone||'')}</span></div>
+            <div class="pkgPhotos" data-pkgphotos-for="${escHtml(p.trackingId)}" style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px;"><span class="sub" style="font-size:11px;">📷 ${p.photoCount ? 'Chargement des photos...' : 'Aucune photo'}</span></div>
             ${(p.destCommune||p.destDepartment) ? `<div class="sub" style="font-size:11px;">📍 ${[p.destCommune,p.destDepartment,p.destCountry].filter(Boolean).join(', ')}</div>` : ''}
           </div>
           <button class="miniBtn" style="color:var(--danger);border-color:rgba(239,93,93,0.4);flex-shrink:0;" data-delpkg="${p.trackingId}">Supprimer</button>
         </div>`).join('') + `</div>`;
+      view.querySelectorAll("[data-pkgphotos-for]").forEach(async box=>{
+        const id = box.dataset.pkgphotosFor;
+        const pk = pkgs.find(x=>String(x.trackingId)===id);
+        if(!pk || !pk.photoCount) return;
+        try{
+          const photos = await getPackagePhotos(id);
+          box.innerHTML = photos.length
+            ? photos.map(ph=>`<img src="${ph.dataUrl}" data-zoom="${ph.dataUrl}" style="width:64px;height:64px;object-fit:cover;border-radius:10px;cursor:pointer;border:1px solid var(--border);">`).join('')
+            : '<span class="sub" style="font-size:11px;">📷 Aucune photo</span>';
+        }catch(e){ box.innerHTML = '<span class="sub" style="font-size:11px;">📷 Photos indisponibles</span>'; }
+      });
       view.querySelectorAll('[data-delpkg]').forEach(b=>{
         b.onclick = async ()=>{
           const id = b.dataset.delpkg;
@@ -3778,6 +3790,8 @@ function openSupportModal(forSTS){
           <button type="button" class="ghost" id="supportPhotoBtn" style="width:100%;color:#fff;border-color:var(--accent);">📷 Ajouter une photo (max 3)</button>
           <input type="file" accept="image/*" multiple id="supportPhotoInput" style="display:none;">
           <div id="supportPhotoPrev" style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px;"></div>
+          <button type="button" id="supportShareBtn" style="display:none;width:100%;margin-top:10px;padding:12px;border-radius:12px;border:none;cursor:pointer;background:#25D366;color:#06210F;font-weight:800;font-size:13.5px;">📎 Envoyer le message + photos dans WhatsApp</button>
+          <p id="supportShareHint" style="display:none;margin:6px 0 0;font-size:11.5px;color:var(--muted);">Choisissez ensuite le contact SamTraceStore dans WhatsApp.</p>
         </div>
         <textarea id="supportMsg" rows="4" style="width:100%;background:#fff;color:#111;border:1px solid var(--border);border-radius:10px;padding:12px 13px;font-size:14.5px;margin-bottom:14px;outline:none;font-family:inherit;resize:vertical;"></textarea>
         <button type="button" class="primary" id="supportSend"></button>
@@ -3802,6 +3816,8 @@ function openSupportModal(forSTS){
     const inp = document.getElementById('supportPhotoInput');
     function drawPrev(){
       document.getElementById('supportPhotoPrev').innerHTML = supportPhotos.map((p,i)=>`<div style="position:relative;"><img src="${p}" style="width:64px;height:64px;object-fit:cover;border-radius:10px;border:1px solid var(--border);"><button type="button" data-rmph="${i}" style="position:absolute;top:-6px;right:-6px;width:20px;height:20px;border-radius:50%;border:none;background:var(--danger);color:#fff;font-size:11px;cursor:pointer;">✕</button></div>`).join('');
+      document.getElementById('supportShareBtn').style.display = supportPhotos.length ? 'block' : 'none';
+      document.getElementById('supportShareHint').style.display = supportPhotos.length ? 'block' : 'none';
       document.querySelectorAll('[data-rmph]').forEach(b=>{ b.onclick = ()=>{ supportPhotos.splice(parseInt(b.dataset.rmph),1); drawPrev(); }; });
     }
     document.getElementById('supportPhotoBtn').onclick = ()=> inp.click();
@@ -3820,6 +3836,50 @@ function openSupportModal(forSTS){
   document.getElementById('langFr').onclick = ()=>{ lang = 'fr'; try{ localStorage.setItem(SUPPORT_LANG_KEY, lang); }catch(e){} applyLang(); };
   document.getElementById('supportClose').onclick = closeSupportModal;
   overlay.onclick = (e)=>{ if(e.target === overlay) closeSupportModal(); };
+  let supportSaved = false;
+  async function buildSTSText(t, msg){
+    let text = t.hello + "\n\n" + msg;
+    if(companySession){
+      text += "\n\n🏢 Entreprise : " + (companySession.companyName || '');
+      if(companySession.phone) text += "\n" + t.phoneLbl + companySession.phone;
+      if(!supportSaved){
+        try{
+          await db.collection('supportRequests').add({
+            companyCode: companySession.code, companyName: companySession.companyName || '',
+            phone: companySession.phone || '', message: msg, photos: supportPhotos,
+            createdAt: new Date().toISOString()
+          });
+          supportSaved = true;
+        }catch(e){ console.warn('Demande support non enregistrée', e); if(supportPhotos.length) toast("Photos non enregistrées (règles Firestore)"); }
+      }
+      if(supportSaved && supportPhotos.length) text += "\n📷 " + supportPhotos.length + " photo(s) aussi visible(s) dans l'application (Admin > Entreprises).";
+    }
+    return text;
+  }
+  if(forSTS){
+    document.getElementById('supportShareBtn').onclick = async ()=>{
+      const t = SUPPORT_TEXT[lang];
+      const msg = document.getElementById('supportMsg').value.trim();
+      if(msg.length < 5){ toast(t.tooShort); return; }
+      const text = await buildSTSText(t, msg);
+      try{
+        const files = [];
+        for(let i=0;i<supportPhotos.length;i++){
+          const blob = await (await fetch(supportPhotos[i])).blob();
+          files.push(new File([blob], 'photo'+(i+1)+'.jpg', {type:'image/jpeg'}));
+        }
+        if(navigator.canShare && navigator.canShare({files})){
+          await navigator.share({files, text});
+          closeSupportModal();
+          return;
+        }
+        toast("Partage de photos non disponible sur ce téléphone");
+      }catch(e){
+        if(e && e.name === 'AbortError') return;
+        toast("Partage impossible, utilisez le bouton « Voye »");
+      }
+    };
+  }
   document.getElementById('supportSend').onclick = async ()=>{
     const t = SUPPORT_TEXT[lang];
     const msg = document.getElementById('supportMsg').value.trim();
@@ -3828,19 +3888,7 @@ function openSupportModal(forSTS){
     let text, number;
     if(forSTS){
       number = WHATSAPP_NUMBER;
-      text = t.hello + "\n\n" + msg;
-      if(companySession){
-        text += "\n\n🏢 Entreprise : " + (companySession.companyName || '');
-        if(companySession.phone) text += "\n" + t.phoneLbl + companySession.phone;
-        try{
-          await db.collection('supportRequests').add({
-            companyCode: companySession.code, companyName: companySession.companyName || '',
-            phone: companySession.phone || '', message: msg, photos: supportPhotos,
-            createdAt: new Date().toISOString()
-          });
-          if(supportPhotos.length) text += "\n📷 " + supportPhotos.length + " photo(s) envoyée(s) dans l'application (Admin > Entreprises).";
-        }catch(e){ console.warn('Demande support non enregistrée', e); if(supportPhotos.length) toast("Photos non enregistrées (règles Firestore)"); }
-      }
+      text = await buildSTSText(t, msg);
     } else {
       number = supportTargetNumber();
       text = ((mode === 'company' && companySession && companySession.companyName) ? t.hello.replace('Sam Trace Store', companySession.companyName) : t.hello) + "\n\n" + msg;
@@ -3887,7 +3935,7 @@ async function renderAdmin(){
 function companyFixLogoutBtn(){
   const lb = document.getElementById('btnAdminLogout');
   if(lb){
-    lb.textContent = '← Menu';
+    lb.innerHTML = '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;"><path d="M19 12H5M11 5l-7 7 7 7"/></svg><span>Menu</span>';
     lb.className = 'menuBackBtn';
     lb.removeAttribute('style');
     lb.onclick = ()=>{ adminSession = null; editingTrackingId = null; companyScreen = 'home'; renderCompany(); };
@@ -3900,7 +3948,7 @@ function updateCompanyBar(){
   if(mode === 'company' && companySession && companyScreen !== 'home'){
     const titles = {colis:'📦 Colis', settings:'⚙️ Paramètre', client:'👤 Client'};
     bar.style.display = 'block';
-    bar.innerHTML = `<div style="display:flex;align-items:center;gap:10px;"><button class="menuBackBtn" id="btnCompanyBack">← Menu</button><b style="font-size:14px;">${titles[companyScreen] || ''}</b></div>`;
+    bar.innerHTML = `<div style="display:flex;align-items:center;gap:10px;"><button class="menuBackBtn" id="btnCompanyBack"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;"><path d="M19 12H5M11 5l-7 7 7 7"/></svg><span>Menu</span></button><b style="font-size:14px;">${titles[companyScreen] || ''}</b></div>`;
     document.getElementById('btnCompanyBack').onclick = ()=>{ adminSession = null; editingTrackingId = null; companyScreen = 'home'; renderCompany(); };
   } else {
     bar.style.display = 'none';
