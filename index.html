@@ -645,7 +645,7 @@ function courierBlockHTML(av, kind){
 }
 function courierAvatarCardHTML(av){
   return `<div class="card">
-      <h2>Avatars de livraison <span style="font-size:11px;color:var(--muted);font-weight:400;">(v8 oct.)</span></h2>
+      <h2>Avatars de livraison <span style="font-size:11px;color:var(--muted);font-weight:400;">(v9 oct.)</span></h2>
       <p class="sub">Ces avatars sont utilisés par toutes les entreprises. Quand vous les changez ici, ils changent pour tout le monde, côté client aussi.</p>
       ${courierBlockHTML(av, 'moto')}
       ${courierBlockHTML(av, 'truck')}
@@ -696,10 +696,25 @@ async function getCompanyNamesFor(pkgs){
 async function getPackagesForPhone(phone){
   phone = normalizePhone(phone);
   const snap = await db.collection('packages').where('phone','==',phone).get();
-  const pkgs = [];
+  let pkgs = [];
   snap.forEach(doc=>pkgs.push(doc.data()));
   pkgs.sort((a,b)=> new Date(b.updatedAt) - new Date(a.updatedAt));
+  const scope = clientScopeCode();
+  if(scope){
+    const oc = await getOwnerCode();
+    pkgs = pkgs.filter(p => (p.companyCode || oc) === scope);
+  }
   return pkgs;
+}
+// Dans l'espace Entreprise > Client, on ne voit que les colis de cette entreprise
+function clientScopeCode(){
+  return (mode === 'company' && companySession && companyScreen === 'client') ? companySession.code : null;
+}
+async function pkgInClientScope(p){
+  const scope = clientScopeCode();
+  if(!scope || !p) return true;
+  const oc = await getOwnerCode();
+  return (p.companyCode || oc) === scope;
 }
 
 async function getAllPackages(){
@@ -1206,6 +1221,7 @@ async function renderClient(){
         const clean = trackingId.replace(/\s+/g,'').toUpperCase();
         let pkg = await getPackage(clean);
         if(!pkg && clean !== trackingId) pkg = await getPackage(trackingId);
+        if(pkg && !(await pkgInClientScope(pkg))) pkg = null;
         const family = pkg ? await getTrackingFamily(pkg) : [];
         courierOwnerCode = await preloadCourierAvatars(family.map(f => f.p));
         resultEl.innerHTML = pkg
@@ -1466,6 +1482,27 @@ function colisLabel(n){
 }
 
 // Si le numéro de suivi saisi existe déjà POUR LE MÊME CLIENT, on crée « NUMERO-#N » (N = numéro du colis).
+// Étiquette courte de l'entreprise (initiales) pour rendre un numéro de suivi unique
+function companyTag(name){
+  const words = String(name || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase().split(/[^A-Z0-9]+/).filter(Boolean);
+  const tag = words.map(w => w[0]).join('').slice(0, 3);
+  return tag || 'ENT';
+}
+// Si le numéro appartient à une autre entreprise, on garde le même numéro + l'étiquette de l'entreprise
+async function resolveCrossCompany(trackingId, companyCode, companyName){
+  const oc = await getOwnerCode();
+  const first = await getPackage(trackingId);
+  if(!first || (first.companyCode || oc) === companyCode) return {id: trackingId, renamed: false};
+  const tag = companyTag(companyName);
+  let cand = trackingId + '-' + tag, n = 2;
+  for(let i = 0; i < 20; i++){
+    const c = await getPackage(cand);
+    if(!c || (c.companyCode || oc) === companyCode) return {id: cand, renamed: true};
+    cand = trackingId + '-' + tag + n; n++;
+  }
+  return {id: cand, renamed: true};
+}
+
 function resolveNewTracking(base, phoneN, colisNumRaw){
   const existing = (adminPkgsCache || []).find(p => p.trackingId === base);
   if(!existing) return {id: base, colisNum: colisNumRaw || null, derived: false, conflict: false};
@@ -2732,6 +2769,8 @@ async function renderOwnerPackages(){
     }
     try{
       if(!isEditing){
+        const cc = await resolveCrossCompany(trackingId, adminSession.code, adminSession.companyName || 'Sam Trace Store');
+        if(cc.renamed){ trackingId = cc.id; derivedId = true; }
         const dejaPris = await getPackage(trackingId);
         if(dejaPris){
           if(dejaPris.phone === normalizePhone(phone)) toast("Ce colis existe déjà. Pour changer son statut, utilise le menu de statut sur le colis dans « Tous les colis ».");
@@ -3457,6 +3496,8 @@ async function renderAdminCore(){
     }
     try{
       if(!isEditing){
+        const cc = await resolveCrossCompany(trackingId, adminSession.code, adminSession.companyName || 'Sam Trace Store');
+        if(cc.renamed){ trackingId = cc.id; derivedId = true; }
         const dejaPris = await getPackage(trackingId);
         if(dejaPris){
           if(dejaPris.phone === normalizePhone(phone)) toast("Ce colis existe déjà. Pour changer son statut, utilise le menu de statut sur le colis dans « Tous les colis ».");
