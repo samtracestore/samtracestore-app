@@ -2673,16 +2673,23 @@ async function supportRequestsHTML(){
         <div><b>${escHtml(r.companyName)}</b> <span class="sub" style="font-size:11px;">${fmtDate(r.createdAt)}</span></div>
         <div class="name">${escHtml(r.phone||'')}</div>
         <div style="font-size:13.5px;white-space:pre-wrap;">${escHtml(r.message)}</div>
-        ${(r.photos||[]).length ? `<div style="display:flex;gap:8px;flex-wrap:wrap;">${r.photos.map(p=>`<img src="${p}" data-zoom="${p}" style="width:72px;height:72px;object-fit:cover;border-radius:10px;cursor:pointer;">`).join('')}</div>` : ''}
+        ${(r.photos||[]).length ? `<div style="display:flex;gap:8px;flex-wrap:wrap;">${r.photos.map(p=>`<img src="${p}" data-zoom="${p}" style="width:72px;height:72px;object-fit:cover;border-radius:10px;cursor:pointer;">`).join('')}</div>` : (r.photoCount ? `<div class="reqPhotos" data-reqphotos="${r.id}" style="display:flex;gap:8px;flex-wrap:wrap;"><span class="sub" style="font-size:11px;">📷 Chargement...</span></div>` : '')}
         <button class="miniBtn" style="color:var(--danger);border-color:rgba(239,93,93,0.4);align-self:flex-start;" data-delreq="${r.id}">Supprimer</button>
       </div>`).join('') + `</div>`;
   }catch(e){ return ''; }
 }
 function bindSupportRequests(root, rerender){
+  root.querySelectorAll('[data-reqphotos]').forEach(async box=>{
+    try{
+      const snap = await db.collection('supportPhotos').where('requestId','==',box.dataset.reqphotos).get();
+      const list = snap.docs.map(d=>d.data()).sort((x,y)=>String(x.createdAt).localeCompare(String(y.createdAt)));
+      box.innerHTML = list.length ? list.map(p=>`<img src="${p.dataUrl}" data-zoom="${p.dataUrl}" style="width:72px;height:72px;object-fit:cover;border-radius:10px;cursor:pointer;">`).join('') : '<span class="sub" style="font-size:11px;">📷 Aucune photo</span>';
+    }catch(e){ box.innerHTML = '<span class="sub" style="font-size:11px;">📷 Photos indisponibles</span>'; }
+  });
   root.querySelectorAll('[data-delreq]').forEach(b=>{
     b.onclick = async ()=>{
       if(!confirm("Supprimer cette demande d'aide ?")) return;
-      try{ await db.collection('supportRequests').doc(b.dataset.delreq).delete(); toast('Demande supprimée'); rerender(); }catch(e){ toast('Erreur, réessayez'); }
+      try{ const ps = await db.collection('supportPhotos').where('requestId','==',b.dataset.delreq).get(); for(const d of ps.docs){ await d.ref.delete(); } await db.collection('supportRequests').doc(b.dataset.delreq).delete(); toast('Demande supprimée'); rerender(); }catch(e){ toast('Erreur, réessayez'); }
     };
   });
 }
@@ -3748,12 +3755,13 @@ function compressSmall(file){
     r.onload = e=>{
       const img = new Image();
       img.onload = ()=>{
-        const m = 800; let w = img.width, h = img.height;
+        const m = 1400; let w = img.width, h = img.height;
         if(w > h){ if(w > m){ h = h*(m/w); w = m; } } else { if(h > m){ w = w*(m/h); h = m; } }
         const c = document.createElement('canvas'); c.width = w; c.height = h;
         c.getContext('2d').drawImage(img, 0, 0, w, h);
-        let out = c.toDataURL('image/jpeg', 0.6);
-        if(out.length > 280000) out = c.toDataURL('image/jpeg', 0.4);
+        let out = c.toDataURL('image/jpeg', 0.82);
+        if(out.length > 900000) out = c.toDataURL('image/jpeg', 0.6);
+        if(out.length > 950000) out = c.toDataURL('image/jpeg', 0.4);
         resolve(out);
       };
       img.onerror = reject; img.src = e.target.result;
@@ -3844,11 +3852,14 @@ function openSupportModal(forSTS){
       if(companySession.phone) text += "\n" + t.phoneLbl + companySession.phone;
       if(!supportSaved){
         try{
-          await db.collection('supportRequests').add({
+          const reqRef = await db.collection('supportRequests').add({
             companyCode: companySession.code, companyName: companySession.companyName || '',
-            phone: companySession.phone || '', message: msg, photos: supportPhotos,
+            phone: companySession.phone || '', message: msg, photoCount: supportPhotos.length,
             createdAt: new Date().toISOString()
           });
+          for(const ph of supportPhotos){
+            await db.collection('supportPhotos').add({requestId: reqRef.id, dataUrl: ph, createdAt: new Date().toISOString()});
+          }
           supportSaved = true;
         }catch(e){ console.warn('Demande support non enregistrée', e); if(supportPhotos.length) toast("Photos non enregistrées (règles Firestore)"); }
       }
@@ -3935,10 +3946,9 @@ async function renderAdmin(){
 function companyFixLogoutBtn(){
   const lb = document.getElementById('btnAdminLogout');
   if(lb){
-    lb.innerHTML = '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;"><path d="M19 12H5M11 5l-7 7 7 7"/></svg><span>Menu</span>';
-    lb.className = 'menuBackBtn';
-    lb.removeAttribute('style');
-    lb.onclick = ()=>{ adminSession = null; editingTrackingId = null; companyScreen = 'home'; renderCompany(); };
+    lb.textContent = 'Déconnexion';
+    lb.className = 'ghost';
+    lb.onclick = ()=>{ adminSession = null; editingTrackingId = null; companySession = null; companyScreen = 'home'; renderCompany(); };
   }
 }
 
@@ -4010,7 +4020,7 @@ async function renderCompanySettings(main){
     <div class="card">
       <h2>📄 Guide de l'entreprise</h2>
       <p class="sub">Un guide PDF qui explique comment utiliser la partie Entreprise.</p>
-      <a href="guide-entreprise.pdf" target="_blank" rel="noopener" style="display:block;text-align:center;text-decoration:none;" class="primary">📄 Ouvrir le guide PDF</a>
+      <a href="guide-entreprise.pdf" target="_blank" rel="noopener" style="display:block;text-align:center;text-decoration:none;padding:14px;border-radius:12px;font-weight:800;font-size:15px;color:#FFB3D9;background:linear-gradient(135deg,var(--accent),#FF5A1A);box-shadow:0 6px 18px rgba(255,106,0,0.35);text-shadow:0 1px 2px rgba(0,0,0,0.35);">📄 Ouvrir le guide PDF</a>
     </div>`;
   document.getElementById('btnCoSupport').onclick = ()=>openSupportModal(true);
   let shown = false;
