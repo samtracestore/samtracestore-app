@@ -835,7 +835,7 @@ function compressLogo(file){
 }
 function logoBoxHTML(co, size, radius, extra){
   if(!co || !co.logoUrl) return '';
-  return `<div style="width:${size}px;height:${size}px;border-radius:${radius};overflow:hidden;flex-shrink:0;${extra || ''}"><img src="${co.logoUrl}" style="width:100%;height:100%;object-fit:cover;display:block;${courierImgStyle(co.logoPosX ?? 50, co.logoPosY ?? 50, co.logoZoom || 100)}"></div>`;
+  return `<div style="width:${size}px;height:${size}px;border-radius:${radius};overflow:hidden;flex-shrink:0;background:rgba(255,255,255,0.06);${extra || ''}"><img src="${co.logoUrl}" style="width:100%;height:100%;object-fit:contain;display:block;${courierImgStyle(co.logoPosX ?? 50, co.logoPosY ?? 50, co.logoZoom || 100)}"></div>`;
 }
 async function saveCompanyLogo(code, dataUrl){
   await db.collection('companies').doc(code).set({logoUrl:dataUrl}, {merge:true});
@@ -2810,6 +2810,7 @@ async function renderOwnerCompanies(){
         <div class="pkgAdmin" style="flex-direction:column;align-items:stretch;">
           <div style="display:flex;justify-content:space-between;align-items:center;">
             <div class="info" data-view="${c.code}" data-name="${c.companyName}" style="cursor:pointer;flex:1;display:flex;align-items:center;gap:10px;">
+              <span data-arrow style="color:var(--accent);font-size:20px;font-weight:900;flex:0 0 auto;width:18px;text-align:center;">▶</span>
               ${logoBoxHTML(c, 36, '9px')}
               <div>
                 <div style="display:flex;align-items:center;flex-wrap:wrap;gap:8px;"><b>${c.companyName}</b> ${waChatBtn(c.companyPhone, 'Bonjour ' + (c.companyName||'') + ', c\'est Sam Trace Store. ')} ${!c.seenByOwner ? '<span class="badge disponible" style="margin-left:6px;">🆕 Nouveau</span>' : ''}</div>
@@ -2835,6 +2836,7 @@ async function renderOwnerCompanies(){
               </button>
             </div>
           </div>
+          <div data-box="${c.code}"></div>
         </div>`).join('') + `</div><div id="companyPkgView"></div>` + srHtml;
       content.querySelectorAll('[data-payarrow]').forEach(b=>{
         b.onclick = (e)=>{
@@ -2875,7 +2877,17 @@ async function renderOwnerCompanies(){
         };
       });
       content.querySelectorAll('.info[data-view]').forEach(el=>{
-        el.onclick = ()=> renderCompanyPackagesView(el.dataset.view, el.dataset.name);
+        el.onclick = ()=>{
+          const code = el.dataset.view;
+          const box = content.querySelector('[data-box="' + code + '"]');
+          const wasOpen = !!(box && box.innerHTML.trim() !== '');
+          content.querySelectorAll('[data-box]').forEach(b => { b.innerHTML = ''; });
+          content.querySelectorAll('[data-arrow]').forEach(a => { a.textContent = '▶'; });
+          if(wasOpen) return;
+          const arrow = el.querySelector('[data-arrow]');
+          if(arrow) arrow.textContent = '▼';
+          renderCompanyPackagesView(code, el.dataset.name);
+        };
       });
       markCompaniesSeen();
     }
@@ -2886,8 +2898,8 @@ async function renderOwnerCompanies(){
 }
 
 async function renderCompanyPackagesView(code, companyName){
-  const view = document.getElementById('companyPkgView');
-  view.innerHTML = `<div class="card"><div class="empty">Chargement...</div></div>`;
+  const view = document.querySelector('[data-box="' + code + '"]') || document.getElementById('companyPkgView');
+  view.innerHTML = `<div class="card" style="margin-top:12px;"><div class="empty">Chargement...</div></div>`;
   try{
     const pkgs = await getCompanyPackages(code);
     if(pkgs.length===0){
@@ -4150,27 +4162,6 @@ async function renderCompanySettings(main){
   const lz = (company && company.logoZoom) || 100, lx = (company && company.logoPosX) ?? 50, ly = (company && company.logoPosY) ?? 50;
   main.innerHTML = `
     <div class="card">
-      <h2>🖼️ Logo de l'entreprise</h2>
-      <p class="sub">Choisissez une image depuis votre galerie, puis réglez-la avec les boutons. Vous pouvez la changer à tout moment.</p>
-      <div style="display:flex;justify-content:center;margin:6px 0 14px;">
-        <div style="width:150px;height:150px;border-radius:24px;overflow:hidden;border:3px solid var(--accent);background:rgba(255,255,255,0.04);display:flex;align-items:center;justify-content:center;">
-          <img id="logoPrevImg" ${hasLogo ? 'src="' + company.logoUrl + '"' : ''} style="width:100%;height:100%;object-fit:cover;display:${hasLogo ? 'block' : 'none'};${courierImgStyle(lx, ly, lz)}">
-          <span id="logoPrevEmpty" style="display:${hasLogo ? 'none' : 'block'};font-size:12px;color:var(--muted);text-align:center;">Aucun logo</span>
-        </div>
-      </div>
-      <button type="button" class="ghost" id="btnLogoPick" style="width:100%;color:#fff;border-color:var(--accent);">📷 Choisir une image</button>
-      <input type="file" id="logoPickInput" accept="image/*" style="display:none;">
-      <div id="logoEditor" style="display:${hasLogo ? 'block' : 'none'};margin-top:14px;">
-        <label>🔍 Agrandir (zoom)</label>
-        <input type="range" id="logoZ" min="100" max="300" value="${lz}" style="width:100%;margin-bottom:10px;">
-        <label>↔ Gauche / droite</label>
-        <input type="range" id="logoX" min="0" max="100" value="${lx}" style="width:100%;margin-bottom:10px;">
-        <label>↕ Haut / bas</label>
-        <input type="range" id="logoY" min="0" max="100" value="${ly}" style="width:100%;margin-bottom:12px;">
-        <button class="primary" id="btnSaveLogo">💾 Enregistrer le logo</button>
-      </div>
-    </div>
-    <div class="card">
       <h2>🔑 Mon code d'accès</h2>
       <p class="sub">Ce code sert à vous connecter avec le bouton Entreprise. Il est visible par SamTraceStore dans l'espace Admin.</p>
       <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px;">
@@ -4192,11 +4183,32 @@ async function renderCompanySettings(main){
       <h2>📄 Guide de l'entreprise</h2>
       <p class="sub">Un guide qui explique comment utiliser la partie Entreprise (livraison moto, voiture, camion, statuts...).</p>
       <a href="#" id="btnGuidePdf" style="display:block;text-align:center;text-decoration:none;padding:14px;border-radius:12px;font-weight:800;font-size:15px;color:#C2185B;background:linear-gradient(135deg,var(--accent),#FF5A1A);box-shadow:0 6px 18px rgba(255,106,0,0.35);text-shadow:0 1px 0 rgba(255,255,255,0.25);">📄 Ouvrir le guide</a>
+    </div>
+    <div class="card">
+      <h2>🖼️ Logo de l'entreprise</h2>
+      <p class="sub">Choisissez une image depuis votre galerie, puis réglez-la avec les boutons. Vous pouvez la changer à tout moment.</p>
+      <div style="display:flex;justify-content:center;margin:6px 0 14px;">
+        <div style="width:150px;height:150px;border-radius:24px;overflow:hidden;border:3px solid var(--accent);background:rgba(255,255,255,0.04);display:flex;align-items:center;justify-content:center;">
+          <img id="logoPrevImg" ${hasLogo ? 'src="' + company.logoUrl + '"' : ''} style="width:100%;height:100%;object-fit:contain;display:${hasLogo ? 'block' : 'none'};${courierImgStyle(lx, ly, lz)}">
+          <span id="logoPrevEmpty" style="display:${hasLogo ? 'none' : 'block'};font-size:12px;color:var(--muted);text-align:center;">Aucun logo</span>
+        </div>
+      </div>
+      <button type="button" class="ghost" id="btnLogoPick" style="width:100%;color:#fff;border-color:var(--accent);">📷 Choisir une image</button>
+      <input type="file" id="logoPickInput" accept="image/*" style="display:none;">
+      <div id="logoEditor" style="display:${hasLogo ? 'block' : 'none'};margin-top:14px;">
+        <label>🔍 Agrandir (100 = image entière)</label>
+        <input type="range" id="logoZ" min="100" max="300" value="${lz}" style="width:100%;margin-bottom:10px;">
+        <label>↔ Gauche / droite</label>
+        <input type="range" id="logoX" min="0" max="100" value="${lx}" style="width:100%;margin-bottom:10px;">
+        <label>↕ Haut / bas</label>
+        <input type="range" id="logoY" min="0" max="100" value="${ly}" style="width:100%;margin-bottom:12px;">
+        <button class="primary" id="btnSaveLogo">💾 Enregistrer le logo</button>
+      </div>
     </div>`;
   let pendingLogo = null;
   const logoImgEl = document.getElementById('logoPrevImg');
   function applyLogoPrev(){
-    logoImgEl.style.cssText = 'width:100%;height:100%;object-fit:cover;display:block;' + courierImgStyle(document.getElementById('logoX').value, document.getElementById('logoY').value, document.getElementById('logoZ').value);
+    logoImgEl.style.cssText = 'width:100%;height:100%;object-fit:contain;display:block;' + courierImgStyle(document.getElementById('logoX').value, document.getElementById('logoY').value, document.getElementById('logoZ').value);
   }
   ['logoZ','logoX','logoY'].forEach(id => { document.getElementById(id).oninput = applyLogoPrev; });
   document.getElementById('btnLogoPick').onclick = ()=> document.getElementById('logoPickInput').click();
@@ -4325,20 +4337,16 @@ async function renderCompany(){
 
   const co = await getCompanyByCode(companySession.code);
   const logoBox = (co && co.logoUrl)
-    ? logoBoxHTML(co, 96, '22px', 'border:3px solid var(--accent);box-shadow:0 8px 24px rgba(255,106,0,0.35);')
-    : `<div style="width:96px;height:96px;border-radius:22px;border:3px dashed var(--accent);display:flex;flex-direction:column;align-items:center;justify-content:center;font-size:12px;font-weight:700;color:var(--accent2);line-height:1.3;text-align:center;"><span style="font-size:28px;">📷</span>Ajouter<br>mon logo</div>`;
+    ? logoBoxHTML(co, 80, '18px', 'border:2px solid var(--accent);box-shadow:0 6px 18px rgba(255,106,0,0.35);')
+    : `<div style="width:80px;height:80px;border-radius:18px;border:2px dashed var(--accent);display:flex;flex-direction:column;align-items:center;justify-content:center;font-size:10.5px;font-weight:700;color:var(--accent2);line-height:1.2;text-align:center;"><span style="font-size:22px;">📷</span>Mon logo</div>`;
   main.innerHTML = `
-    <div class="card">
-      <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;">
-        <div style="flex:1;min-width:0;"><p class="sub" style="margin:0">Entreprise</p><b>${escHtml(companySession.companyName || '')}</b></div>
-        <button class="ghost" id="btnCompanyLogout" style="flex:0 0 auto;">Déconnexion</button>
+    <div class="card" style="display:flex;justify-content:space-between;align-items:center;gap:10px;">
+      <div style="flex:1;min-width:0;"><p class="sub" style="margin:0">Entreprise</p><b style="word-break:break-word;">${escHtml(companySession.companyName || '')}</b></div>
+      <div id="coLogoBtn" style="cursor:pointer;position:relative;flex:0 0 auto;">
+        ${logoBox}
+        <span style="position:absolute;right:-6px;bottom:-6px;width:22px;height:22px;border-radius:50%;background:var(--accent);color:#fff;font-size:12px;display:flex;align-items:center;justify-content:center;box-shadow:0 2px 6px rgba(0,0,0,0.4);">✎</span>
       </div>
-      <div style="display:flex;justify-content:center;margin-top:16px;">
-        <div id="coLogoBtn" style="cursor:pointer;position:relative;display:block;">
-          ${logoBox}
-          <span style="position:absolute;right:-8px;bottom:-8px;width:28px;height:28px;border-radius:50%;background:var(--accent);color:#fff;font-size:14px;display:flex;align-items:center;justify-content:center;box-shadow:0 2px 8px rgba(0,0,0,0.4);">✎</span>
-        </div>
-      </div>
+      <button class="ghost" id="btnCompanyLogout" style="flex:0 0 auto;padding:8px 12px;font-size:13px;">Déconnexion</button>
     </div>
     <button class="primary bigOrange" id="coBtnColis"><span class="bi">📦</span><span>Colis<br><span style="font-size:12px;font-weight:500;opacity:.85;">Ajouter et suivre vos colis</span></span></button>
     <button class="primary bigOrange" id="coBtnSettings"><span class="bi">⚙️</span><span>Paramètre<br><span style="font-size:12px;font-weight:500;opacity:.85;">Mon code, support et guide</span></span></button>
