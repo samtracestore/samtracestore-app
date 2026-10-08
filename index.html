@@ -814,6 +814,29 @@ function compressProofImage(file){
   });
 }
 
+function compressLogo(file){
+  return new Promise((resolve, reject)=>{
+    const r = new FileReader();
+    r.onload = e=>{
+      const img = new Image();
+      img.onload = ()=>{
+        const m = 720; let w = img.width, h = img.height;
+        if(w > h){ if(w > m){ h = h*(m/w); w = m; } } else { if(h > m){ w = w*(m/h); h = m; } }
+        const c = document.createElement('canvas'); c.width = w; c.height = h;
+        c.getContext('2d').drawImage(img, 0, 0, w, h);
+        let out = c.toDataURL('image/jpeg', 0.9);
+        if(out.length > 500000) out = c.toDataURL('image/jpeg', 0.75);
+        resolve(out);
+      };
+      img.onerror = reject; img.src = e.target.result;
+    };
+    r.onerror = reject; r.readAsDataURL(file);
+  });
+}
+function logoBoxHTML(co, size, radius, extra){
+  if(!co || !co.logoUrl) return '';
+  return `<div style="width:${size}px;height:${size}px;border-radius:${radius};overflow:hidden;flex-shrink:0;${extra || ''}"><img src="${co.logoUrl}" style="width:100%;height:100%;object-fit:cover;display:block;${courierImgStyle(co.logoPosX ?? 50, co.logoPosY ?? 50, co.logoZoom || 100)}"></div>`;
+}
 async function saveCompanyLogo(code, dataUrl){
   await db.collection('companies').doc(code).set({logoUrl:dataUrl}, {merge:true});
 }
@@ -2787,7 +2810,7 @@ async function renderOwnerCompanies(){
         <div class="pkgAdmin" style="flex-direction:column;align-items:stretch;">
           <div style="display:flex;justify-content:space-between;align-items:center;">
             <div class="info" data-view="${c.code}" data-name="${c.companyName}" style="cursor:pointer;flex:1;display:flex;align-items:center;gap:10px;">
-              ${c.logoUrl ? `<img src="${c.logoUrl}" style="width:36px;height:36px;border-radius:9px;object-fit:cover;flex-shrink:0;">` : ''}
+              ${logoBoxHTML(c, 36, '9px')}
               <div>
                 <div style="display:flex;align-items:center;flex-wrap:wrap;gap:8px;"><b>${c.companyName}</b> ${waChatBtn(c.companyPhone, 'Bonjour ' + (c.companyName||'') + ', c\'est Sam Trace Store. ')} ${!c.seenByOwner ? '<span class="badge disponible" style="margin-left:6px;">🆕 Nouveau</span>' : ''}</div>
                 <div style="display:flex;align-items:center;gap:6px;margin:4px 0;" onclick="event.stopPropagation();">
@@ -3617,7 +3640,7 @@ async function renderAdminCore(){
   main.innerHTML = `
     <div class="card" style="display:flex;justify-content:space-between;align-items:center;">
       <div style="display:flex;align-items:center;gap:10px;">
-        ${logoImg ? `<img src="${logoImg}" style="width:40px;height:40px;border-radius:10px;object-fit:cover;">` : ''}
+        ${logoBoxHTML(myCompany, 40, '10px')}
         <div><p class="sub" style="margin:0">Connecté en tant que</p><b>${adminSession.companyName||'Admin'}</b></div>
       </div>
       <button class="ghost" id="btnAdminLogout">Déconnexion</button>
@@ -3625,12 +3648,6 @@ async function renderAdminCore(){
     ${confirmBanner}
     ${trialBanner}
     ${notifCard}
-    <div class="card">
-      <h2>Logo de l'entreprise</h2>
-      <p class="sub">Choisissez une image depuis votre galerie. Vous pouvez la changer à tout moment.</p>
-      ${logoImg ? `<img src="${logoImg}" style="width:72px;height:72px;border-radius:14px;object-fit:cover;margin-bottom:12px;">` : ''}
-      <input type="file" id="logoInput" accept="image/*" style="margin-bottom:12px;">
-    </div>
     <div class="card">
       <h2>${isEditing ? 'Modifier le colis' : 'Ajouter un colis'}</h2>
       ${isEditing ? `<div class="editingBanner"><span>Modification de #${editingTrackingId}</span><button class="ghost" id="btnCancelEdit">Annuler</button></div>` : ''}
@@ -3668,16 +3685,6 @@ async function renderAdminCore(){
       renderAdmin();
     };
   }
-  document.getElementById('logoInput').onchange = async (e)=>{
-    const file = e.target.files[0];
-    if(!file) return;
-    try{
-      const dataUrl = await compressImage(file);
-      await saveCompanyLogo(adminSession.code, dataUrl);
-      toast("Logo mis à jour");
-      renderAdmin();
-    }catch(err){ toast("Erreur lors de l'envoi de l'image"); }
-  };
 
   if(isEditing){
     try{
@@ -4139,7 +4146,30 @@ function openGuide(){
 
 async function renderCompanySettings(main){
   const company = await getCompanyByCode(companySession.code);
+  const hasLogo = !!(company && company.logoUrl);
+  const lz = (company && company.logoZoom) || 100, lx = (company && company.logoPosX) ?? 50, ly = (company && company.logoPosY) ?? 50;
   main.innerHTML = `
+    <div class="card">
+      <h2>🖼️ Logo de l'entreprise</h2>
+      <p class="sub">Choisissez une image depuis votre galerie, puis réglez-la avec les boutons. Vous pouvez la changer à tout moment.</p>
+      <div style="display:flex;justify-content:center;margin:6px 0 14px;">
+        <div style="width:150px;height:150px;border-radius:24px;overflow:hidden;border:3px solid var(--accent);background:rgba(255,255,255,0.04);display:flex;align-items:center;justify-content:center;">
+          <img id="logoPrevImg" ${hasLogo ? 'src="' + company.logoUrl + '"' : ''} style="width:100%;height:100%;object-fit:cover;display:${hasLogo ? 'block' : 'none'};${courierImgStyle(lx, ly, lz)}">
+          <span id="logoPrevEmpty" style="display:${hasLogo ? 'none' : 'block'};font-size:12px;color:var(--muted);text-align:center;">Aucun logo</span>
+        </div>
+      </div>
+      <button type="button" class="ghost" id="btnLogoPick" style="width:100%;color:#fff;border-color:var(--accent);">📷 Choisir une image</button>
+      <input type="file" id="logoPickInput" accept="image/*" style="display:none;">
+      <div id="logoEditor" style="display:${hasLogo ? 'block' : 'none'};margin-top:14px;">
+        <label>🔍 Agrandir (zoom)</label>
+        <input type="range" id="logoZ" min="100" max="300" value="${lz}" style="width:100%;margin-bottom:10px;">
+        <label>↔ Gauche / droite</label>
+        <input type="range" id="logoX" min="0" max="100" value="${lx}" style="width:100%;margin-bottom:10px;">
+        <label>↕ Haut / bas</label>
+        <input type="range" id="logoY" min="0" max="100" value="${ly}" style="width:100%;margin-bottom:12px;">
+        <button class="primary" id="btnSaveLogo">💾 Enregistrer le logo</button>
+      </div>
+    </div>
     <div class="card">
       <h2>🔑 Mon code d'accès</h2>
       <p class="sub">Ce code sert à vous connecter avec le bouton Entreprise. Il est visible par SamTraceStore dans l'espace Admin.</p>
@@ -4163,6 +4193,38 @@ async function renderCompanySettings(main){
       <p class="sub">Un guide qui explique comment utiliser la partie Entreprise (livraison moto, voiture, camion, statuts...).</p>
       <a href="#" id="btnGuidePdf" style="display:block;text-align:center;text-decoration:none;padding:14px;border-radius:12px;font-weight:800;font-size:15px;color:#C2185B;background:linear-gradient(135deg,var(--accent),#FF5A1A);box-shadow:0 6px 18px rgba(255,106,0,0.35);text-shadow:0 1px 0 rgba(255,255,255,0.25);">📄 Ouvrir le guide</a>
     </div>`;
+  let pendingLogo = null;
+  const logoImgEl = document.getElementById('logoPrevImg');
+  function applyLogoPrev(){
+    logoImgEl.style.cssText = 'width:100%;height:100%;object-fit:cover;display:block;' + courierImgStyle(document.getElementById('logoX').value, document.getElementById('logoY').value, document.getElementById('logoZ').value);
+  }
+  ['logoZ','logoX','logoY'].forEach(id => { document.getElementById(id).oninput = applyLogoPrev; });
+  document.getElementById('btnLogoPick').onclick = ()=> document.getElementById('logoPickInput').click();
+  document.getElementById('logoPickInput').onchange = async (e)=>{
+    const file = e.target.files[0];
+    if(!file) return;
+    try{
+      pendingLogo = await compressLogo(file);
+      logoImgEl.src = pendingLogo;
+      document.getElementById('logoPrevEmpty').style.display = 'none';
+      document.getElementById('logoEditor').style.display = 'block';
+      document.getElementById('logoZ').value = 100; document.getElementById('logoX').value = 50; document.getElementById('logoY').value = 50;
+      applyLogoPrev();
+    }catch(err){ toast("Image illisible, essayez une autre"); }
+  };
+  document.getElementById('btnSaveLogo').onclick = async ()=>{
+    const data = {
+      logoZoom: parseInt(document.getElementById('logoZ').value),
+      logoPosX: parseInt(document.getElementById('logoX').value),
+      logoPosY: parseInt(document.getElementById('logoY').value)
+    };
+    if(pendingLogo) data.logoUrl = pendingLogo;
+    try{
+      await db.collection('companies').doc(companySession.code).set(data, {merge:true});
+      toast('Logo enregistré ✅');
+      renderCompany();
+    }catch(err){ toast("Erreur lors de l'enregistrement"); }
+  };
   document.getElementById('btnCoSupport').onclick = ()=>openSupportModal(true);
   document.getElementById('btnGuidePdf').onclick = (e)=>{ e.preventDefault(); openGuide(); };
   let shown = false;
@@ -4262,9 +4324,9 @@ async function renderCompany(){
   if(companyScreen === 'settings'){ await renderCompanySettings(main); return; }
 
   const co = await getCompanyByCode(companySession.code);
-  const logoBox = co && co.logoUrl
-    ? `<img src="${co.logoUrl}" style="width:120px;height:120px;border-radius:24px;object-fit:cover;border:3px solid var(--accent);display:block;box-shadow:0 8px 24px rgba(255,106,0,0.35);">`
-    : `<div style="width:120px;height:120px;border-radius:24px;border:3px dashed var(--accent);display:flex;flex-direction:column;align-items:center;justify-content:center;font-size:13px;font-weight:700;color:var(--accent2);line-height:1.3;text-align:center;"><span style="font-size:34px;">📷</span>Ajouter<br>mon logo</div>`;
+  const logoBox = (co && co.logoUrl)
+    ? logoBoxHTML(co, 96, '22px', 'border:3px solid var(--accent);box-shadow:0 8px 24px rgba(255,106,0,0.35);')
+    : `<div style="width:96px;height:96px;border-radius:22px;border:3px dashed var(--accent);display:flex;flex-direction:column;align-items:center;justify-content:center;font-size:12px;font-weight:700;color:var(--accent2);line-height:1.3;text-align:center;"><span style="font-size:28px;">📷</span>Ajouter<br>mon logo</div>`;
   main.innerHTML = `
     <div class="card">
       <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;">
@@ -4272,11 +4334,10 @@ async function renderCompany(){
         <button class="ghost" id="btnCompanyLogout" style="flex:0 0 auto;">Déconnexion</button>
       </div>
       <div style="display:flex;justify-content:center;margin-top:16px;">
-        <label for="coLogoInput" style="cursor:pointer;position:relative;display:block;">
+        <div id="coLogoBtn" style="cursor:pointer;position:relative;display:block;">
           ${logoBox}
-          <span style="position:absolute;right:-8px;bottom:-8px;width:30px;height:30px;border-radius:50%;background:var(--accent);color:#fff;font-size:15px;display:flex;align-items:center;justify-content:center;box-shadow:0 2px 8px rgba(0,0,0,0.4);">✎</span>
-        </label>
-        <input type="file" id="coLogoInput" accept="image/*" style="display:none;">
+          <span style="position:absolute;right:-8px;bottom:-8px;width:28px;height:28px;border-radius:50%;background:var(--accent);color:#fff;font-size:14px;display:flex;align-items:center;justify-content:center;box-shadow:0 2px 8px rgba(0,0,0,0.4);">✎</span>
+        </div>
       </div>
     </div>
     <button class="primary bigOrange" id="coBtnColis"><span class="bi">📦</span><span>Colis<br><span style="font-size:12px;font-weight:500;opacity:.85;">Ajouter et suivre vos colis</span></span></button>
@@ -4287,16 +4348,7 @@ async function renderCompany(){
   document.getElementById('coBtnSettings').onclick = ()=>{ companyScreen = 'settings'; renderCompany(); };
   document.getElementById('coBtnClient').onclick = ()=>{ companyScreen = 'client'; renderCompany(); };
   document.getElementById('btnCompanyLogout').onclick = ()=>{ companySession = null; companyScreen = 'home'; renderCompany(); };
-  document.getElementById('coLogoInput').onchange = async (e)=>{
-    const file = e.target.files[0];
-    if(!file) return;
-    try{
-      const dataUrl = await compressImage(file);
-      await saveCompanyLogo(companySession.code, dataUrl);
-      toast('Logo mis à jour ✅');
-      renderCompany();
-    }catch(err){ toast("Erreur lors de l'envoi de l'image"); }
-  };
+  document.getElementById('coLogoBtn').onclick = ()=>{ companyScreen = 'settings'; renderCompany(); };
 }
 
 function setMode(m){
