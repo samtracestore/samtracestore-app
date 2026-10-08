@@ -835,7 +835,8 @@ function compressLogo(file){
 }
 function logoBoxHTML(co, size, radius, extra){
   if(!co || !co.logoUrl) return '';
-  return `<div style="width:${size}px;height:${size}px;border-radius:${radius};overflow:hidden;flex-shrink:0;background:rgba(255,255,255,0.06);${extra || ''}"><img src="${co.logoUrl}" style="width:100%;height:100%;object-fit:contain;display:block;${courierImgStyle(co.logoPosX ?? 50, co.logoPosY ?? 50, co.logoZoom || 100)}"></div>`;
+  const z = (co.logoZoom || 100) / 100, x = co.logoPosX ?? 50, y = co.logoPosY ?? 50;
+  return `<div style="display:inline-block;flex-shrink:0;line-height:0;overflow:hidden;border-radius:${radius};${extra || ''}"><img src="${co.logoUrl}" style="display:block;height:${size}px;width:auto;max-width:${Math.round(size * 1.5)}px;object-fit:contain;transform:scale(${z});transform-origin:${x}% ${y}%;"></div>`;
 }
 async function saveCompanyLogo(code, dataUrl){
   await db.collection('companies').doc(code).set({logoUrl:dataUrl}, {merge:true});
@@ -2808,11 +2809,11 @@ async function renderOwnerCompanies(){
     } else {
       content.innerHTML = `<div class="card"><h2>Entreprises inscrites</h2>` + companies.map(c=>`
         <div class="pkgAdmin" style="flex-direction:column;align-items:stretch;">
-          <div style="display:flex;justify-content:space-between;align-items:center;">
+          <div style="display:flex;flex-direction:column;align-items:stretch;gap:10px;">
             <div class="info" data-view="${c.code}" data-name="${c.companyName}" style="cursor:pointer;flex:1;display:flex;align-items:center;gap:10px;">
               <span data-arrow style="color:var(--accent);font-size:20px;font-weight:900;flex:0 0 auto;width:18px;text-align:center;">▶</span>
               ${logoBoxHTML(c, 36, '9px')}
-              <div>
+              <div style="min-width:0;flex:1;overflow-wrap:anywhere;">
                 <div style="display:flex;align-items:center;flex-wrap:wrap;gap:8px;"><b>${c.companyName}</b> ${waChatBtn(c.companyPhone, 'Bonjour ' + (c.companyName||'') + ', c\'est Sam Trace Store. ')} ${!c.seenByOwner ? '<span class="badge disponible" style="margin-left:6px;">🆕 Nouveau</span>' : ''}</div>
                 <div style="display:flex;align-items:center;gap:6px;margin:4px 0;" onclick="event.stopPropagation();">
                   <span style="padding:3px 10px;border-radius:12px;font-size:11.5px;font-weight:800;${c.isFree ? 'background:rgba(62,207,142,0.18);color:var(--ok);' : 'background:rgba(255,106,0,0.18);color:var(--accent);'}">${c.isFree ? '🎁 Gratuit' : '💰 Payant'}</span>
@@ -2827,11 +2828,11 @@ async function renderOwnerCompanies(){
                 <div class="name">${c.adminName} · ${c.adminEmail}</div>
               </div>
             </div>
-            <div style="display:flex;flex-direction:column;gap:6px;">
-              <button class="${c.blocked ? 'primary' : 'miniBtn'}" style="${c.blocked ? 'width:auto;padding:8px 14px;font-size:11px;' : ''}" data-toggle="${c.code}" data-blocked="${c.blocked}">
+            <div style="display:flex;gap:8px;">
+              <button class="${c.blocked ? 'primary' : 'miniBtn'}" style="flex:1;${c.blocked ? 'width:auto;padding:8px 14px;font-size:11px;' : ''}" data-toggle="${c.code}" data-blocked="${c.blocked}">
                 ${c.blocked ? 'Débloquer' : 'Bloquer'}
               </button>
-              <button class="miniBtn" style="color:var(--danger);border-color:rgba(239,93,93,0.4);" data-delete="${c.code}" data-name="${c.companyName}">
+              <button class="miniBtn" style="flex:1;color:var(--danger);border-color:rgba(239,93,93,0.4);" data-delete="${c.code}" data-name="${c.companyName}">
                 Supprimer
               </button>
             </div>
@@ -4188,10 +4189,10 @@ async function renderCompanySettings(main){
       <h2>🖼️ Logo de l'entreprise</h2>
       <p class="sub">Choisissez une image depuis votre galerie, puis réglez-la avec les boutons. Vous pouvez la changer à tout moment.</p>
       <div style="display:flex;justify-content:center;margin:6px 0 14px;">
-        <div style="width:150px;height:150px;border-radius:24px;overflow:hidden;border:3px solid var(--accent);background:rgba(255,255,255,0.04);display:flex;align-items:center;justify-content:center;">
-          <img id="logoPrevImg" ${hasLogo ? 'src="' + company.logoUrl + '"' : ''} style="width:100%;height:100%;object-fit:contain;display:${hasLogo ? 'block' : 'none'};${courierImgStyle(lx, ly, lz)}">
-          <span id="logoPrevEmpty" style="display:${hasLogo ? 'none' : 'block'};font-size:12px;color:var(--muted);text-align:center;">Aucun logo</span>
+        <div id="logoPrevFrame" style="display:${hasLogo ? 'inline-block' : 'none'};line-height:0;overflow:hidden;border-radius:18px;border:3px solid var(--accent);">
+          <img id="logoPrevImg" ${hasLogo ? 'src="' + company.logoUrl + '"' : ''} style="display:block;height:220px;width:auto;max-width:300px;object-fit:contain;transform:scale(${lz / 100});transform-origin:${lx}% ${ly}%;">
         </div>
+        <div id="logoPrevEmpty" style="display:${hasLogo ? 'none' : 'flex'};width:150px;height:150px;border-radius:24px;border:3px dashed var(--accent);align-items:center;justify-content:center;font-size:12px;color:var(--muted);text-align:center;">Aucun logo</div>
       </div>
       <button type="button" class="ghost" id="btnLogoPick" style="width:100%;color:#fff;border-color:var(--accent);">📷 Choisir une image</button>
       <input type="file" id="logoPickInput" accept="image/*" style="display:none;">
@@ -4208,7 +4209,7 @@ async function renderCompanySettings(main){
   let pendingLogo = null;
   const logoImgEl = document.getElementById('logoPrevImg');
   function applyLogoPrev(){
-    logoImgEl.style.cssText = 'width:100%;height:100%;object-fit:contain;display:block;' + courierImgStyle(document.getElementById('logoX').value, document.getElementById('logoY').value, document.getElementById('logoZ').value);
+    logoImgEl.style.cssText = 'display:block;height:220px;width:auto;max-width:300px;object-fit:contain;transform:scale(' + (document.getElementById('logoZ').value / 100) + ');transform-origin:' + document.getElementById('logoX').value + '% ' + document.getElementById('logoY').value + '%;';
   }
   ['logoZ','logoX','logoY'].forEach(id => { document.getElementById(id).oninput = applyLogoPrev; });
   document.getElementById('btnLogoPick').onclick = ()=> document.getElementById('logoPickInput').click();
@@ -4219,6 +4220,7 @@ async function renderCompanySettings(main){
       pendingLogo = await compressLogo(file);
       logoImgEl.src = pendingLogo;
       document.getElementById('logoPrevEmpty').style.display = 'none';
+      document.getElementById('logoPrevFrame').style.display = 'inline-block';
       document.getElementById('logoEditor').style.display = 'block';
       document.getElementById('logoZ').value = 100; document.getElementById('logoX').value = 50; document.getElementById('logoY').value = 50;
       applyLogoPrev();
