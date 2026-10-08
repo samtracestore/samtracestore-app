@@ -1359,10 +1359,20 @@ async function renderClient(){
       list.innerHTML = pkgs.map(p => {
         const n = nums[p.trackingId];
         const coName = multiCompanies ? (companyNameCache[p.companyCode || ''] || '') : '';
-        return pkgCardHTML(p, [colisLabel(n), coName].filter(Boolean).join(' · '));
+        return pkgCardHTML(p, [colisLabel(n), coName].filter(Boolean).join(' · ')) + `<button type="button" class="ghost" data-hide-one="${escHtml(p.trackingId)}" style="width:100%;margin:-6px 0 16px;padding:9px;font-size:12.5px;color:var(--danger);border-color:rgba(239,93,93,0.4);">🗑️ Supprimer ce colis</button>`;
       }).join('') + `<button type="button" class="ghost" id="btnDeleteMyList" style="width:100%;margin-top:6px;padding:12px;color:var(--danger);border-color:rgba(239,93,93,0.4);">🗑️ Supprimer ma liste de colis</button>`;
       list.querySelectorAll('[data-pickup]').forEach(btn=>{
         btn.onclick = ()=> confirmPickup(btn.dataset.pickup);
+      });
+      list.querySelectorAll('[data-hide-one]').forEach(btn=>{
+        btn.onclick = async ()=>{
+          if(!confirm("Supprimer ce colis de votre liste ?\n\nÈske ou vle efase kolis sa a nan lis ou a ?\n\nSam Trace Store gardera l'historique de cette suppression.")) return;
+          try{
+            await setPackageHidden(btn.dataset.hideOne, true);
+            toast("Colis supprimé / Kolis efase");
+            renderClient();
+          }catch(e){ toast("Erreur, réessayez"); }
+        };
       });
       document.getElementById('btnDeleteMyList').onclick = async ()=>{
         const ok = confirm("Voulez-vous vraiment supprimer toute votre liste de colis ?\n\nÈske ou vle efase tout lis kolis ou a ?\n\nSam Trace Store gardera l'historique de cette suppression.");
@@ -1813,6 +1823,14 @@ function initColisNumField(isEditing){
     }, 200);
   }
 }
+async function setPackageDeletedByCompany(trackingId){
+  await db.collection('packages').doc(trackingId).set({deletedByCompany: true, deletedByCompanyAt: new Date().toISOString()}, {merge: true});
+}
+// Propriétaire : suppression définitive. Entreprise : retire de sa liste (STS garde l'historique).
+async function removePackagesByRole(ids){
+  if(adminSession && adminSession.isOwner) await Promise.all(ids.map(id => deletePackage(id)));
+  else await Promise.all(ids.map(id => setPackageDeletedByCompany(id)));
+}
 async function setPackageHidden(trackingId, hidden){
   await db.collection('packages').doc(trackingId).set(
     hidden ? {hiddenByClient: true, hiddenByClientAt: new Date().toISOString()}
@@ -1837,6 +1855,8 @@ function fmtDate(iso){
 async function renderAdminPkgList(pkgs){
   const list = document.getElementById('adminList');
   if(!list) return;
+  const isOwnerView = !!(adminSession && adminSession.isOwner);
+  if(pkgs && !isOwnerView) pkgs = pkgs.filter(p => !p.deletedByCompany);
   if(!pkgs || pkgs.length === 0){
     list.innerHTML = `<div class="empty">Aucun colis enregistré pour le moment.</div>`;
     return;
@@ -1863,7 +1883,7 @@ async function renderAdminPkgList(pkgs){
       ? `Dernière visite client : ${new Date(client.lastSeen).toLocaleDateString('fr-FR',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'})}`
       : `Ce client n'a pas encore consulté l'appli`;
     const pickupConfirm = p.pickedUpAt
-      ? `<div style="margin-top:4px;font-size:11.5px;font-weight:700;color:#EC4899;">🎉 Récupération confirmée par le client — ${new Date(p.pickedUpAt).toLocaleDateString('fr-FR',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'})}</div>`
+      ? `<div style="margin-top:4px;font-size:11px;color:var(--ok);">✅ Récupération confirmée par le client — ${new Date(p.pickedUpAt).toLocaleDateString('fr-FR',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'})}</div>`
       : '';
     let photoSeen = '';
     if(p.photoCount > 0){
@@ -1874,6 +1894,9 @@ async function renderAdminPkgList(pkgs){
     }
     const hiddenNote = p.hiddenByClient
       ? `<div style="margin-top:4px;font-size:11px;color:var(--danger);">🗑️ Supprimé de la liste par le client${p.hiddenByClientAt ? ' — ' + fmtDate(p.hiddenByClientAt) : ''}</div>`
+      : '';
+    const compDelNote = p.deletedByCompany
+      ? `<div style="margin-top:4px;font-size:11px;color:var(--danger);">🗑️ Supprimé par l'entreprise${p.deletedByCompanyAt ? ' — ' + fmtDate(p.deletedByCompanyAt) : ''}</div>`
       : '';
     const numBadge = numbered
       ? `<span style="display:inline-block;background:rgba(255,122,26,0.15);color:var(--accent2);border:1px solid var(--accent);border-radius:20px;padding:1px 9px;font-size:10.5px;font-weight:800;margin-right:6px;">${label}</span>`
@@ -1903,6 +1926,7 @@ async function renderAdminPkgList(pkgs){
       <div style="margin-top:6px;font-size:11px;color:var(--muted);">${lastSeen}</div>
       ${pickupConfirm}
       ${hiddenNote}
+      ${compDelNote}
     </div>`;
   }));
   // une carte pliante par client
@@ -1916,9 +1940,9 @@ async function renderAdminPkgList(pkgs){
   list.innerHTML = groupBlocks.map(g => {
     const open = openClientGroups.has(g.phone);
     const chips = g.items.slice(0, 4).map(it =>
-      `<span style="${(it.p.pickedUpAt && it.p.status === 'livre') ? 'background:#BE185D;border:1px solid #BE185D;color:#fff;font-weight:800;' : 'background:rgba(255,255,255,0.06);border:1px solid var(--border);color:var(--muted);'}border-radius:20px;padding:2px 8px;font-size:10.5px;">${(g.items.length >= 2 || it.manual) ? '#' + it.num + ' · ' : ''}${STATUS_LABEL[it.p.status] || it.p.status}</span>`
+      `<span style="${(it.p.pickedUpAt && it.p.status === 'livre') ? 'background:#BE185D;border:1px solid #BE185D;color:#fff;font-weight:800;' : 'background:rgba(255,122,26,0.12);border:1px solid var(--accent);color:var(--accent2);font-weight:700;'}border-radius:20px;padding:2px 8px;font-size:10.5px;">${(g.items.length >= 2 || it.manual) ? '#' + it.num + ' · ' : ''}${STATUS_LABEL[it.p.status] || it.p.status}</span>`
     ).join('') + (g.items.length > 4 ? `<span style="font-size:10.5px;color:var(--muted);align-self:center;">+${g.items.length - 4}</span>` : '');
-    const anyHidden = g.items.some(it => it.p.hiddenByClient);
+    const anyHidden = g.items.some(it => it.p.hiddenByClient || it.p.deletedByCompany);
     return `
     <div class="clientGroup" style="background:var(--panel);border:1px solid var(--border);border-radius:14px;margin-bottom:12px;overflow:hidden;">
       <div class="clientGroupHead" data-toggle-group="${escHtml(g.phone)}" style="display:flex;align-items:center;gap:10px;padding:13px 14px;cursor:pointer;">
@@ -1928,7 +1952,10 @@ async function renderAdminPkgList(pkgs){
           <div style="color:var(--muted);font-size:11.5px;">${escHtml(g.phone)}</div>
           <div style="display:flex;flex-wrap:wrap;gap:5px;margin-top:6px;">${chips}</div>
         </div>
-        <span style="background:rgba(255,122,26,0.15);color:var(--accent2);border:1px solid var(--accent);border-radius:20px;padding:3px 10px;font-size:11px;font-weight:800;white-space:nowrap;">${g.items.length} colis</span>
+        <div style="display:flex;flex-direction:column;align-items:flex-end;gap:6px;">
+          <span style="background:rgba(255,122,26,0.15);color:var(--accent2);border:1px solid var(--accent);border-radius:20px;padding:3px 10px;font-size:11px;font-weight:800;white-space:nowrap;">${g.items.length} colis</span>
+          <button type="button" class="grpDelBtn" data-del-client="${escHtml(g.phone)}" style="background:rgba(239,93,93,0.10);border:1px solid rgba(239,93,93,0.5);color:var(--danger);border-radius:20px;padding:4px 11px;font-size:11px;font-weight:800;cursor:pointer;white-space:nowrap;">🗑️ Supprimer</button>
+        </div>
       </div>
       <div class="clientGroupBody" style="display:${open ? 'block' : 'none'};padding:12px 12px 2px;border-top:1px solid var(--border);">${g.cards.join('')}</div>
     </div>`;
@@ -1948,9 +1975,32 @@ async function renderAdminPkgList(pkgs){
   list.querySelectorAll('.miniBtn').forEach(b => {
     b.onclick = async (e) => {
       e.stopPropagation();
-      await deletePackage(b.dataset.id);
-      toast("Colis supprimé");
-      renderAdmin();
+      if(!b.dataset.id) return;
+      const owner = !!(adminSession && adminSession.isOwner);
+      if(!confirm(owner ? "Supprimer DÉFINITIVEMENT ce colis ?\n\nCette action est irréversible." : "Supprimer ce colis de votre liste ?\n\nSTS Suivi de colis garde l'historique de cette suppression.")) return;
+      try{
+        await removePackagesByRole([b.dataset.id]);
+        toast(owner ? "Colis supprimé définitivement" : "Colis supprimé");
+        renderAdmin();
+      }catch(err){ toast("Erreur, réessayez"); }
+    };
+  });
+  list.querySelectorAll('[data-del-client]').forEach(btn => {
+    btn.onclick = async (e) => {
+      e.stopPropagation();
+      const g = groupBlocks.find(x => x.phone === btn.dataset.delClient);
+      if(!g) return;
+      const owner = !!(adminSession && adminSession.isOwner);
+      const n = g.items.length;
+      const msg = owner
+        ? `Supprimer DÉFINITIVEMENT ${g.name} et ses ${n} colis ?\n\nCette action est irréversible.`
+        : `Supprimer ${g.name} et ses ${n} colis de votre liste ?\n\nSTS Suivi de colis garde l'historique de cette suppression.`;
+      if(!confirm(msg)) return;
+      try{
+        await removePackagesByRole(g.items.map(it => it.p.trackingId));
+        toast(owner ? "Client supprimé définitivement" : "Client supprimé de votre liste");
+        renderAdmin();
+      }catch(err){ toast("Erreur, réessayez"); }
     };
   });
   list.querySelectorAll('.info[data-edit]').forEach(el => {
@@ -4213,17 +4263,21 @@ async function renderCompany(){
 
   const co = await getCompanyByCode(companySession.code);
   const logoBox = co && co.logoUrl
-    ? `<img src="${co.logoUrl}" style="width:64px;height:64px;border-radius:16px;object-fit:cover;border:2px solid var(--accent);display:block;">`
-    : `<div style="width:64px;height:64px;border-radius:16px;border:2px dashed var(--accent);display:flex;flex-direction:column;align-items:center;justify-content:center;font-size:10.5px;font-weight:700;color:var(--accent2);line-height:1.2;text-align:center;"><span style="font-size:20px;">📷</span>Logo</div>`;
+    ? `<img src="${co.logoUrl}" style="width:120px;height:120px;border-radius:24px;object-fit:cover;border:3px solid var(--accent);display:block;box-shadow:0 8px 24px rgba(255,106,0,0.35);">`
+    : `<div style="width:120px;height:120px;border-radius:24px;border:3px dashed var(--accent);display:flex;flex-direction:column;align-items:center;justify-content:center;font-size:13px;font-weight:700;color:var(--accent2);line-height:1.3;text-align:center;"><span style="font-size:34px;">📷</span>Ajouter<br>mon logo</div>`;
   main.innerHTML = `
-    <div class="card" style="display:flex;justify-content:space-between;align-items:center;gap:10px;">
-      <div style="flex:1;min-width:0;"><p class="sub" style="margin:0">Entreprise</p><b>${escHtml(companySession.companyName || '')}</b></div>
-      <label for="coLogoInput" style="cursor:pointer;flex:0 0 auto;position:relative;display:block;">
-        ${logoBox}
-        <span style="position:absolute;right:-6px;bottom:-6px;width:22px;height:22px;border-radius:50%;background:var(--accent);color:#fff;font-size:12px;display:flex;align-items:center;justify-content:center;">✎</span>
-      </label>
-      <input type="file" id="coLogoInput" accept="image/*" style="display:none;">
-      <button class="ghost" id="btnCompanyLogout" style="flex:0 0 auto;">Déconnexion</button>
+    <div class="card">
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;">
+        <div style="flex:1;min-width:0;"><p class="sub" style="margin:0">Entreprise</p><b>${escHtml(companySession.companyName || '')}</b></div>
+        <button class="ghost" id="btnCompanyLogout" style="flex:0 0 auto;">Déconnexion</button>
+      </div>
+      <div style="display:flex;justify-content:center;margin-top:16px;">
+        <label for="coLogoInput" style="cursor:pointer;position:relative;display:block;">
+          ${logoBox}
+          <span style="position:absolute;right:-8px;bottom:-8px;width:30px;height:30px;border-radius:50%;background:var(--accent);color:#fff;font-size:15px;display:flex;align-items:center;justify-content:center;box-shadow:0 2px 8px rgba(0,0,0,0.4);">✎</span>
+        </label>
+        <input type="file" id="coLogoInput" accept="image/*" style="display:none;">
+      </div>
     </div>
     <button class="primary bigOrange" id="coBtnColis"><span class="bi">📦</span><span>Colis<br><span style="font-size:12px;font-weight:500;opacity:.85;">Ajouter et suivre vos colis</span></span></button>
     <button class="primary bigOrange" id="coBtnSettings"><span class="bi">⚙️</span><span>Paramètre<br><span style="font-size:12px;font-weight:500;opacity:.85;">Mon code, support et guide</span></span></button>
