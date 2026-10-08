@@ -820,12 +820,13 @@ function compressLogo(file){
     r.onload = e=>{
       const img = new Image();
       img.onload = ()=>{
-        const m = 720; let w = img.width, h = img.height;
+        const m = 1200; let w = img.width, h = img.height;
         if(w > h){ if(w > m){ h = h*(m/w); w = m; } } else { if(h > m){ w = w*(m/h); h = m; } }
         const c = document.createElement('canvas'); c.width = w; c.height = h;
         c.getContext('2d').drawImage(img, 0, 0, w, h);
-        let out = c.toDataURL('image/jpeg', 0.9);
-        if(out.length > 500000) out = c.toDataURL('image/jpeg', 0.75);
+        let out = c.toDataURL('image/jpeg', 0.92);
+        if(out.length > 700000) out = c.toDataURL('image/jpeg', 0.8);
+        if(out.length > 700000) out = c.toDataURL('image/jpeg', 0.65);
         resolve(out);
       };
       img.onerror = reject; img.src = e.target.result;
@@ -1144,8 +1145,33 @@ async function getPackage(trackingId){
   return doc.exists ? doc.data() : null;
 }
 
+async function logActivity(companyCode, icon, title, text, trackingId){
+  try{
+    if(!companyCode) return;
+    await db.collection('activityLog').add({
+      companyCode, icon, title, text: text || '', trackingId: trackingId || null,
+      createdAt: new Date().toISOString(), dismissedByCompany: false
+    });
+  }catch(e){ console.warn('Journal non enregistré', e); }
+}
+async function logPackageChange(prev, pkg){
+  const code = pkg.companyCode || await getOwnerCode();
+  const who = (pkg.name || '') + (pkg.phone ? ' · ' + pkg.phone : '');
+  const id = '#' + pkg.trackingId;
+  if(!prev){
+    const dest = [pkg.destCommune, pkg.destDepartment, pkg.destCountry].filter(Boolean).join(', ');
+    await logActivity(code, '📦', 'Nouveau colis ajouté', id + ' — ' + who + (dest ? ' — ' + dest : ''), pkg.trackingId);
+  } else if(!prev.pickedUpAt && pkg.pickedUpAt){
+    await logActivity(code, '🎉', 'Colis récupéré par le client', id + ' — ' + who, pkg.trackingId);
+  } else if(prev.status !== pkg.status){
+    await logActivity(code, '🔄', 'Statut changé', id + ' — ' + who + ' : ' + (STATUS_LABEL[prev.status] || prev.status) + ' → ' + (STATUS_LABEL[pkg.status] || pkg.status), pkg.trackingId);
+  }
+}
 async function savePackage(pkg){
+  let prev = null;
+  try{ const d = await db.collection('packages').doc(pkg.trackingId).get(); prev = d.exists ? d.data() : null; }catch(e){}
   await db.collection('packages').doc(pkg.trackingId).set(pkg);
+  try{ await logPackageChange(prev, pkg); }catch(e){ console.warn('Journal colis', e); }
 }
 
 async function deletePackage(trackingId){
@@ -1848,6 +1874,11 @@ function initColisNumField(isEditing){
   }
 }
 async function setPackageDeletedByCompany(trackingId){
+  try{
+    const d = await db.collection('packages').doc(trackingId).get();
+    const p = d.exists ? d.data() : null;
+    if(p) await logActivity(p.companyCode || await getOwnerCode(), '🗑️', 'Colis retiré par l\'entreprise', '#' + p.trackingId + ' — ' + (p.name || '') + (p.phone ? ' · ' + p.phone : ''), p.trackingId);
+  }catch(e){}
   await db.collection('packages').doc(trackingId).set({deletedByCompany: true, deletedByCompanyAt: new Date().toISOString()}, {merge: true});
 }
 // Propriétaire : suppression définitive. Entreprise : retire de sa liste (STS garde l'historique).
@@ -1856,6 +1887,13 @@ async function removePackagesByRole(ids){
   else await Promise.all(ids.map(id => setPackageDeletedByCompany(id)));
 }
 async function setPackageHidden(trackingId, hidden){
+  if(hidden){
+    try{
+      const d = await db.collection('packages').doc(trackingId).get();
+      const p = d.exists ? d.data() : null;
+      if(p) await logActivity(p.companyCode || await getOwnerCode(), '🗑️', 'Colis supprimé par le client', '#' + p.trackingId + ' — ' + (p.name || '') + (p.phone ? ' · ' + p.phone : ''), p.trackingId);
+    }catch(e){}
+  }
   await db.collection('packages').doc(trackingId).set(
     hidden ? {hiddenByClient: true, hiddenByClientAt: new Date().toISOString()}
            : {hiddenByClient: false, hiddenByClientAt: null},
@@ -2767,6 +2805,36 @@ function waChatBtn(phone, text){
   if(!n) return '';
   return `<a href="https://wa.me/${n}?text=${encodeURIComponent(text)}" target="_blank" rel="noopener" onclick="event.stopPropagation();" style="display:inline-flex;align-items:center;gap:5px;padding:5px 11px;border-radius:16px;background:#25D366;color:#06210F;font-weight:800;font-size:12px;text-decoration:none;white-space:nowrap;">💬 WhatsApp</a>`;
 }
+async function activityLogHTML(companies){
+  try{
+    const names = {}; (companies || []).forEach(c => { names[c.code] = c.companyName; });
+    const snap = await db.collection('activityLog').get();
+    const list = snap.docs.map(d => Object.assign({id: d.id}, d.data())).sort((a,b) => String(b.createdAt).localeCompare(String(a.createdAt))).slice(0, 60);
+    if(!list.length) return '';
+    return `<div class="card"><h2>📋 Journal d'activité</h2>
+      <p class="sub">Tout ce qui se passe chez les entreprises et leurs clients. Seule la propriétaire supprime définitivement.</p>` +
+      list.map(n => `
+        <div style="padding:10px 12px;margin-bottom:8px;border:1px solid var(--border);border-radius:12px;background:rgba(255,255,255,0.03);">
+          <div style="font-weight:800;font-size:13.5px;">${n.icon || '🔔'} ${escHtml(n.title)} <span class="sub" style="font-weight:400;font-size:11.5px;">· ${escHtml(names[n.companyCode] || n.companyCode)}</span></div>
+          <div style="font-size:13px;margin-top:3px;overflow-wrap:anywhere;">${escHtml(n.text)}</div>
+          <div class="sub" style="font-size:11px;margin-top:4px;">${fmtDate(n.createdAt)}${n.dismissedByCompany ? ' · <span style="color:var(--danger);">supprimé par l\'entreprise</span>' : ''}</div>
+        </div>`).join('') +
+      `<button type="button" class="ghost" id="btnActClear" style="width:100%;color:var(--danger);border-color:rgba(239,93,93,0.4);">🗑️ Supprimer définitivement le journal</button></div>`;
+  }catch(e){ return ''; }
+}
+function bindActivityLog(root, rerender){
+  const b = root.querySelector('#btnActClear');
+  if(!b) return;
+  b.onclick = async ()=>{
+    if(!confirm('Supprimer DÉFINITIVEMENT tout le journal d\'activité ?\n\nCette action est irréversible.')) return;
+    try{
+      const snap = await db.collection('activityLog').get();
+      await Promise.all(snap.docs.map(d => d.ref.delete()));
+      toast('Journal supprimé');
+      rerender();
+    }catch(e){ toast('Erreur, réessayez'); }
+  };
+}
 async function supportRequestsHTML(){
   try{
     const snap = await db.collection('supportRequests').get();
@@ -2804,8 +2872,9 @@ async function renderOwnerCompanies(){
   try{
     const companies = await getAllCompanies();
     const srHtml = await supportRequestsHTML();
+    const actHtml = await activityLogHTML(companies);
     if(companies.length===0){
-      content.innerHTML = `<div class="card"><div class="empty">Aucune entreprise inscrite pour le moment.</div></div>` + srHtml;
+      content.innerHTML = `<div class="card"><div class="empty">Aucune entreprise inscrite pour le moment.</div></div>` + srHtml + actHtml;
     } else {
       content.innerHTML = `<div class="card"><h2>Entreprises inscrites</h2>` + companies.map(c=>`
         <div class="pkgAdmin" style="flex-direction:column;align-items:stretch;">
@@ -2838,7 +2907,7 @@ async function renderOwnerCompanies(){
             </div>
           </div>
           <div data-box="${c.code}"></div>
-        </div>`).join('') + `</div><div id="companyPkgView"></div>` + srHtml;
+        </div>`).join('') + `</div><div id="companyPkgView"></div>` + srHtml + actHtml;
       content.querySelectorAll('[data-payarrow]').forEach(b=>{
         b.onclick = (e)=>{
           e.stopPropagation();
@@ -2893,6 +2962,7 @@ async function renderOwnerCompanies(){
       markCompaniesSeen();
     }
     bindSupportRequests(content, renderOwnerCompanies);
+    bindActivityLog(content, renderOwnerCompanies);
   }catch(e){
     content.innerHTML = `<div class="card"><div class="empty">Impossible de charger les entreprises.</div></div>`;
   }
@@ -3805,7 +3875,8 @@ async function renderAdminCore(){
 function renderShareFooter(){
   document.querySelectorAll('footer.share, #clientLeftBtns').forEach(e=>e.remove());
   const companyClientView = (mode === 'company' && !!companySession && companyScreen === 'client');
-  if(mode !== 'client' && !companyClientView) return;
+  const adminView = (mode === 'admin');
+  if(mode !== 'client' && !companyClientView && !adminView) return;
   const text = encodeURIComponent("📦 Suivez vos colis Sam Trace Store en temps réel avec l'application SamTraceStore ! Ouvrez ce lien puis ajoutez-le à votre écran d'accueil : " + location.href);
   if(mode === 'client'){
     const footer = document.createElement('footer');
@@ -3815,7 +3886,7 @@ function renderShareFooter(){
   } else {
     const wrap = document.createElement('div');
     wrap.id = 'clientLeftBtns';
-    wrap.style.cssText = 'position:fixed;bottom:20px;left:16px;z-index:60;';
+    wrap.style.cssText = 'position:fixed;bottom:20px;left:' + (adminView ? '84px' : '16px') + ';z-index:60;';
     wrap.innerHTML = `<button type="button" id="waShare" style="display:flex;align-items:center;gap:7px;padding:9px 14px;border-radius:22px;border:none;cursor:pointer;background:#25D366;color:#06210F;font-weight:800;font-size:12px;line-height:1.2;text-align:left;box-shadow:0 6px 18px rgba(37,211,102,0.35);"><span style="font-size:20px;">💬</span><span>Partager le lien<br>via WhatsApp</span></button>`;
     document.body.appendChild(wrap);
   }
@@ -3988,6 +4059,7 @@ function openSupportModal(forSTS){
             await db.collection('supportPhotos').add({requestId: reqRef.id, dataUrl: ph, createdAt: new Date().toISOString()});
           }
           supportSaved = true;
+          logActivity(companySession.code, '🆘', 'Demande d\'aide envoyée à STS', msg);
         }catch(e){ console.warn('Demande support non enregistrée', e); if(supportPhotos.length) toast("Photos non enregistrées (règles Firestore)"); }
       }
       if(supportSaved && supportPhotos.length) text += "\n📷 " + supportPhotos.length + " photo(s) aussi visible(s) dans l'application (Admin > Entreprises).";
@@ -4163,6 +4235,12 @@ async function renderCompanySettings(main){
   const lz = (company && company.logoZoom) || 100, lx = (company && company.logoPosX) ?? 50, ly = (company && company.logoPosY) ?? 50;
   main.innerHTML = `
     <div class="card">
+      <h2>🔔 Notifications</h2>
+      <p class="sub">Tout ce qui est ajouté ou change dans l'application apparaît ici : colis ajoutés, statuts, colis récupérés, suppressions...</p>
+      <button type="button" class="primary" id="btnNotifOpen">🔔 Voir les notifications</button>
+      <div id="notifBox" style="display:none;margin-top:12px;"></div>
+    </div>
+    <div class="card">
       <h2>🔑 Mon code d'accès</h2>
       <p class="sub">Ce code sert à vous connecter avec le bouton Entreprise. Il est visible par SamTraceStore dans l'espace Admin.</p>
       <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px;">
@@ -4194,11 +4272,13 @@ async function renderCompanySettings(main){
         </div>
         <div id="logoPrevEmpty" style="display:${hasLogo ? 'none' : 'flex'};width:150px;height:150px;border-radius:24px;border:3px dashed var(--accent);align-items:center;justify-content:center;font-size:12px;color:var(--muted);text-align:center;">Aucun logo</div>
       </div>
+      ${(hasLogo && !company.logoHD) ? '<div class="warnBox" style="margin-bottom:12px;">⚠️ Ce logo a été enregistré en basse qualité, il paraît flou. Choisissez-le à nouveau avec « Choisir une image » pour qu\'il soit net.</div>' : ''}
       <button type="button" class="ghost" id="btnLogoPick" style="width:100%;color:#fff;border-color:var(--accent);">📷 Choisir une image</button>
       <input type="file" id="logoPickInput" accept="image/*" style="display:none;">
       <div id="logoEditor" style="display:${hasLogo ? 'block' : 'none'};margin-top:14px;">
         <label>🔍 Agrandir (100 = image entière)</label>
         <input type="range" id="logoZ" min="100" max="300" value="${lz}" style="width:100%;margin-bottom:10px;">
+        <p id="logoHint" class="sub" style="margin:0 0 10px;font-size:12px;">ℹ️ Gauche/droite et Haut/bas marchent quand l'image est agrandie : montez d'abord le zoom.</p>
         <label>↔ Gauche / droite</label>
         <input type="range" id="logoX" min="0" max="100" value="${lx}" style="width:100%;margin-bottom:10px;">
         <label>↕ Haut / bas</label>
@@ -4206,12 +4286,47 @@ async function renderCompanySettings(main){
         <button class="primary" id="btnSaveLogo">💾 Enregistrer le logo</button>
       </div>
     </div>`;
+  async function loadNotifs(){
+    const box = document.getElementById('notifBox');
+    box.innerHTML = '<div class="empty">Chargement...</div>';
+    try{
+      const snap = await db.collection('activityLog').where('companyCode', '==', companySession.code).get();
+      const list = snap.docs.map(d => Object.assign({id: d.id}, d.data())).filter(n => !n.dismissedByCompany)
+        .sort((a,b) => String(b.createdAt).localeCompare(String(a.createdAt))).slice(0, 60);
+      document.getElementById('btnNotifOpen').textContent = '🔔 Notifications (' + list.length + ')';
+      if(!list.length){ box.innerHTML = '<div class="empty">Aucune notification pour le moment.</div>'; return; }
+      box.innerHTML = list.map(n => `
+        <div style="padding:10px 12px;margin-bottom:8px;border:1px solid var(--border);border-radius:12px;background:rgba(255,255,255,0.03);">
+          <div style="font-weight:800;font-size:13.5px;">${n.icon || '🔔'} ${escHtml(n.title)}</div>
+          <div style="font-size:13px;margin-top:3px;overflow-wrap:anywhere;">${escHtml(n.text)}</div>
+          <div class="sub" style="font-size:11px;margin-top:4px;">${fmtDate(n.createdAt)}</div>
+        </div>`).join('') + '<button type="button" class="ghost" id="btnNotifClear" style="width:100%;color:var(--danger);border-color:rgba(239,93,93,0.4);">🗑️ Supprimer les messages</button>';
+      document.getElementById('btnNotifClear').onclick = async ()=>{
+        if(!confirm('Supprimer tous les messages de la liste ?')) return;
+        try{
+          await Promise.all(list.map(n => db.collection('activityLog').doc(n.id).set({dismissedByCompany: true, dismissedAt: new Date().toISOString()}, {merge:true})));
+          toast('Messages supprimés');
+          loadNotifs();
+        }catch(e){ toast('Erreur, réessayez'); }
+      };
+    }catch(e){ box.innerHTML = '<div class="empty">Impossible de charger les notifications.</div>'; }
+  }
+  document.getElementById('btnNotifOpen').onclick = ()=>{
+    const box = document.getElementById('notifBox');
+    if(box.style.display === 'none'){ box.style.display = 'block'; loadNotifs(); } else { box.style.display = 'none'; }
+  };
   let pendingLogo = null;
   const logoImgEl = document.getElementById('logoPrevImg');
   function applyLogoPrev(){
     logoImgEl.style.cssText = 'display:block;height:220px;width:auto;max-width:300px;object-fit:contain;transform:scale(' + (document.getElementById('logoZ').value / 100) + ');transform-origin:' + document.getElementById('logoX').value + '% ' + document.getElementById('logoY').value + '%;';
   }
-  ['logoZ','logoX','logoY'].forEach(id => { document.getElementById(id).oninput = applyLogoPrev; });
+  function syncLogoSliders(){
+    const zoomed = parseInt(document.getElementById('logoZ').value) > 100;
+    ['logoX','logoY'].forEach(id => { const el = document.getElementById(id); el.disabled = !zoomed; el.style.opacity = zoomed ? '1' : '0.35'; });
+    document.getElementById('logoHint').style.display = zoomed ? 'none' : 'block';
+  }
+  ['logoZ','logoX','logoY'].forEach(id => { document.getElementById(id).oninput = ()=>{ applyLogoPrev(); syncLogoSliders(); }; });
+  syncLogoSliders();
   document.getElementById('btnLogoPick').onclick = ()=> document.getElementById('logoPickInput').click();
   document.getElementById('logoPickInput').onchange = async (e)=>{
     const file = e.target.files[0];
@@ -4223,7 +4338,7 @@ async function renderCompanySettings(main){
       document.getElementById('logoPrevFrame').style.display = 'inline-block';
       document.getElementById('logoEditor').style.display = 'block';
       document.getElementById('logoZ').value = 100; document.getElementById('logoX').value = 50; document.getElementById('logoY').value = 50;
-      applyLogoPrev();
+      applyLogoPrev(); syncLogoSliders();
     }catch(err){ toast("Image illisible, essayez une autre"); }
   };
   document.getElementById('btnSaveLogo').onclick = async ()=>{
@@ -4232,9 +4347,10 @@ async function renderCompanySettings(main){
       logoPosX: parseInt(document.getElementById('logoX').value),
       logoPosY: parseInt(document.getElementById('logoY').value)
     };
-    if(pendingLogo) data.logoUrl = pendingLogo;
+    if(pendingLogo){ data.logoUrl = pendingLogo; data.logoHD = true; }
     try{
       await db.collection('companies').doc(companySession.code).set(data, {merge:true});
+      logActivity(companySession.code, '🖼️', 'Logo mis à jour', 'Le logo de l\'entreprise a été modifié.');
       toast('Logo enregistré ✅');
       renderCompany();
     }catch(err){ toast("Erreur lors de l'enregistrement"); }
