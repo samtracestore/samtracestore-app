@@ -563,7 +563,14 @@ let supportAvatarUrl = null;
 let supportAvatarPos = 50;
 
 function whatsappBubbleHTML(){
-  const text = encodeURIComponent("Bonjour, j'ai besoin d'aide concernant l'application SamTraceStore.");
+  let msg = "Bonjour, j'ai besoin d'aide concernant l'application SamTraceStore.";
+  if(mode === 'company' && companySession){
+    msg += "\n\n🏢 Entreprise : " + (companySession.companyName || '');
+    if(companySession.phone) msg += "\nMon numéro : " + companySession.phone;
+  } else if(adminSession && !adminSession.isOwner && adminSession.companyName){
+    msg += "\n\n🏢 Entreprise : " + adminSession.companyName;
+  }
+  const text = encodeURIComponent(msg);
   const inner = supportAvatarUrl
     ? `<img src="${supportAvatarUrl}" style="width:100%;height:100%;object-fit:cover;object-position:center ${supportAvatarPos}%;border-radius:50%;">`
     : `👧`;
@@ -3878,18 +3885,11 @@ function renderShareFooter(){
   const adminView = (mode === 'admin');
   if(mode !== 'client' && !companyClientView && !adminView) return;
   const text = encodeURIComponent("📦 Suivez vos colis Sam Trace Store en temps réel avec l'application SamTraceStore ! Ouvrez ce lien puis ajoutez-le à votre écran d'accueil : " + location.href);
-  if(mode === 'client'){
-    const footer = document.createElement('footer');
-    footer.className = 'share';
-    footer.innerHTML = `<button class="waBtn" id="waShare">💬 Partager le lien via WhatsApp</button>`;
-    document.getElementById('app').appendChild(footer);
-  } else {
-    const wrap = document.createElement('div');
-    wrap.id = 'clientLeftBtns';
-    wrap.style.cssText = 'position:fixed;bottom:20px;left:' + (adminView ? '84px' : '16px') + ';z-index:60;';
-    wrap.innerHTML = `<button type="button" id="waShare" style="display:flex;align-items:center;gap:7px;padding:9px 14px;border-radius:22px;border:none;cursor:pointer;background:#25D366;color:#06210F;font-weight:800;font-size:12px;line-height:1.2;text-align:left;box-shadow:0 6px 18px rgba(37,211,102,0.35);"><span style="font-size:20px;">💬</span><span>Partager le lien<br>via WhatsApp</span></button>`;
-    document.body.appendChild(wrap);
-  }
+  const wrap = document.createElement('div');
+  wrap.id = 'clientLeftBtns';
+  wrap.style.cssText = 'position:fixed;bottom:20px;left:' + (adminView ? '84px' : '16px') + ';z-index:60;';
+  wrap.innerHTML = `<button type="button" id="waShare" style="display:flex;align-items:center;gap:7px;padding:9px 14px;border-radius:22px;border:none;cursor:pointer;background:#25D366;color:#06210F;font-weight:800;font-size:12px;line-height:1.2;text-align:left;box-shadow:0 6px 18px rgba(37,211,102,0.35);"><span style="font-size:20px;">💬</span><span>Partager le lien<br>via WhatsApp</span></button>`;
+  document.body.appendChild(wrap);
   document.getElementById('waShare').onclick = ()=>{ window.open('https://wa.me/?text='+text, '_blank'); };
 }
 
