@@ -121,7 +121,7 @@
   .editingBanner{background:rgba(255,122,26,0.12);border:1px solid var(--accent);color:var(--accent2);
     border-radius:10px;padding:10px 12px;font-size:12.5px;margin-bottom:12px;display:flex;
     justify-content:space-between;align-items:center;}
-  .proofBtn{width:100%;margin-top:10px;padding:14px;border:none;border-radius:14px;background:linear-gradient(135deg,#22C55E,#15803D);color:#fff;font-weight:800;font-size:15px;line-height:1.35;box-shadow:0 6px 18px rgba(34,197,94,0.45);cursor:pointer;}
+  .proofBtn{width:100%;margin-top:10px;padding:10px 12px;border:none;border-radius:12px;background:linear-gradient(135deg,#22C55E,#15803D);color:#fff;font-weight:800;font-size:14px;line-height:1.3;box-shadow:0 4px 12px rgba(34,197,94,0.4);cursor:pointer;}
   .pickupBtn{width:100%;margin-top:12px;background:linear-gradient(135deg,#EC4899,#BE185D);color:#fff;
     border:none;border-radius:10px;padding:12px;font-size:13.5px;font-weight:700;cursor:pointer;}
   .confettiPiece{position:fixed;top:-40px;font-size:22px;z-index:999;pointer-events:none;
@@ -1247,8 +1247,8 @@ function pkgCardHTML(p, label){
   ).join('');
   const proofBtnHTML = (p.status === 'disponible' || p.status === 'livraison' || p.status === 'livre')
     ? (p.hasClientProof
-        ? `<div style="margin-top:10px;padding:10px 12px;border-radius:12px;background:rgba(62,207,142,0.12);border:1px solid rgba(62,207,142,0.5);color:var(--ok);font-weight:800;text-align:center;">✅ Preuve du colis envoyée à l'entreprise</div>`
-        : `<button type="button" class="proofBtn" data-client-proof="${escHtml(p.trackingId)}">📸 Ajouter la preuve du colis pour l'entreprise<br><span style="font-size:12px;font-weight:700;">Obligatoire</span></button>`)
+        ? clientProofBoxHTML(p)
+        : `<button type="button" class="proofBtn" data-client-proof="${escHtml(p.trackingId)}">📸 Ajouter la preuve du colis pour l'entreprise<span style="display:block;font-size:11.5px;font-weight:600;margin-top:3px;">Cette preuve est obligatoire pour confirmer la récupération.</span></button>`)
     : '';
   const pickupBtn = (p.status === 'disponible' || p.status === 'livraison')
     ? `<button class="pickupBtn" data-pickup="${p.trackingId}">🎉 J'ai récupéré mon colis</button>`
@@ -1957,6 +1957,43 @@ async function saveDeliveryProof(p, dataUrl){
   await db.collection('packages').doc(p.trackingId).set({hasProof: true, proofAt: now}, {merge: true});
   try{ await logActivity(p.companyCode || await getOwnerCode(), '📸', 'Preuve de livraison ajoutée', '#' + p.trackingId + ' — ' + (p.name || '') + (p.phone ? ' · ' + p.phone : ''), p.trackingId); }catch(e){}
 }
+function clientProofBoxHTML(p){
+  const viewed = p.clientProofViewedAt
+    ? `<span style="flex:0 0 auto;padding:2px 8px;border-radius:10px;background:rgba(255,255,255,0.12);font-size:11px;font-weight:800;">👁️ Vue</span>`
+    : '';
+  return `<div style="margin-top:10px;border-radius:12px;background:rgba(62,207,142,0.12);border:1px solid rgba(62,207,142,0.5);overflow:hidden;">
+    <div data-cproof-fold="${escHtml(p.trackingId)}" style="padding:10px 12px;display:flex;align-items:center;gap:8px;cursor:pointer;color:var(--ok);font-weight:800;font-size:14px;line-height:1.3;">
+      <span style="flex:1;min-width:0;">✅ Preuve du colis envoyée à l'entreprise</span>
+      ${viewed}
+      <span data-cproof-arrow style="flex:0 0 auto;color:var(--accent);font-size:18px;font-weight:900;width:18px;text-align:center;">▶</span>
+    </div>
+    <div data-cproof-body style="display:none;padding:0 12px 12px;text-align:center;"></div>
+  </div>`;
+}
+document.addEventListener('click', async (e)=>{
+  const h = e.target.closest && e.target.closest('[data-cproof-fold]');
+  if(!h) return;
+  const body = h.parentElement.querySelector('[data-cproof-body]');
+  const arrow = h.querySelector('[data-cproof-arrow]');
+  const open = body.style.display === 'none';
+  body.style.display = open ? 'block' : 'none';
+  arrow.textContent = open ? '▼' : '▶';
+  if(open && !body.dataset.loaded){
+    body.innerHTML = '<div class="sub" style="font-size:12px;">Chargement...</div>';
+    try{
+      const id = h.dataset.cproofFold;
+      const [d, pk] = await Promise.all([db.collection('clientProofs').doc(id).get(), getPackage(id)]);
+      if(d.exists){
+        const url = d.data().dataUrl;
+        body.innerHTML = `<img src="${url}" data-zoom="${url}" style="max-width:100%;max-height:260px;border-radius:10px;border:2px solid var(--accent);cursor:zoom-in;">` +
+          (pk && pk.clientProofViewedAt
+            ? `<div style="margin-top:6px;font-size:12px;color:var(--ok);font-weight:700;">👁️ Vue par ${escHtml(pk.clientProofViewedBy || "l'entreprise")} — ${fmtDate(pk.clientProofViewedAt)}</div>`
+            : `<div class="sub" style="margin-top:6px;font-size:12px;">Pas encore vue par l'entreprise.</div>`);
+        body.dataset.loaded = '1';
+      } else body.innerHTML = '<div class="sub" style="font-size:12px;">Preuve introuvable.</div>';
+    }catch(err){ body.innerHTML = '<div class="sub" style="font-size:12px;">Impossible de charger la preuve.</div>'; }
+  }
+});
 function askDeliveryProof(p, opts){
   opts = opts || {};
   return new Promise(resolve => {
@@ -2035,7 +2072,7 @@ document.addEventListener('click', async (e)=>{
     if(!r.ok || !r.dataUrl) return;
     await saveClientProof(pk, r.dataUrl);
     toast('Preuve envoyée ✅');
-    b.outerHTML = '<div style="margin-top:10px;padding:10px 12px;border-radius:12px;background:rgba(62,207,142,0.12);border:1px solid rgba(62,207,142,0.5);color:var(--ok);font-weight:800;text-align:center;">✅ Preuve du colis envoyée à l\'entreprise</div>';
+    b.outerHTML = clientProofBoxHTML(Object.assign({}, pk, {hasClientProof: true}));
   }catch(err){ toast('Erreur, réessayez'); }
 });
 document.addEventListener('click', async (e)=>{
@@ -2045,6 +2082,12 @@ document.addEventListener('click', async (e)=>{
   try{
     const isClient = b.hasAttribute('data-cproof-view');
     const d = await db.collection(isClient ? 'clientProofs' : 'deliveryProofs').doc(isClient ? b.dataset.cproofView : b.dataset.proofView).get();
+    if(d.exists && isClient){
+      try{
+        const viewer = (adminSession && adminSession.isOwner) ? 'STS' : ((adminSession && adminSession.companyName) || (companySession && companySession.companyName) || "l'entreprise");
+        await db.collection('packages').doc(b.dataset.cproofView).set({clientProofViewedAt: new Date().toISOString(), clientProofViewedBy: viewer}, {merge: true});
+      }catch(e){}
+    }
     if(d.exists){
       document.getElementById('lightboxImg').src = d.data().dataUrl;
       document.getElementById('lightbox').classList.add('show');
@@ -3084,6 +3127,85 @@ function waChatBtn(phone, text){
   if(!n) return '';
   return `<a href="https://wa.me/${n}?text=${encodeURIComponent(text)}" target="_blank" rel="noopener" onclick="event.stopPropagation();" style="display:inline-flex;align-items:center;gap:5px;padding:5px 11px;border-radius:16px;background:#25D366;color:#06210F;font-weight:800;font-size:12px;text-decoration:none;white-space:nowrap;">💬 WhatsApp</a>`;
 }
+const cpkOpen = new Set();
+async function companyPackagesCardHTML(companies){
+  try{
+    const names = {}; (companies || []).forEach(c => { names[c.code] = c.companyName; });
+    const all = await getAllPackages();
+    const list = all.filter(p => p.companyCode && names[p.companyCode] && !p.deletedByCompany);
+    const byCo = {};
+    list.forEach(p => { (byCo[p.companyCode] = byCo[p.companyCode] || []).push(p); });
+    const cos = (companies || []).slice().sort((x, y) => ((byCo[y.code] || []).length - (byCo[x.code] || []).length) || String(x.companyName).localeCompare(String(y.companyName)));
+    const rootOpen = cpkOpen.has('root');
+    const rows = cos.map(c => {
+      const arr = (byCo[c.code] || []).slice().sort((a, b) => new Date(b.updatedAt || 0) - new Date(a.updatedAt || 0));
+      const open = cpkOpen.has(c.code);
+      const inner = arr.length ? arr.map(p => `
+          <div style="padding:10px 12px;margin-top:8px;border:1px solid var(--border);border-radius:12px;background:rgba(255,255,255,0.03);">
+            <div style="font-weight:700;">👤 ${escHtml(p.name || '—')} <span class="sub" style="font-weight:400;">· ${escHtml(p.phone || '')}</span></div>
+            <div style="font-size:13px;margin-top:2px;">#${escHtml(p.trackingId)} — ${STATUS_LABEL[p.status] || p.status}</div>
+            ${(p.destCommune || p.destDepartment) ? `<div class="sub" style="font-size:11px;margin-top:2px;">📍 ${escHtml([p.destCommune, p.destDepartment, p.destCountry].filter(Boolean).join(', '))}</div>` : ''}
+            <div data-cpk-photos="${escHtml(p.trackingId)}" data-count="${p.photoCount || 0}" style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px;">${p.photoCount ? '<span class="sub" style="font-size:11px;">📷 ' + p.photoCount + ' photo(s)</span>' : '<span class="sub" style="font-size:11px;">📷 Aucune photo</span>'}</div>
+            ${p.hasProof ? `<button type="button" class="miniBtn" style="margin-top:6px;margin-right:6px;color:var(--ok);border-color:rgba(62,207,142,0.5);" data-proof-view="${escHtml(p.trackingId)}">🧾 Preuve de livraison</button>` : ''}
+            ${p.hasClientProof ? `<button type="button" class="miniBtn" style="margin-top:6px;color:var(--ok);border-color:rgba(62,207,142,0.5);" data-cproof-view="${escHtml(p.trackingId)}">🧾 Preuve du client</button>` : ''}
+          </div>`).join('') : `<div class="sub" style="margin-top:8px;font-size:12.5px;">Aucun colis pour cette entreprise.</div>`;
+      return `
+        <div style="margin-bottom:10px;border:1px solid var(--border);border-radius:14px;padding:10px 12px;background:rgba(255,255,255,0.02);">
+          <div data-cpk-head="${escHtml(c.code)}" style="display:flex;align-items:center;gap:10px;cursor:pointer;">
+            <span data-cpk-arrow style="color:var(--accent);font-size:18px;font-weight:900;width:16px;text-align:center;">${open ? '▼' : '▶'}</span>
+            <span style="flex:1;min-width:0;font-weight:800;overflow-wrap:anywhere;">🏢 ${escHtml(c.companyName)}</span>
+            <span style="padding:2px 10px;border-radius:12px;font-size:11.5px;font-weight:800;background:rgba(250,204,21,0.18);color:#FACC15;">${arr.length} colis</span>
+          </div>
+          <div data-cpk-box="${escHtml(c.code)}" style="display:${open ? 'block' : 'none'};">${inner}</div>
+        </div>`;
+    }).join('');
+    return `<div class="card" style="padding:0;overflow:hidden;">
+      <div data-cpk-root style="background:linear-gradient(135deg,#BE185D,#FACC15);padding:14px 16px;display:flex;align-items:center;gap:10px;cursor:pointer;">
+        <span style="font-size:22px;">📦</span>
+        <div style="flex:1;min-width:0;color:#fff;font-weight:800;font-size:16px;text-shadow:0 1px 3px rgba(0,0,0,0.5);">Colis envoyés par les entreprises</div>
+        <span style="background:#0B1120;color:#fff;border-radius:12px;padding:2px 10px;font-size:12px;font-weight:800;">${list.length}</span>
+        <span data-cpk-rootarrow style="flex:0 0 auto;width:28px;height:28px;border-radius:50%;background:#0B1120;color:var(--accent);display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:900;">${rootOpen ? '▼' : '▶'}</span>
+      </div>
+      <div data-cpk-body style="padding:14px 16px;display:${rootOpen ? 'block' : 'none'};">
+        ${cos.length ? rows : '<p class="sub" style="margin:0;">Aucune entreprise inscrite.</p>'}
+      </div>
+    </div>`;
+  }catch(e){ return ''; }
+}
+async function loadCpkPhotos(box){
+  const jobs = Array.from(box.querySelectorAll('[data-cpk-photos]')).filter(el => parseInt(el.dataset.count) > 0 && !el.dataset.loaded);
+  for(const el of jobs){
+    el.dataset.loaded = '1';
+    try{
+      const photos = await getPackagePhotos(el.dataset.cpkPhotos);
+      if(photos.length) el.innerHTML = photos.map(ph => `<img src="${ph.dataUrl}" data-zoom="${ph.dataUrl}" style="width:56px;height:56px;object-fit:cover;border-radius:10px;cursor:zoom-in;border:1px solid var(--border);">`).join('');
+    }catch(e){}
+  }
+}
+function bindCompanyPackagesCard(root){
+  const rootHead = root.querySelector('[data-cpk-root]');
+  if(rootHead){
+    rootHead.onclick = ()=>{
+      const body = root.querySelector('[data-cpk-body]');
+      const open = body.style.display === 'none';
+      body.style.display = open ? 'block' : 'none';
+      rootHead.querySelector('[data-cpk-rootarrow]').textContent = open ? '▼' : '▶';
+      if(open) cpkOpen.add('root'); else cpkOpen.delete('root');
+      if(open) body.querySelectorAll('[data-cpk-box]').forEach(b => { if(b.style.display !== 'none') loadCpkPhotos(b); });
+    };
+    if(cpkOpen.has('root')) root.querySelectorAll('[data-cpk-box]').forEach(b => { if(b.style.display !== 'none') loadCpkPhotos(b); });
+  }
+  root.querySelectorAll('[data-cpk-head]').forEach(h => {
+    h.onclick = ()=>{
+      const code = h.dataset.cpkHead;
+      const box = root.querySelector('[data-cpk-box="' + code + '"]');
+      const open = box.style.display === 'none';
+      box.style.display = open ? 'block' : 'none';
+      h.querySelector('[data-cpk-arrow]').textContent = open ? '▼' : '▶';
+      if(open){ cpkOpen.add(code); loadCpkPhotos(box); } else cpkOpen.delete(code);
+    };
+  });
+}
 const delCoOpen = new Set();
 async function deletedByCompaniesHTML(companies){
   const arrowBox = (open) => `<span data-arrow-ico style="flex:0 0 auto;width:28px;height:28px;border-radius:50%;background:#0B1120;color:var(--accent);display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:900;">${open ? '▼' : '▶'}</span>`;
@@ -3239,8 +3361,9 @@ async function renderOwnerCompanies(){
     const srHtml = await supportRequestsHTML();
     const actHtml = await activityLogHTML(companies);
     const delHtml = await deletedByCompaniesHTML(companies);
+    const cpkHtml = await companyPackagesCardHTML(companies);
     if(companies.length===0){
-      content.innerHTML = `<div class="card"><div class="empty">Aucune entreprise inscrite pour le moment.</div></div>` + delHtml + srHtml + actHtml;
+      content.innerHTML = `<div class="card"><div class="empty">Aucune entreprise inscrite pour le moment.</div></div>` + cpkHtml + delHtml + srHtml + actHtml;
     } else {
       content.innerHTML = `<div class="card"><h2>Entreprises inscrites</h2>` + companies.map(c=>`
         <div class="pkgAdmin" style="flex-direction:column;align-items:stretch;">
@@ -3273,7 +3396,7 @@ async function renderOwnerCompanies(){
             </div>
           </div>
           <div data-box="${c.code}"></div>
-        </div>`).join('') + `</div><div id="companyPkgView"></div>` + delHtml + srHtml + actHtml;
+        </div>`).join('') + `</div><div id="companyPkgView"></div>` + cpkHtml + delHtml + srHtml + actHtml;
       content.querySelectorAll('[data-payarrow]').forEach(b=>{
         b.onclick = (e)=>{
           e.stopPropagation();
@@ -3331,6 +3454,7 @@ async function renderOwnerCompanies(){
     bindSupportRequests(content, renderOwnerCompanies);
     bindActivityLog(content, renderOwnerCompanies);
     bindDeletedByCompanies(content, renderOwnerCompanies);
+    bindCompanyPackagesCard(content);
   }catch(e){
     content.innerHTML = `<div class="card"><div class="empty">Impossible de charger les entreprises.</div></div>`;
   }
@@ -3523,7 +3647,7 @@ async function renderOwnerPackages(){
   };
 
   try{
-    const allPkgsForStats = await getAllPackages();
+    const allPkgsForStats = await getCompanyPackages(adminSession.code);
 
     const monthOptions = [];
     const now0 = new Date();
