@@ -1957,6 +1957,51 @@ async function saveDeliveryProof(p, dataUrl){
   await db.collection('packages').doc(p.trackingId).set({hasProof: true, proofAt: now}, {merge: true});
   try{ await logActivity(p.companyCode || await getOwnerCode(), '📸', 'Preuve de livraison ajoutée', '#' + p.trackingId + ' — ' + (p.name || '') + (p.phone ? ' · ' + p.phone : ''), p.trackingId); }catch(e){}
 }
+function proofRole(){ return (adminSession && adminSession.isOwner) ? 'Owner' : 'Company'; }
+function proofFoldHTML(p, kind){
+  const role = proofRole();
+  const seenAt = kind === 'client' ? p['clientProofSeen' + role] : p['proofSeen' + role];
+  const title = kind === 'client' ? '🧾 Preuve du colis (client)' : '🧾 Preuve de livraison';
+  return `<div style="margin-top:8px;border-radius:12px;background:rgba(62,207,142,0.12);border:1px solid rgba(62,207,142,0.5);overflow:hidden;">
+    <div data-pf-head="${escHtml(p.trackingId)}" data-pf-kind="${kind}" style="padding:10px 12px;display:flex;align-items:center;gap:8px;cursor:pointer;color:var(--ok);font-weight:800;font-size:14px;line-height:1.3;">
+      <span style="flex:1;min-width:0;">${title}</span>
+      <span data-pf-badge style="flex:0 0 auto;padding:2px 8px;border-radius:10px;background:rgba(255,255,255,0.12);font-size:11px;font-weight:800;${seenAt ? '' : 'display:none;'}">👁️ Vue</span>
+      <span data-pf-arrow style="flex:0 0 auto;color:var(--accent);font-size:18px;font-weight:900;width:18px;text-align:center;">▶</span>
+    </div>
+    <div data-pf-body style="display:none;padding:0 12px 12px;text-align:center;"></div>
+  </div>`;
+}
+document.addEventListener('click', async (e)=>{
+  const h = e.target.closest && e.target.closest('[data-pf-head]');
+  if(!h) return;
+  const body = h.parentElement.querySelector('[data-pf-body]');
+  const arrow = h.querySelector('[data-pf-arrow]');
+  const open = body.style.display === 'none';
+  body.style.display = open ? 'block' : 'none';
+  arrow.textContent = open ? '▼' : '▶';
+  if(!open || body.dataset.loaded) return;
+  body.innerHTML = '<div class="sub" style="font-size:12px;">Chargement...</div>';
+  const id = h.dataset.pfHead, kind = h.dataset.pfKind;
+  try{
+    const [d, pk] = await Promise.all([db.collection(kind === 'client' ? 'clientProofs' : 'deliveryProofs').doc(id).get(), getPackage(id)]);
+    if(!d.exists){ body.innerHTML = '<div class="sub" style="font-size:12px;">Preuve introuvable.</div>'; return; }
+    const url = d.data().dataUrl;
+    const role = proofRole();
+    const viewer = role === 'Owner' ? 'STS' : ((adminSession && adminSession.companyName) || (companySession && companySession.companyName) || "l'entreprise");
+    const seenKey = (kind === 'client' ? 'clientProofSeen' : 'proofSeen') + role;
+    const vaKey = kind === 'client' ? 'clientProofViewedAt' : 'proofViewedAt';
+    const vbKey = kind === 'client' ? 'clientProofViewedBy' : 'proofViewedBy';
+    let seenAt = pk && pk[seenKey];
+    if(!seenAt){
+      seenAt = new Date().toISOString();
+      const upd = {}; upd[seenKey] = seenAt; upd[vaKey] = seenAt; upd[vbKey] = viewer;
+      try{ await db.collection('packages').doc(id).set(upd, {merge: true}); }catch(err){}
+    }
+    body.innerHTML = `<img src="${url}" data-zoom="${url}" style="max-width:100%;max-height:260px;border-radius:10px;border:2px solid var(--accent);cursor:zoom-in;"><div style="margin-top:6px;font-size:12px;color:var(--ok);font-weight:700;">👁️ Vue par ${escHtml(viewer)} — ${fmtDate(seenAt)}</div>`;
+    const bd = h.querySelector('[data-pf-badge]'); if(bd) bd.style.display = '';
+    body.dataset.loaded = '1';
+  }catch(err){ body.innerHTML = '<div class="sub" style="font-size:12px;">Impossible de charger la preuve.</div>'; }
+});
 function clientProofBoxHTML(p){
   const viewed = p.clientProofViewedAt
     ? `<span style="flex:0 0 auto;padding:2px 8px;border-radius:10px;background:rgba(255,255,255,0.12);font-size:11px;font-weight:800;">👁️ Vue</span>`
@@ -2239,10 +2284,9 @@ async function renderAdminPkgList(pkgs){
     const hiddenNote = p.hiddenByClient
       ? `<div style="margin-top:4px;font-size:11px;color:var(--danger);">🗑️ Supprimé de la liste par le client${p.hiddenByClientAt ? ' — ' + fmtDate(p.hiddenByClientAt) : ''}</div>`
       : '';
-    const proofBlock = (p.hasProof
-      ? `<button type="button" style="display:block;margin-top:8px;padding:10px 14px;border-radius:12px;border:1px solid rgba(62,207,142,0.6);background:rgba(62,207,142,0.14);color:var(--ok);font-weight:800;font-size:13px;cursor:pointer;" data-proof-view="${escHtml(p.trackingId)}">🧾 Voir la preuve de livraison</button>`
-      : (p.status === 'livre' ? `<button type="button" style="display:block;margin-top:8px;padding:10px 14px;border-radius:12px;border:1px solid var(--accent);background:rgba(255,122,26,0.16);color:var(--accent2);font-weight:800;font-size:13px;cursor:pointer;" data-proof-add="${escHtml(p.trackingId)}">📸 Ajouter la preuve de livraison</button>` : ''))
-      + (p.hasClientProof ? `<button type="button" style="display:block;margin-top:8px;padding:10px 14px;border-radius:12px;border:1px solid rgba(62,207,142,0.6);background:rgba(62,207,142,0.14);color:var(--ok);font-weight:800;font-size:13px;cursor:pointer;" data-cproof-view="${escHtml(p.trackingId)}">🧾 Voir la preuve du client</button>` : '');
+    const proofBlock = (p.hasProof ? proofFoldHTML(p, 'delivery')
+        : `<button type="button" style="display:block;margin-top:8px;padding:10px 14px;border-radius:12px;border:1px solid var(--accent);background:rgba(255,122,26,0.16);color:var(--accent2);font-weight:800;font-size:13px;cursor:pointer;" data-proof-add="${escHtml(p.trackingId)}">📸 Ajouter la preuve de livraison</button>`)
+      + (p.hasClientProof ? proofFoldHTML(p, 'client') : '');
     const compDelNote = p.deletedByCompany
       ? `<div style="margin-top:4px;font-size:11px;color:var(--danger);">🗑️ Supprimé par l'entreprise${p.deletedByCompanyAt ? ' — ' + fmtDate(p.deletedByCompanyAt) : ''}</div>`
       : '';
@@ -3146,8 +3190,9 @@ async function companyPackagesCardHTML(companies){
             <div style="font-size:13px;margin-top:2px;">#${escHtml(p.trackingId)} — ${STATUS_LABEL[p.status] || p.status}</div>
             ${(p.destCommune || p.destDepartment) ? `<div class="sub" style="font-size:11px;margin-top:2px;">📍 ${escHtml([p.destCommune, p.destDepartment, p.destCountry].filter(Boolean).join(', '))}</div>` : ''}
             <div data-cpk-photos="${escHtml(p.trackingId)}" data-count="${p.photoCount || 0}" style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px;">${p.photoCount ? '<span class="sub" style="font-size:11px;">📷 ' + p.photoCount + ' photo(s)</span>' : '<span class="sub" style="font-size:11px;">📷 Aucune photo</span>'}</div>
-            ${p.hasProof ? `<button type="button" class="miniBtn" style="margin-top:6px;margin-right:6px;color:var(--ok);border-color:rgba(62,207,142,0.5);" data-proof-view="${escHtml(p.trackingId)}">🧾 Preuve de livraison</button>` : ''}
-            ${p.hasClientProof ? `<button type="button" class="miniBtn" style="margin-top:6px;color:var(--ok);border-color:rgba(62,207,142,0.5);" data-cproof-view="${escHtml(p.trackingId)}">🧾 Preuve du client</button>` : ''}
+            ${p.hasProof ? proofFoldHTML(p, 'delivery') : '<div class="sub" style="font-size:11.5px;margin-top:6px;">🧾 Aucune preuve de livraison</div>'}
+            ${p.hasClientProof ? proofFoldHTML(p, 'client') : ''}
+            <button type="button" class="miniBtn" style="margin-top:8px;color:var(--danger);border-color:rgba(239,93,93,0.4);" data-cpk-del="${escHtml(p.trackingId)}">🗑️ Supprimer définitivement</button>
           </div>`).join('') : `<div class="sub" style="margin-top:8px;font-size:12.5px;">Aucun colis pour cette entreprise.</div>`;
       return `
         <div style="margin-bottom:10px;border:1px solid var(--border);border-radius:14px;padding:10px 12px;background:rgba(255,255,255,0.02);">
@@ -3182,7 +3227,14 @@ async function loadCpkPhotos(box){
     }catch(e){}
   }
 }
-function bindCompanyPackagesCard(root){
+function bindCompanyPackagesCard(root, rerender){
+  root.querySelectorAll('[data-cpk-del]').forEach(b => {
+    b.onclick = async ()=>{
+      if(!confirm('Supprimer DÉFINITIVEMENT ce colis ?\n\nCette action est irréversible.')) return;
+      try{ await deletePackage(b.dataset.cpkDel); toast('Colis supprimé définitivement'); if(rerender) rerender(); }
+      catch(e){ toast('Erreur, réessayez'); }
+    };
+  });
   const rootHead = root.querySelector('[data-cpk-root]');
   if(rootHead){
     rootHead.onclick = ()=>{
@@ -3368,8 +3420,7 @@ async function renderOwnerCompanies(){
       content.innerHTML = `<div class="card"><h2>Entreprises inscrites</h2>` + companies.map(c=>`
         <div class="pkgAdmin" style="flex-direction:column;align-items:stretch;">
           <div style="display:flex;flex-direction:column;align-items:stretch;gap:10px;">
-            <div class="info" data-view="${c.code}" data-name="${c.companyName}" style="cursor:pointer;flex:1;display:flex;align-items:center;gap:10px;">
-              <span data-arrow style="color:var(--accent);font-size:20px;font-weight:900;flex:0 0 auto;width:18px;text-align:center;">▶</span>
+            <div class="info" data-view="${c.code}" data-name="${c.companyName}" style="flex:1;display:flex;align-items:center;gap:10px;">
               ${c.logoUrl ? `<div data-zoom="${c.logoUrl}" title="Voir le logo en grand" style="cursor:zoom-in;flex:0 0 auto;">${logoBoxHTML(c, 72, '16px', 'border:2px solid var(--accent);box-shadow:0 6px 18px rgba(255,106,0,0.3);')}</div>` : ''}
               <div style="min-width:0;flex:1;overflow-wrap:anywhere;">
                 <div style="display:flex;align-items:center;flex-wrap:wrap;gap:8px;"><b>${c.companyName}</b> ${waChatBtn(c.companyPhone, 'Bonjour ' + (c.companyName||'') + ', c\'est Sam Trace Store. ')} ${!c.seenByOwner ? '<span class="badge disponible" style="margin-left:6px;">🆕 Nouveau</span>' : ''}</div>
@@ -3395,7 +3446,6 @@ async function renderOwnerCompanies(){
               </button>
             </div>
           </div>
-          <div data-box="${c.code}"></div>
         </div>`).join('') + `</div><div id="companyPkgView"></div>` + cpkHtml + delHtml + srHtml + actHtml;
       content.querySelectorAll('[data-payarrow]').forEach(b=>{
         b.onclick = (e)=>{
@@ -3435,26 +3485,12 @@ async function renderOwnerCompanies(){
           renderOwnerCompanies();
         };
       });
-      content.querySelectorAll('.info[data-view]').forEach(el=>{
-        el.onclick = (ev)=>{
-          if(ev && ev.target && ev.target.closest && ev.target.closest('[data-zoom]')) return;
-          const code = el.dataset.view;
-          const box = content.querySelector('[data-box="' + code + '"]');
-          const wasOpen = !!(box && box.innerHTML.trim() !== '');
-          content.querySelectorAll('[data-box]').forEach(b => { b.innerHTML = ''; });
-          content.querySelectorAll('[data-arrow]').forEach(a => { a.textContent = '▶'; });
-          if(wasOpen) return;
-          const arrow = el.querySelector('[data-arrow]');
-          if(arrow) arrow.textContent = '▼';
-          renderCompanyPackagesView(code, el.dataset.name);
-        };
-      });
       markCompaniesSeen();
     }
     bindSupportRequests(content, renderOwnerCompanies);
     bindActivityLog(content, renderOwnerCompanies);
     bindDeletedByCompanies(content, renderOwnerCompanies);
-    bindCompanyPackagesCard(content);
+    bindCompanyPackagesCard(content, renderOwnerCompanies);
   }catch(e){
     content.innerHTML = `<div class="card"><div class="empty">Impossible de charger les entreprises.</div></div>`;
   }
