@@ -2020,7 +2020,7 @@ function proofFoldHTML(p, kind){
   const role = proofRole();
   const seenAt = kind === 'client' ? p['clientProofSeen' + role] : p['proofSeen' + role];
   const clientSeen = (kind !== 'client' && p.proofSeenClient);
-  const title = kind === 'client' ? '🧾 Preuve du colis (client)' : '🧾 Preuve de livraison';
+  const title = kind === 'client' ? '📦 Preuve du colis (client)' : '🧾 Preuve de livraison';
   return `<div style="margin-top:8px;border-radius:12px;background:rgba(62,207,142,0.12);border:1px solid rgba(62,207,142,0.5);overflow:hidden;">
     <div data-pf-head="${escHtml(p.trackingId)}" data-pf-kind="${kind}" style="padding:10px 12px;cursor:pointer;color:var(--ok);font-weight:800;font-size:14px;line-height:1.3;">
       <div style="display:flex;align-items:center;gap:8px;">
@@ -2121,7 +2121,7 @@ function clientProofBoxHTML(p){
     : '';
   return `<div style="margin-top:10px;border-radius:12px;background:rgba(62,207,142,0.12);border:1px solid rgba(62,207,142,0.5);overflow:hidden;">
     <div data-cproof-fold="${escHtml(p.trackingId)}" style="padding:10px 12px;display:flex;align-items:center;gap:8px;cursor:pointer;color:var(--ok);font-weight:800;font-size:14px;line-height:1.3;">
-      <span style="flex:1;min-width:0;">✅ Preuve du colis envoyée à l'entreprise</span>
+      <span style="flex:1;min-width:0;">📦 Preuve du colis envoyée à l'entreprise</span>
       ${viewed}
       <span data-cproof-arrow style="flex:0 0 auto;color:var(--accent);font-size:18px;font-weight:900;width:18px;text-align:center;">▶</span>
     </div>
