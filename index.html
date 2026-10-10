@@ -1291,7 +1291,7 @@ function pkgCardHTML(p, label){
     ${courierStripHTML(p)}
     ${hist ? `<div style="margin-top:8px;border-top:1px solid var(--border);padding-top:8px;">${hist}</div>` : ''}
     ${p.photoCount > 0 ? `<div class="photosWrap" data-photos-wrap-for="${escHtml(p.trackingId)}" style="margin-top:10px;"><button type="button" data-photos-for="${escHtml(p.trackingId)}" style="width:100%;background:rgba(255,122,26,0.12);border:1px solid var(--accent);color:var(--accent2);border-radius:10px;padding:10px;font-size:13px;font-weight:700;cursor:pointer;">📷 Voir les photos de mon colis (${p.photoCount})</button><div class="photosBox" style="display:none;"></div></div>` : ''}
-    ${p.hasProof ? clientViewDeliveryProofHTML(p) : ''}
+    ${p.hasProof ? clientViewDeliveryProofHTML(p) : clientNoDeliveryProofHTML()}
     ${proofBtnHTML}
     ${pickupBtn}
   </div>`;
@@ -1594,11 +1594,11 @@ function pkgCreatedAt(p){
   const h = (p.history || [])[0];
   return new Date((h && h.date) || p.updatedAt || 0).getTime();
 }
-function printPackagesList(pkgs){
+function printPackagesList(pkgs, nameOverride){
   if(!pkgs || !pkgs.length){ toast('Aucun colis à imprimer'); return; }
   const esc = escHtml;
   const owner = !!(adminSession && adminSession.isOwner);
-  const title = 'Liste des colis — ' + (owner ? 'Sam Trace Store' : ((adminSession && adminSession.companyName) || ''));
+  const title = 'Liste des colis — ' + (nameOverride || (owner ? 'Sam Trace Store' : ((adminSession && adminSession.companyName) || '')));
   const list = pkgs.slice().sort((a, b) => String(a.name || '').localeCompare(String(b.name || '')));
   const rows = list.map((p, i) => `<tr><td>${i + 1}</td><td>#${esc(p.trackingId)}</td><td>${esc(p.name || '')}</td><td>${esc(p.phone || '')}</td><td>${esc(STATUS_LABEL[p.status] || p.status)}</td><td>${esc([p.destCommune, p.destDepartment, p.destCountry].filter(Boolean).join(', '))}</td><td>${p.updatedAt ? esc(fmtDate(p.updatedAt)) : ''}</td></tr>`).join('');
   const html = `<!doctype html><html><head><meta charset="utf-8"><title>${esc(title)}</title><style>body{font-family:Arial,sans-serif;padding:16px;color:#111}h1{font-size:18px;margin:0 0 4px}p{margin:0 0 12px;color:#555;font-size:12px}table{width:100%;border-collapse:collapse;font-size:11.5px}th,td{border:1px solid #ccc;padding:5px;text-align:left}th{background:#FF7A1A;color:#fff}tr:nth-child(even){background:#f7f7f7}</style></head><body><h1>${esc(title)}</h1><p>${list.length} colis · généré le ${new Date().toLocaleString('fr-FR')}</p><table><tr><th>#</th><th>N° de suivi</th><th>Client</th><th>Téléphone</th><th>Statut</th><th>Destination</th><th>Mise à jour</th></tr>${rows}</table></body></html>`;
@@ -2019,13 +2019,18 @@ function proofRole(){ return (adminSession && adminSession.isOwner) ? 'Owner' : 
 function proofFoldHTML(p, kind){
   const role = proofRole();
   const seenAt = kind === 'client' ? p['clientProofSeen' + role] : p['proofSeen' + role];
+  const clientSeen = (kind !== 'client' && p.proofSeenClient);
   const title = kind === 'client' ? '🧾 Preuve du colis (client)' : '🧾 Preuve de livraison';
   return `<div style="margin-top:8px;border-radius:12px;background:rgba(62,207,142,0.12);border:1px solid rgba(62,207,142,0.5);overflow:hidden;">
-    <div data-pf-head="${escHtml(p.trackingId)}" data-pf-kind="${kind}" style="padding:10px 12px;display:flex;align-items:center;gap:8px;cursor:pointer;color:var(--ok);font-weight:800;font-size:14px;line-height:1.3;">
-      <span style="flex:1;min-width:0;">${title}</span>
-      <span data-pf-badge style="flex:0 0 auto;padding:2px 8px;border-radius:10px;background:rgba(255,255,255,0.12);font-size:11px;font-weight:800;${seenAt ? '' : 'display:none;'}">👁️ Vue</span>
-      ${(kind !== 'client' && p.proofSeenClient) ? '<span style="flex:0 0 auto;padding:2px 8px;border-radius:10px;background:rgba(96,165,250,0.2);color:var(--info);font-size:11px;font-weight:800;">👤 Vue client</span>' : ''}
-      <span data-pf-arrow style="flex:0 0 auto;color:var(--accent);font-size:18px;font-weight:900;width:18px;text-align:center;">▶</span>
+    <div data-pf-head="${escHtml(p.trackingId)}" data-pf-kind="${kind}" style="padding:10px 12px;cursor:pointer;color:var(--ok);font-weight:800;font-size:14px;line-height:1.3;">
+      <div style="display:flex;align-items:center;gap:8px;">
+        <span style="flex:1;min-width:0;">${title}</span>
+        <span data-pf-arrow style="flex:0 0 auto;color:var(--accent);font-size:18px;font-weight:900;width:18px;text-align:center;">▶</span>
+      </div>
+      <div data-pf-badges style="display:${(seenAt || clientSeen) ? 'flex' : 'none'};gap:6px;flex-wrap:wrap;margin-top:6px;">
+        <span data-pf-badge style="padding:2px 8px;border-radius:10px;background:rgba(255,255,255,0.12);font-size:11px;font-weight:800;${seenAt ? '' : 'display:none;'}">👁️ Vue</span>
+        ${clientSeen ? '<span style="padding:2px 8px;border-radius:10px;background:rgba(96,165,250,0.2);color:var(--info);font-size:11px;font-weight:800;">👤 Vue client</span>' : ''}
+      </div>
     </div>
     <div data-pf-body style="display:none;padding:0 12px 12px;text-align:center;"></div>
   </div>`;
@@ -2058,11 +2063,19 @@ document.addEventListener('click', async (e)=>{
       try{ await db.collection('packages').doc(id).set(upd, {merge: true}); }catch(err){}
       Object.assign(pk, upd);
     }
-    body.innerHTML = `<img src="${url}" data-zoom="${url}" style="max-width:100%;max-height:260px;border-radius:10px;border:2px solid var(--accent);cursor:zoom-in;">` + seenLinesHTML(pk, kind);
+    body.innerHTML = `<img src="${url}" data-zoom="${url}" style="max-width:100%;max-height:260px;border-radius:10px;border:2px solid var(--accent);cursor:zoom-in;">` + sentByHTML(kind, pk, d.data().createdAt) + seenLinesHTML(pk, kind);
     const bd = h.querySelector('[data-pf-badge]'); if(bd) bd.style.display = '';
+    const brow = h.querySelector('[data-pf-badges]'); if(brow) brow.style.display = 'flex';
     body.dataset.loaded = '1';
   }catch(err){ body.innerHTML = '<div class="sub" style="font-size:12px;">Impossible de charger la preuve.</div>'; }
 });
+function clientNoDeliveryProofHTML(){
+  return `<div style="margin-top:10px;padding:10px 12px;border-radius:12px;background:rgba(255,255,255,0.04);border:1px dashed var(--border);color:var(--muted);font-weight:700;font-size:13.5px;line-height:1.35;">🧾 Preuve de livraison de l'entreprise<br><span style="font-weight:500;font-size:12px;">Pas encore ajoutée par l'entreprise.</span></div>`;
+}
+function sentByHTML(kind, pk, at){
+  const who = kind === 'client' ? ((pk.name || 'le client') + ' (client)') : (pk.companyCode ? (companyNameCache[pk.companyCode] || "l'entreprise") : 'STS');
+  return `<div style="margin-top:8px;font-size:12px;color:var(--muted);font-weight:700;">📤 ${kind === 'client' ? 'Envoyée' : 'Ajoutée'} par ${escHtml(who)}${at ? ' — ' + fmtDate(at) : ''}</div>`;
+}
 function clientViewDeliveryProofHTML(p){
   const seen = !!(p.proofSeenOwner || p.proofSeenCompany || p.proofViewedAt);
   return `<div style="margin-top:10px;border-radius:12px;background:rgba(62,207,142,0.12);border:1px solid rgba(62,207,142,0.5);overflow:hidden;">
@@ -2096,7 +2109,7 @@ document.addEventListener('click', async (e)=>{
           Object.assign(pk, upd);
         }
         const url = d.data().dataUrl;
-        body.innerHTML = `<img src="${url}" data-zoom="${url}" style="max-width:100%;max-height:260px;border-radius:10px;border:2px solid var(--accent);cursor:zoom-in;">` + seenLinesHTML(pk, 'delivery');
+        body.innerHTML = `<img src="${url}" data-zoom="${url}" style="max-width:100%;max-height:260px;border-radius:10px;border:2px solid var(--accent);cursor:zoom-in;">` + sentByHTML('delivery', pk, d.data().createdAt) + seenLinesHTML(pk, 'delivery');
         body.dataset.loaded = '1';
       } else body.innerHTML = '<div class="sub" style="font-size:12px;">Preuve introuvable.</div>';
     }catch(err){ body.innerHTML = '<div class="sub" style="font-size:12px;">Impossible de charger la preuve.</div>'; }
@@ -2131,7 +2144,7 @@ document.addEventListener('click', async (e)=>{
       if(d.exists){
         const url = d.data().dataUrl;
         body.innerHTML = `<img src="${url}" data-zoom="${url}" style="max-width:100%;max-height:260px;border-radius:10px;border:2px solid var(--accent);cursor:zoom-in;">` +
-          ((pk && seenLines(pk, 'client').length)
+          sentByHTML('client', pk || {}, d.data().createdAt) + ((pk && seenLines(pk, 'client').length)
             ? seenLinesHTML(pk, 'client')
             : `<div class="sub" style="margin-top:6px;font-size:12px;">Pas encore vue par l'entreprise.</div>`);
         body.dataset.loaded = '1';
@@ -3317,6 +3330,7 @@ function bindRegCompanies(root){
   });
 }
 const cpkOpen = new Set();
+let cpkByCo = {};
 async function companyPackagesCardHTML(companies){
   try{
     const names = {}; (companies || []).forEach(c => { names[c.code] = c.companyName; });
@@ -3325,6 +3339,7 @@ async function companyPackagesCardHTML(companies){
     const byCo = {};
     list.forEach(p => { (byCo[p.companyCode] = byCo[p.companyCode] || []).push(p); });
     const cos = (companies || []).slice().sort((x, y) => ((byCo[y.code] || []).length - (byCo[x.code] || []).length) || String(x.companyName).localeCompare(String(y.companyName)));
+    cpkByCo = byCo;
     const rootOpen = cpkOpen.has('root');
     const rows = cos.map(c => {
       const arr = (byCo[c.code] || []).slice().sort((a, b) => new Date(b.updatedAt || 0) - new Date(a.updatedAt || 0));
@@ -3344,6 +3359,7 @@ async function companyPackagesCardHTML(companies){
           <div data-cpk-head="${escHtml(c.code)}" style="display:flex;align-items:center;gap:10px;cursor:pointer;">
             <span data-cpk-arrow style="color:var(--accent);font-size:18px;font-weight:900;width:16px;text-align:center;">${open ? '▼' : '▶'}</span>
             <span style="flex:1;min-width:0;font-weight:800;overflow-wrap:anywhere;">🏢 ${escHtml(c.companyName)}</span>
+            <button type="button" data-cpk-print="${escHtml(c.code)}" data-name="${escHtml(c.companyName)}" style="flex:0 0 auto;padding:3px 10px;border-radius:10px;border:1px solid var(--accent);background:rgba(255,122,26,0.15);color:var(--accent2);font-weight:800;font-size:11px;cursor:pointer;">🖨️ PDF</button>
             <span style="padding:2px 10px;border-radius:12px;font-size:11.5px;font-weight:800;background:rgba(250,204,21,0.18);color:#FACC15;">${arr.length} colis</span>
           </div>
           <div data-cpk-box="${escHtml(c.code)}" style="display:${open ? 'block' : 'none'};">${inner}</div>
@@ -3373,6 +3389,9 @@ async function loadCpkPhotos(box){
   }
 }
 function bindCompanyPackagesCard(root, rerender){
+  root.querySelectorAll('[data-cpk-print]').forEach(b => {
+    b.onclick = (e)=>{ e.stopPropagation(); printPackagesList(cpkByCo[b.dataset.cpkPrint] || [], b.dataset.name); };
+  });
   root.querySelectorAll('[data-cpk-del]').forEach(b => {
     b.onclick = async ()=>{
       if(!confirm('Supprimer DÉFINITIVEMENT ce colis ?\n\nCette action est irréversible.')) return;
@@ -5324,6 +5343,7 @@ if ('serviceWorker' in navigator) {
   });
 }
 resolveClientLinkCompany().then(()=>{ if(clientLinkCompany && mode === 'client') renderClient(); });
+if(URL_COMPANY_PUB){ const ms = document.querySelector('.modeSwitch'); if(ms) ms.style.display = 'none'; }
 </script>
 </body>
 </html>
