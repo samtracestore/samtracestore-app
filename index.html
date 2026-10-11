@@ -1029,18 +1029,18 @@ async function submitDeposit(code, data){
     sendOwnerPaymentNotification(company, data, 'recharge');
   }catch(e){}
   try{
-    await sendMessage(code, 'company', '💳 Paiement envoyé : ' + data.amount + ' ' + data.currency + ' via ' + data.method + '\nPar : ' + (data.firstName || '') + ' ' + (data.name || '') + ' · ' + (data.phone || '') + '\nÀ vérifier dans l\'onglet Paiements.', 'payment_submitted');
+    sendMessage(code, 'company', '💳 Paiement envoyé : ' + data.amount + ' ' + data.currency + ' via ' + data.method + '\nPar : ' + (data.firstName || '') + ' ' + (data.name || '') + ' · ' + (data.phone || '') + '\nÀ vérifier dans l\'onglet Paiements.', 'payment_submitted').catch(()=>{});
   }catch(e){}
 }
 
 async function validateDeposit(code){
   await db.collection('companies').doc(code).set({paymentStatus:'active', notifiedForPayment:false, rejectionReason:null}, {merge:true});
-  try{ await sendMessage(code, 'owner', '✅ Votre paiement a été confirmé. Merci ! Votre abonnement est actif.', 'payment_ok'); }catch(e){}
+  sendMessage(code, 'owner', '✅ Votre paiement a été confirmé. Merci ! Votre abonnement est actif.', 'payment_ok').catch(()=>{});
 }
 
 async function rejectDeposit(code, reason){
   await db.collection('companies').doc(code).set({paymentStatus:'rejected', rejectionReason:reason, notifiedForPayment:false}, {merge:true});
-  try{ await sendMessage(code, 'owner', '❌ Votre paiement n\'a pas pu être validé : ' + (reason || 'motif non précisé') + '. Merci d\'envoyer une nouvelle preuve.', 'payment_rejected'); }catch(e){}
+  sendMessage(code, 'owner', '❌ Votre paiement n\'a pas pu être validé : ' + (reason || 'motif non précisé') + '. Merci d\'envoyer une nouvelle preuve.', 'payment_rejected').catch(()=>{});
 }
 
 async function getPendingDeposits(){
@@ -3109,7 +3109,7 @@ async function renderOwnerPayments(){
       b.onclick = async ()=>{
         await validateRegistrationDeposit(b.dataset.validateReg);
         toast("Inscription validée, l'entreprise peut commencer son essai gratuit");
-        renderOwnerPayments();
+        renderAdmin();
       };
     });
     content.querySelectorAll('[data-reject-reg]').forEach(b=>{
@@ -3118,14 +3118,14 @@ async function renderOwnerPayments(){
         if(reason === null) return;
         await rejectRegistrationDeposit(b.dataset.rejectReg, reason || "Non précisé");
         toast("Inscription refusée");
-        renderOwnerPayments();
+        renderAdmin();
       };
     });
     content.querySelectorAll('[data-validate]').forEach(b=>{
       b.onclick = async ()=>{
         await validateDeposit(b.dataset.validate);
         toast("Dépôt validé, l'entreprise est activée");
-        renderOwnerPayments();
+        renderAdmin();
       };
     });
     content.querySelectorAll('[data-reject]').forEach(b=>{
@@ -3134,7 +3134,7 @@ async function renderOwnerPayments(){
         if(reason === null) return;
         await rejectDeposit(b.dataset.reject, reason || "Non précisé");
         toast("Dépôt refusé");
-        renderOwnerPayments();
+        renderAdmin();
       };
     });
     ['pendingReg','pending','confirmed','confirmedReg','paymentSettings','paymentMethods'].forEach(id=>{
@@ -3155,7 +3155,7 @@ async function renderOwnerPayments(){
           depositProofUrl:null, depositSubmittedAt:null
         }, {merge:true});
         toast("Dépôt supprimé");
-        renderOwnerPayments();
+        renderAdmin();
       };
     });
     content.querySelectorAll('[data-delete-reg-deposit]').forEach(b=>{
@@ -3168,7 +3168,7 @@ async function renderOwnerPayments(){
           regDepositProofUrl:null, regDepositSubmittedAt:null, trialEndsAt:null
         }, {merge:true});
         toast("Inscription supprimée");
-        renderOwnerPayments();
+        renderAdmin();
       };
     });
     document.getElementById('btnExportBackup').onclick = async ()=>{
@@ -3309,18 +3309,28 @@ async function unreadMessages(side, code){
   const snap = side === 'owner' ? await db.collection('messages').get() : await db.collection('messages').where('companyCode', '==', code).get();
   const key = side === 'owner' ? 'readByOwner' : 'readByCompany';
   const from = side === 'owner' ? 'company' : 'owner';
-  return snap.docs.map(d => d.data()).filter(m => m.from === from && !m[key]);
+  return snap.docs.map(d => d.data()).filter(m => m.from === from && !m[key] && !m.deletedByCompany);
 }
 function paymentRequestText(name){
   return 'Bonjour ' + name + ', votre période d\'essai gratuit arrive bientôt à sa fin. Pour continuer à utiliser SamTraceStore, passez au paiement mensuel. Touchez le bouton ci-dessous pour voir les comptes de paiement.';
 }
 let msgPoll = null;
-function closeMessagesModal(){
+function onMessagesClosed(){
+  try{
+    if(mode === 'admin' && adminSession && adminSession.isOwner && ownerView === 'companies') renderOwnerCompanies();
+    else if(mode === 'company' && companySession && companyScreen === 'home'){
+      const b = document.getElementById('msgBanner'); if(b) b.remove();
+      const bd = document.getElementById('coMsgBadge'); if(bd) bd.textContent = '';
+    }
+  }catch(e){}
+}
+function closeMessagesModal(notify){
   if(msgPoll){ clearInterval(msgPoll); msgPoll = null; }
-  const o = document.getElementById('msgModal'); if(o) o.remove();
+  const o = document.getElementById('msgModal');
+  if(o){ o.remove(); if(notify === true) onMessagesClosed(); }
 }
 async function openMessagesModal(code, name, side){
-  closeMessagesModal();
+  closeMessagesModal(false);
   const ov = document.createElement('div');
   ov.id = 'msgModal';
   ov.style.cssText = 'position:fixed;inset:0;z-index:280;background:var(--bg);display:flex;flex-direction:column;';
@@ -3329,6 +3339,7 @@ async function openMessagesModal(code, name, side){
       <div style="font-weight:800;font-size:16px;min-width:0;overflow-wrap:anywhere;">💬 ${side === 'owner' ? 'Messages — ' + escHtml(name) : 'Messages avec STS'}</div>
       <button type="button" id="msgClose" style="flex:0 0 auto;padding:8px 14px;border:none;border-radius:12px;background:#fff;color:#C2185B;font-weight:800;font-size:14px;cursor:pointer;">✕ Fermer</button>
     </div>
+    <div style="padding:6px 14px;text-align:right;border-bottom:1px solid var(--border);"><button type="button" id="msgClear" style="background:none;border:none;color:var(--danger);font-size:12px;font-weight:800;cursor:pointer;">🗑️ Supprimer toute la conversation</button></div>
     <div id="msgList" style="flex:1;overflow-y:auto;padding:14px;"></div>
     <div style="padding:10px 12px;border-top:1px solid var(--border);background:var(--panel);">
       ${side === 'owner' ? '<button type="button" id="msgPayReq" style="width:100%;margin-bottom:8px;padding:10px;border:none;border-radius:12px;background:linear-gradient(135deg,#8B5CF6,#F97316);color:#fff;font-weight:800;font-size:14px;cursor:pointer;">💳 Passer au paiement mensuel</button>' : ''}
@@ -3339,28 +3350,45 @@ async function openMessagesModal(code, name, side){
     </div>`;
   document.body.appendChild(ov);
   const listEl = ov.querySelector('#msgList');
+  const otherSide = side === 'owner' ? 'company' : 'owner';
+  const readKey = side === 'owner' ? 'readByOwner' : 'readByCompany';
+  let lastThread = [];
   async function paint(scroll){
     try{
-      const thread = await loadThread(code);
+      let thread = await loadThread(code);
+      if(side === 'company') thread = thread.filter(m => !m.deletedByCompany);
+      lastThread = thread;
+      if(thread.some(m => m.from === otherSide && !m[readKey])) markThreadRead(code, side).catch(()=>{});
       listEl.innerHTML = thread.length ? thread.map(m => {
         const mine = (side === 'owner') ? m.from === 'owner' : m.from === 'company';
-        const tag = m.kind === 'activation_request' ? '<div style="font-size:11px;font-weight:800;margin-bottom:3px;color:var(--ok);">🔔 Demande d\'activation</div>'
-          : (m.kind === 'payment_request' ? '<div style="font-size:11px;font-weight:800;margin-bottom:3px;color:var(--accent2);">💳 Paiement mensuel</div>'
-          : (m.kind === 'payment_submitted' ? '<div style="font-size:11px;font-weight:800;margin-bottom:3px;color:var(--ok);">💳 Paiement envoyé</div>' : ''));
+        const tag = m.kind === 'activation_request' ? '<span style="font-size:11px;font-weight:800;color:var(--ok);">🔔 Demande d\'activation</span>'
+          : (m.kind === 'payment_request' ? '<span style="font-size:11px;font-weight:800;color:var(--accent2);">💳 Paiement mensuel</span>'
+          : (m.kind === 'payment_submitted' ? '<span style="font-size:11px;font-weight:800;color:var(--ok);">💳 Paiement envoyé</span>' : '<span></span>'));
+        const head = `<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:3px;min-height:18px;">${tag}<button type="button" data-msg-del="${m.id}" style="flex:0 0 auto;background:none;border:none;color:var(--danger);font-size:11.5px;font-weight:800;cursor:pointer;padding:0 0 0 8px;">🗑️ Supprimer</button></div>`;
         const btn = (m.kind === 'payment_request' && side === 'company')
           ? '<button type="button" data-msg-pay style="display:block;width:100%;margin-top:8px;padding:10px;border:none;border-radius:10px;background:linear-gradient(135deg,#22C55E,#15803D);color:#fff;font-weight:800;cursor:pointer;">💳 Voir les comptes de paiement</button>'
           : ((m.kind === 'payment_submitted' && side === 'owner')
             ? '<button type="button" data-msg-owner-pay style="display:block;width:100%;margin-top:8px;padding:10px;border:none;border-radius:10px;background:linear-gradient(135deg,#22C55E,#15803D);color:#fff;font-weight:800;cursor:pointer;">💳 Ouvrir Paiements pour confirmer</button>' : '');
         return `<div style="display:flex;justify-content:${mine ? 'flex-end' : 'flex-start'};margin-bottom:10px;">
-          <div style="max-width:86%;padding:9px 12px;border-radius:14px;background:${mine ? 'rgba(255,122,26,0.22)' : 'var(--panel2)'};border:1px solid ${mine ? 'rgba(255,122,26,0.5)' : 'var(--border)'};">
-            ${tag}<div style="white-space:pre-wrap;overflow-wrap:anywhere;font-size:14px;line-height:1.45;">${escHtml(m.text)}</div>${btn}
+          <div style="max-width:86%;min-width:55%;padding:9px 12px;border-radius:14px;background:${mine ? 'rgba(255,122,26,0.22)' : 'var(--panel2)'};border:1px solid ${mine ? 'rgba(255,122,26,0.5)' : 'var(--border)'};">
+            ${head}<div style="white-space:pre-wrap;overflow-wrap:anywhere;font-size:14px;line-height:1.45;">${escHtml(m.text)}</div>${btn}
             <div class="sub" style="font-size:10.5px;margin-top:4px;text-align:right;">${fmtDate(m.createdAt)}</div>
           </div></div>`;
       }).join('') : '<div class="empty">Aucun message pour le moment.</div>';
       if(scroll) listEl.scrollTop = listEl.scrollHeight;
     }catch(e){ listEl.innerHTML = '<div class="empty">Impossible de charger les messages.</div>'; }
   }
-  ov.querySelector('#msgClose').onclick = closeMessagesModal;
+  async function deleteMsgs(ids){
+    if(side === 'owner') await Promise.all(ids.map(id => db.collection('messages').doc(id).delete()));
+    else await Promise.all(ids.map(id => db.collection('messages').doc(id).set({deletedByCompany: true}, {merge: true})));
+  }
+  ov.querySelector('#msgClear').onclick = async ()=>{
+    if(!lastThread.length){ toast('Aucun message à supprimer'); return; }
+    if(!confirm(side === 'owner' ? 'Supprimer DÉFINITIVEMENT toute la conversation (pour vous et pour l\'entreprise) ?' : 'Supprimer toute la conversation de votre liste ?')) return;
+    try{ await deleteMsgs(lastThread.map(m => m.id)); toast('Conversation supprimée'); await paint(false); }
+    catch(e){ toast('Erreur, réessayez'); }
+  };
+  ov.querySelector('#msgClose').onclick = ()=> closeMessagesModal(true);
   ov.querySelector('#msgSend').onclick = async ()=>{
     const inp = ov.querySelector('#msgInput');
     const txt = inp.value.trim();
@@ -3374,14 +3402,21 @@ async function openMessagesModal(code, name, side){
     try{ await sendMessage(code, 'owner', paymentRequestText(name), 'payment_request'); toast('Message envoyé ✅'); await paint(true); }
     catch(e){ toast('Erreur, réessayez'); }
   };
-  listEl.addEventListener('click', (e)=>{
-    if(e.target.closest('[data-msg-pay]')){ closeMessagesModal(); companyScreen = 'payment'; renderCompany(); window.scrollTo(0, 0); }
-    if(e.target.closest('[data-msg-owner-pay]')){ closeMessagesModal(); const b = document.getElementById('btnOwnerPayments'); if(b) b.click(); }
+  listEl.addEventListener('click', async (e)=>{
+    const del = e.target.closest('[data-msg-del]');
+    if(del){
+      if(!confirm(side === 'owner' ? 'Supprimer définitivement ce message (pour vous et pour l\'entreprise) ?' : 'Supprimer ce message de votre liste ?')) return;
+      try{ await deleteMsgs([del.dataset.msgDel]); await paint(false); }catch(err){ toast('Erreur, réessayez'); }
+      return;
+    }
+    if(e.target.closest('[data-msg-pay]')){ closeMessagesModal(false); companyScreen = 'payment'; renderCompany(); window.scrollTo(0, 0); }
+    if(e.target.closest('[data-msg-owner-pay]')){ closeMessagesModal(false); const b = document.getElementById('btnOwnerPayments'); if(b) b.click(); }
   });
   try{ await markThreadRead(code, side); }catch(e){}
   await paint(true);
-  msgPoll = setInterval(()=>{ if(document.getElementById('msgModal')) paint(false); else closeMessagesModal(); }, 8000);
+  msgPoll = setInterval(()=>{ if(document.getElementById('msgModal')) paint(false); else closeMessagesModal(false); }, 8000);
 }
+let msgCardOpen = true;
 async function messagesAdminHTML(companies){
   try{
     const names = {}; (companies || []).forEach(c => { names[c.code] = c.companyName; });
@@ -3396,15 +3431,33 @@ async function messagesAdminHTML(companies){
       return {code, name: names[code], last, unread};
     }).sort((a, b) => String(b.last.createdAt).localeCompare(String(a.last.createdAt)));
     const totalUnread = rows.reduce((n, r) => n + r.unread, 0);
-    return `<div class="card"><h2>💬 Messages des entreprises ${totalUnread ? `<span style="background:#EF5D5D;color:#fff;border-radius:12px;padding:2px 9px;font-size:12px;">${totalUnread} nouveau${totalUnread > 1 ? 'x' : ''}</span>` : ''}</h2>
-      <p class="sub">Les demandes d'activation, les paiements envoyés et les messages des entreprises arrivent ici. Touchez une conversation pour répondre.</p>` +
+    return `<div class="card" style="padding:0;overflow:hidden;">
+      <div data-msgcard-root style="background:linear-gradient(135deg,#22C55E,#0EA5E9);padding:14px 16px;display:flex;align-items:center;gap:10px;cursor:pointer;">
+        <span style="font-size:22px;">💬</span>
+        <div style="flex:1;min-width:0;color:#fff;font-weight:800;font-size:16px;text-shadow:0 1px 3px rgba(0,0,0,0.45);">Messages des entreprises</div>
+        ${totalUnread ? `<span style="background:#EF5D5D;color:#fff;border-radius:12px;padding:2px 9px;font-size:12px;font-weight:800;">${totalUnread} nouveau${totalUnread > 1 ? 'x' : ''}</span>` : ''}
+        <span data-msgcard-arrow style="flex:0 0 auto;width:28px;height:28px;border-radius:50%;background:#0B1120;color:var(--accent);display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:900;">${msgCardOpen ? '▼' : '▶'}</span>
+      </div>
+      <div data-msgcard-body style="padding:14px 16px;display:${msgCardOpen ? 'block' : 'none'};">
+      <p class="sub" style="margin-top:0;">Les demandes d'activation, les paiements envoyés et les messages des entreprises arrivent ici. Touchez une conversation pour répondre.</p>` +
       (rows.length ? rows.map(r => `
         <div data-msg-open="${escHtml(r.code)}" data-name="${escHtml(r.name)}" style="cursor:pointer;margin-top:8px;padding:10px 12px;border:1px solid ${r.unread ? 'var(--accent)' : 'var(--border)'};border-radius:12px;background:rgba(255,255,255,0.03);">
           <div style="display:flex;align-items:center;gap:8px;"><b style="flex:1;min-width:0;overflow-wrap:anywhere;">🏢 ${escHtml(r.name)}</b>${r.unread ? `<span style="background:#EF5D5D;color:#fff;border-radius:12px;padding:1px 8px;font-size:11.5px;font-weight:800;">${r.unread}</span>` : ''}</div>
           <div class="sub" style="font-size:12.5px;margin-top:3px;overflow-wrap:anywhere;">${r.last.from === 'owner' ? 'Vous : ' : ''}${escHtml(String(r.last.text).slice(0, 90))}</div>
           <div class="sub" style="font-size:11px;margin-top:2px;">${fmtDate(r.last.createdAt)}</div>
-        </div>`).join('') : '<p class="sub" style="margin-top:10px;">Aucun message pour le moment.</p>') + '</div>';
+        </div>`).join('') : '<p class="sub" style="margin-top:10px;">Aucun message pour le moment.</p>') + '</div></div>';
   }catch(e){ return ''; }
+}
+function bindMessagesCard(root){
+  const h = root.querySelector('[data-msgcard-root]');
+  if(!h) return;
+  h.onclick = ()=>{
+    const body = root.querySelector('[data-msgcard-body]');
+    const open = body.style.display === 'none';
+    body.style.display = open ? 'block' : 'none';
+    h.querySelector('[data-msgcard-arrow]').textContent = open ? '▼' : '▶';
+    msgCardOpen = open;
+  };
 }
 async function refreshCoMsgBadge(main){
   try{
@@ -3430,6 +3483,26 @@ document.addEventListener('click', async (e)=>{
     if(!confirm('Envoyer « Passer au paiement mensuel » à ' + pr.dataset.name + ' ?')) return;
     try{ await sendMessage(pr.dataset.payReq, 'owner', paymentRequestText(pr.dataset.name), 'payment_request'); toast('Message envoyé à ' + pr.dataset.name + ' ✅'); }
     catch(err){ toast('Erreur, réessayez'); }
+    return;
+  }
+  const ca = e.target.closest && e.target.closest('[data-co-active]');
+  if(ca){
+    e.stopPropagation();
+    const code = ca.dataset.coActive, name = ca.dataset.name, active = ca.dataset.state === '1';
+    if(ca.dataset.free === '1'){ toast('Compte gratuit : changez-le en « Payant » avec la flèche orange si besoin.'); return; }
+    try{
+      if(active){
+        if(!confirm('Désactiver le compte de « ' + name + ' » ?\n\nL\'entreprise devra payer pour continuer.')) return;
+        await db.collection('companies').doc(code).set({paymentStatus: 'none'}, {merge: true});
+        toast('Compte désactivé');
+      } else {
+        if(!confirm('Activer le compte de « ' + name + ' » ?')) return;
+        await db.collection('companies').doc(code).set({paymentStatus: 'active', notifiedForPayment: false}, {merge: true});
+        sendMessage(code, 'owner', '✅ Votre compte entreprise a été activé. Merci !', 'account_activated').catch(()=>{});
+        toast('Compte activé ✅');
+      }
+      renderOwnerCompanies();
+    }catch(err){ toast('Erreur, réessayez'); }
     return;
   }
   const ar = e.target.closest && e.target.closest('[data-act-request]');
@@ -3466,8 +3539,18 @@ function regAccOpen(c){
     <div data-reg-co="${c.code}" style="display:${open ? 'block' : 'none'};padding:8px;">
       <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px;">
         <button type="button" data-msg-open="${c.code}" data-name="${escHtml(c.companyName)}" style="padding:8px 14px;border-radius:12px;border:1px solid var(--accent);background:rgba(255,122,26,0.15);color:var(--accent2);font-weight:800;font-size:13px;cursor:pointer;">✉️ Message</button>
+        ${coActiveBtnHTML(c)}
         <button type="button" data-pay-req="${c.code}" data-name="${escHtml(c.companyName)}" style="padding:8px 14px;border:none;border-radius:12px;background:linear-gradient(135deg,#8B5CF6,#F97316);color:#fff;font-weight:800;font-size:13px;cursor:pointer;">💳 Passer au paiement mensuel</button>
       </div>`;
+}
+function coActiveBtnHTML(c){
+  const activated = !!(c.isFree || c.paymentStatus === 'active');
+  const end = c.trialEndsAt ? new Date(c.trialEndsAt) : null;
+  const days = (!activated && end && end > new Date()) ? Math.ceil((end - new Date()) / 86400000) : 0;
+  const base = 'data-co-active="' + c.code + '" data-state="' + (activated ? '1' : '0') + '" data-free="' + (c.isFree ? '1' : '0') + '" data-name="' + escHtml(c.companyName) + '" style="padding:8px 14px;border-radius:12px;font-weight:800;font-size:13px;cursor:pointer;';
+  return activated
+    ? '<button type="button" ' + base + 'border:1px solid rgba(62,207,142,0.6);background:rgba(62,207,142,0.16);color:var(--ok);">✅ Actif</button>'
+    : '<button type="button" ' + base + 'border:1px solid rgba(239,93,93,0.6);background:rgba(239,93,93,0.14);color:var(--danger);">⛔ Non actif' + (days ? ' · essai ' + days + ' j' : '') + '</button>';
 }
 function regAccClose(){ return '</div></div>'; }
 function bindRegCompanies(root){
@@ -3869,6 +3952,7 @@ async function renderOwnerCompanies(){
     bindDeletedByCompanies(content, renderOwnerCompanies);
     bindCompanyPackagesCard(content, renderOwnerCompanies);
     bindAnnouncements(content, renderOwnerCompanies);
+    bindMessagesCard(content);
   }catch(e){
     content.innerHTML = `<div class="card"><div class="empty">Impossible de charger les entreprises.</div></div>`;
   }
