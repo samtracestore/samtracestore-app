@@ -687,7 +687,7 @@ function courierBlockHTML(av, kind){
 }
 function courierAvatarCardHTML(av){
   return `<div class="card">
-      <h2>Avatars de livraison <span style="font-size:11px;color:var(--muted);font-weight:400;">(v12 oct. B)</span></h2>
+      <h2>Avatars de livraison <span style="font-size:11px;color:var(--muted);font-weight:400;">(v12 oct. C)</span></h2>
       <p class="sub">Ces avatars sont utilisés par toutes les entreprises. Quand vous les changez ici, ils changent pour tout le monde, côté client aussi.</p>
       ${courierBlockHTML(av, 'moto')}
       ${courierBlockHTML(av, 'truck')}
@@ -2770,6 +2770,11 @@ async function renderRelanceCard(pkgs){
             </div>
             <div style="padding:12px 14px;">
               <textarea id="relMsgText" rows="5" style="width:100%;margin:0 0 6px;"></textarea>
+              <div style="font-weight:800;font-size:12px;margin:8px 0 4px;color:var(--ok);">👀 Aperçu : ce que votre client va recevoir sur WhatsApp</div>
+              <div style="background:#0B3D2E;border:1px solid rgba(37,211,102,0.4);border-radius:12px 12px 12px 2px;padding:10px 12px;margin-bottom:10px;">
+                <div id="relMsgPreview" style="white-space:pre-wrap;overflow-wrap:anywhere;font-size:13.5px;line-height:1.45;color:#E7FFEF;"></div>
+                <div style="text-align:right;font-size:10px;color:#8FD6AE;margin-top:4px;">Exemple : Marie · STS-2026-001 · 3 jours</div>
+              </div>
               <p class="sub" style="margin:0 0 10px;font-size:11.5px;">Mots automatiques : <b>{nom}</b> = nom du client · <b>{numero}</b> = numéro du colis · <b>{jours}</b> = nombre de jours</p>
               <div style="display:flex;gap:8px;flex-wrap:wrap;">
                 <button type="button" id="relMsgSave" class="primary" style="width:auto;padding:9px 16px;font-size:13px;">💾 Enregistrer le message</button>
@@ -2882,12 +2887,20 @@ async function renderRelanceCard(pkgs){
         toast('⚠️ Enregistré seulement sur ce téléphone : ' + label);
       }
     };
+    function relPreview(){
+      const lang = getRelanceLang();
+      const jours = lang === 'ht' ? '3 jou' : '3 jours';
+      document.getElementById('relMsgPreview').textContent = document.getElementById('relMsgText').value
+        .replace(/\{nom\}/g, 'Marie').replace(/\{numero\}/g, 'STS-2026-001').replace(/\{jours\}/g, jours);
+    }
     function paintMsgCard(){
       const lang = getRelanceLang();
       document.getElementById('relMsgCard').style.display = 'block';
       document.getElementById('relMsgLabel').textContent = lang === 'ht' ? 'Mesaj an Kreyòl' : 'Message en Français';
       document.getElementById('relMsgText').value = getRelanceTpl(lang);
+      relPreview();
     }
+    document.getElementById('relMsgText').oninput = relPreview;
     function pickRelLang(lang){
       try{ localStorage.setItem(RELANCE_LANG_KEY, lang); }catch(e){}
       saveRelanceCloud({lang: lang});
@@ -2911,6 +2924,7 @@ async function renderRelanceCard(pkgs){
       try{ localStorage.removeItem(RELANCE_MSG_KEYS[lang]); }catch(e){}
       await saveRelanceCloud(lang === 'ht' ? {msgHt: ''} : {msgFr: ''});
       document.getElementById('relMsgText').value = RELANCE_DEFAULT_TPL[lang];
+      relPreview();
       toast('Message par défaut remis');
       drawList();
     };
@@ -5624,11 +5638,11 @@ async function renderCompany(){
 
   const co = await getCompanyByCode(companySession.code);
   const logoBox = (co && co.logoUrl)
-    ? logoBoxHTML(co, 80, '18px', 'border:2px solid var(--accent);box-shadow:0 6px 18px rgba(255,106,0,0.35);')
+    ? logoBoxHTML(co, 72, '16px', 'border:2px solid var(--accent);box-shadow:0 6px 18px rgba(255,106,0,0.35);')
     : `<div style="width:80px;height:80px;border-radius:18px;border:2px dashed var(--accent);display:flex;flex-direction:column;align-items:center;justify-content:center;font-size:10.5px;font-weight:700;color:var(--accent2);line-height:1.2;text-align:center;"><span style="font-size:22px;">📷</span>Mon logo</div>`;
   main.innerHTML = `
-    <div class="card" style="display:flex;justify-content:space-between;align-items:center;gap:10px;">
-      <div style="flex:1;min-width:0;"><p class="sub" style="margin:0">Entreprise</p><b style="word-break:break-word;">${escHtml(companySession.companyName || '')}</b></div>
+    <div class="card" style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;">
+      <div style="flex:1 1 100px;min-width:100px;"><p class="sub" style="margin:0">Entreprise</p><b style="word-break:break-word;">${escHtml(companySession.companyName || '')}</b></div>
       <div id="coLogoBtn" style="cursor:pointer;position:relative;flex:0 0 auto;">
         ${logoBox}
         <span style="position:absolute;right:-6px;bottom:-6px;width:22px;height:22px;border-radius:50%;background:var(--accent);color:#fff;font-size:12px;display:flex;align-items:center;justify-content:center;box-shadow:0 2px 6px rgba(0,0,0,0.4);">✎</span>
