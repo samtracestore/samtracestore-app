@@ -687,7 +687,7 @@ function courierBlockHTML(av, kind){
 }
 function courierAvatarCardHTML(av){
   return `<div class="card">
-      <h2>Avatars de livraison <span style="font-size:11px;color:var(--muted);font-weight:400;">(v12 oct.)</span></h2>
+      <h2>Avatars de livraison <span style="font-size:11px;color:var(--muted);font-weight:400;">(v12 oct. B)</span></h2>
       <p class="sub">Ces avatars sont utilisés par toutes les entreprises. Quand vous les changez ici, ils changent pour tout le monde, côté client aussi.</p>
       ${courierBlockHTML(av, 'moto')}
       ${courierBlockHTML(av, 'truck')}
@@ -1523,6 +1523,15 @@ function compactCardHtml(id, gradient, icon, title, subtitle, listContentHtml){
 // ===== COLIS A RELANCER (admin) =====
 const RELANCE_DAYS_KEY = 'sts_relance_days';
 const RELANCE_LANG_KEY = 'sts_relance_lang';
+const RELANCE_MSG_KEYS = { ht: 'sts_relance_msg_ht', fr: 'sts_relance_msg_fr' };
+const RELANCE_DEFAULT_TPL = {
+  ht: 'Bonjou {nom}, kolis ou a (#{numero}) disponib nan biwo Sam Trace Store depi {jours}. Ou ka vini pran li. Mèsi !',
+  fr: 'Bonjour {nom}, votre colis (#{numero}) est disponible au bureau Sam Trace Store depuis {jours}. Vous pouvez venir le récupérer. Merci !'
+};
+function getRelanceTpl(lang){
+  try{ const t = localStorage.getItem(RELANCE_MSG_KEYS[lang]); if(t && t.trim()) return t; }catch(e){}
+  return RELANCE_DEFAULT_TPL[lang];
+}
 
 function getRelanceDays(){
   try{
@@ -1551,10 +1560,11 @@ function availableSince(p){
 function relanceWhatsappUrl(p, days, lang){
   let digits = String(p.phone || '').replace(/\D/g, '');
   if(digits.length === 8) digits = '509' + digits;
-  const name = p.name || '';
-  const text = lang === 'ht'
-    ? `Bonjou ${name}, kolis ou a (#${p.trackingId}) disponib nan biwo Sam Trace Store depi ${days} jou. Ou ka vini pran li. Mèsi !`
-    : `Bonjour ${name}, votre colis (#${p.trackingId}) est disponible au bureau Sam Trace Store depuis ${days} jour${days > 1 ? 's' : ''}. Vous pouvez venir le récupérer. Merci !`;
+  const jours = days + (lang === 'ht' ? ' jou' : (days > 1 ? ' jours' : ' jour'));
+  const text = getRelanceTpl(lang)
+    .replace(/\{nom\}/g, p.name || '')
+    .replace(/\{numero\}/g, p.trackingId || '')
+    .replace(/\{jours\}/g, jours);
   return 'https://wa.me/' + digits + '?text=' + encodeURIComponent(text);
 }
 async function hasRelanceEmail(p){
@@ -1583,6 +1593,8 @@ async function loadRelanceSettings(){
       const d = doc.data() || {};
       if(d.days >= 1 && d.days <= 365){ try{ localStorage.setItem(RELANCE_DAYS_KEY, String(d.days)); }catch(e){} }
       if(d.lang === 'ht' || d.lang === 'fr'){ try{ localStorage.setItem(RELANCE_LANG_KEY, d.lang); }catch(e){} }
+      if(typeof d.msgHt === 'string' && d.msgHt.trim()){ try{ localStorage.setItem(RELANCE_MSG_KEYS.ht, d.msgHt); }catch(e){} }
+      if(typeof d.msgFr === 'string' && d.msgFr.trim()){ try{ localStorage.setItem(RELANCE_MSG_KEYS.fr, d.msgFr); }catch(e){} }
     } else {
       let hasLocal = false;
       try{ hasLocal = localStorage.getItem(RELANCE_DAYS_KEY) !== null; }catch(e){}
@@ -2750,6 +2762,21 @@ async function renderRelanceCard(pkgs){
             <span class="sub" style="margin:0;">Message :</span>
             <div class="modeSwitch"><button type="button" id="relLangHt">Kreyòl</button><button type="button" id="relLangFr">Français</button></div>
           </div>
+          <div id="relMsgCard" style="display:none;margin-bottom:14px;border:1px solid rgba(236,72,153,0.5);border-radius:14px;overflow:hidden;">
+            <div style="background:linear-gradient(135deg,#FBCFE8,#FB923C);padding:10px 14px;display:flex;align-items:center;gap:8px;">
+              <span style="font-size:18px;">✍️</span>
+              <div id="relMsgLabel" style="flex:1;font-weight:800;color:#7C1D4E;font-size:14px;"></div>
+              <button type="button" id="relMsgClose" style="border:none;background:#0B1120;color:#fff;border-radius:10px;padding:4px 10px;font-weight:800;font-size:12px;cursor:pointer;">✕</button>
+            </div>
+            <div style="padding:12px 14px;">
+              <textarea id="relMsgText" rows="5" style="width:100%;margin:0 0 6px;"></textarea>
+              <p class="sub" style="margin:0 0 10px;font-size:11.5px;">Mots automatiques : <b>{nom}</b> = nom du client · <b>{numero}</b> = numéro du colis · <b>{jours}</b> = nombre de jours</p>
+              <div style="display:flex;gap:8px;flex-wrap:wrap;">
+                <button type="button" id="relMsgSave" class="primary" style="width:auto;padding:9px 16px;font-size:13px;">💾 Enregistrer le message</button>
+                <button type="button" id="relMsgReset" class="ghost" style="width:auto;padding:9px 14px;font-size:13px;">↩️ Message par défaut</button>
+              </div>
+            </div>
+          </div>
           <div id="relanceList"></div>
         </div>
       </div>`;
@@ -2855,8 +2882,38 @@ async function renderRelanceCard(pkgs){
         toast('⚠️ Enregistré seulement sur ce téléphone : ' + label);
       }
     };
-    document.getElementById('relLangHt').onclick = () => { try{ localStorage.setItem(RELANCE_LANG_KEY, 'ht'); }catch(e){} saveRelanceCloud({lang:'ht'}); drawList(); };
-    document.getElementById('relLangFr').onclick = () => { try{ localStorage.setItem(RELANCE_LANG_KEY, 'fr'); }catch(e){} saveRelanceCloud({lang:'fr'}); drawList(); };
+    function paintMsgCard(){
+      const lang = getRelanceLang();
+      document.getElementById('relMsgCard').style.display = 'block';
+      document.getElementById('relMsgLabel').textContent = lang === 'ht' ? 'Mesaj an Kreyòl' : 'Message en Français';
+      document.getElementById('relMsgText').value = getRelanceTpl(lang);
+    }
+    function pickRelLang(lang){
+      try{ localStorage.setItem(RELANCE_LANG_KEY, lang); }catch(e){}
+      saveRelanceCloud({lang: lang});
+      drawList();
+      paintMsgCard();
+    }
+    document.getElementById('relLangHt').onclick = () => pickRelLang('ht');
+    document.getElementById('relLangFr').onclick = () => pickRelLang('fr');
+    document.getElementById('relMsgClose').onclick = () => { document.getElementById('relMsgCard').style.display = 'none'; };
+    document.getElementById('relMsgSave').onclick = async () => {
+      const lang = getRelanceLang();
+      const txt = document.getElementById('relMsgText').value.trim();
+      if(txt.length < 5){ toast('Écrivez votre message'); return; }
+      try{ localStorage.setItem(RELANCE_MSG_KEYS[lang], txt); }catch(e){}
+      const ok = await saveRelanceCloud(lang === 'ht' ? {msgHt: txt} : {msgFr: txt});
+      toast(ok ? '✅ Message enregistré' : '⚠️ Enregistré seulement sur ce téléphone');
+      drawList();
+    };
+    document.getElementById('relMsgReset').onclick = async () => {
+      const lang = getRelanceLang();
+      try{ localStorage.removeItem(RELANCE_MSG_KEYS[lang]); }catch(e){}
+      await saveRelanceCloud(lang === 'ht' ? {msgHt: ''} : {msgFr: ''});
+      document.getElementById('relMsgText').value = RELANCE_DEFAULT_TPL[lang];
+      toast('Message par défaut remis');
+      drawList();
+    };
     updateSaveUI();
     drawList();
   }catch(e){
@@ -3339,7 +3396,7 @@ async function openMessagesModal(code, name, side){
       <div style="font-weight:800;font-size:16px;min-width:0;overflow-wrap:anywhere;">💬 ${side === 'owner' ? 'Messages — ' + escHtml(name) : 'Messages avec STS'}</div>
       <button type="button" id="msgClose" style="flex:0 0 auto;padding:8px 14px;border:none;border-radius:12px;background:#fff;color:#C2185B;font-weight:800;font-size:14px;cursor:pointer;">✕ Fermer</button>
     </div>
-    <div style="padding:6px 14px;text-align:right;border-bottom:1px solid var(--border);"><button type="button" id="msgClear" style="background:none;border:none;color:var(--danger);font-size:12px;font-weight:800;cursor:pointer;">🗑️ Supprimer toute la conversation</button></div>
+    <div style="padding:6px 14px;text-align:right;border-bottom:1px solid var(--border);"><button type="button" id="msgClear" style="background:none;border:none;color:var(--danger);font-size:12px;font-weight:800;cursor:pointer;">${side === 'owner' ? '🗑️ Supprimer toute la conversation' : '🗑️ Supprimer mes messages'}</button></div>
     <div id="msgList" style="flex:1;overflow-y:auto;padding:14px;"></div>
     <div style="padding:10px 12px;border-top:1px solid var(--border);background:var(--panel);">
       ${side === 'owner' ? '<button type="button" id="msgPayReq" style="width:100%;margin-bottom:8px;padding:10px;border:none;border-radius:12px;background:linear-gradient(135deg,#8B5CF6,#F97316);color:#fff;font-weight:800;font-size:14px;cursor:pointer;">💳 Passer au paiement mensuel</button>' : ''}
@@ -3364,7 +3421,7 @@ async function openMessagesModal(code, name, side){
         const tag = m.kind === 'activation_request' ? '<span style="font-size:11px;font-weight:800;color:var(--ok);">🔔 Demande d\'activation</span>'
           : (m.kind === 'payment_request' ? '<span style="font-size:11px;font-weight:800;color:var(--accent2);">💳 Paiement mensuel</span>'
           : (m.kind === 'payment_submitted' ? '<span style="font-size:11px;font-weight:800;color:var(--ok);">💳 Paiement envoyé</span>' : '<span></span>'));
-        const head = `<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:3px;min-height:18px;">${tag}<button type="button" data-msg-del="${m.id}" style="flex:0 0 auto;background:none;border:none;color:var(--danger);font-size:11.5px;font-weight:800;cursor:pointer;padding:0 0 0 8px;">🗑️ Supprimer</button></div>`;
+        const head = `<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:3px;min-height:18px;">${tag}${(side === 'owner' || mine) ? `<button type="button" data-msg-del="${m.id}" style="flex:0 0 auto;background:none;border:none;color:var(--danger);font-size:11.5px;font-weight:800;cursor:pointer;padding:0 0 0 8px;">🗑️ Supprimer</button>` : ''}</div>`;
         const btn = (m.kind === 'payment_request' && side === 'company')
           ? '<button type="button" data-msg-pay style="display:block;width:100%;margin-top:8px;padding:10px;border:none;border-radius:10px;background:linear-gradient(135deg,#22C55E,#15803D);color:#fff;font-weight:800;cursor:pointer;">💳 Voir les comptes de paiement</button>'
           : ((m.kind === 'payment_submitted' && side === 'owner')
@@ -3379,13 +3436,20 @@ async function openMessagesModal(code, name, side){
     }catch(e){ listEl.innerHTML = '<div class="empty">Impossible de charger les messages.</div>'; }
   }
   async function deleteMsgs(ids){
+    if(side === 'company'){
+      // l'entreprise ne peut supprimer que SES propres messages (jamais ceux de STS)
+      const own = new Set(lastThread.filter(m => m.from === 'company').map(m => m.id));
+      ids = ids.filter(id => own.has(id));
+      if(!ids.length) return;
+    }
     if(side === 'owner') await Promise.all(ids.map(id => db.collection('messages').doc(id).delete()));
     else await Promise.all(ids.map(id => db.collection('messages').doc(id).set({deletedByCompany: true}, {merge: true})));
   }
   ov.querySelector('#msgClear').onclick = async ()=>{
-    if(!lastThread.length){ toast('Aucun message à supprimer'); return; }
-    if(!confirm(side === 'owner' ? 'Supprimer DÉFINITIVEMENT toute la conversation (pour vous et pour l\'entreprise) ?' : 'Supprimer toute la conversation de votre liste ?')) return;
-    try{ await deleteMsgs(lastThread.map(m => m.id)); toast('Conversation supprimée'); await paint(false); }
+    const delList = side === 'owner' ? lastThread : lastThread.filter(m => m.from === 'company');
+    if(!delList.length){ toast('Aucun message à supprimer'); return; }
+    if(!confirm(side === 'owner' ? 'Supprimer DÉFINITIVEMENT toute la conversation (pour vous et pour l\'entreprise) ?' : 'Supprimer vos messages de votre liste ? Les messages de STS restent.')) return;
+    try{ await deleteMsgs(delList.map(m => m.id)); toast(side === 'owner' ? 'Conversation supprimée' : 'Vos messages sont supprimés'); await paint(false); }
     catch(e){ toast('Erreur, réessayez'); }
   };
   ov.querySelector('#msgClose').onclick = ()=> closeMessagesModal(true);
@@ -3754,19 +3818,48 @@ function bindDeletedByCompanies(root, rerender){
     };
   });
 }
+
+// ===== CARTES PLIANTES COLOREES (Admin) =====
+const foldOpen = new Set();
+function foldCardHTML(key, gradient, icon, title, count, bodyHtml, textColor){
+  const open = foldOpen.has(key);
+  const tc = textColor || '#fff';
+  return `<div class="card" style="padding:0;overflow:hidden;">
+    <div data-fold-head="${key}" style="background:linear-gradient(135deg,${gradient});padding:14px 16px;display:flex;align-items:center;gap:10px;cursor:pointer;">
+      <span style="font-size:22px;">${icon}</span>
+      <div style="flex:1;min-width:0;color:${tc};font-weight:800;font-size:16px;text-shadow:0 1px 3px rgba(0,0,0,0.35);">${title}</div>
+      ${count !== null && count !== undefined ? `<span style="background:#0B1120;color:#fff;border-radius:12px;padding:2px 10px;font-size:12px;font-weight:800;">${count}</span>` : ''}
+      <span data-fold-arrow style="flex:0 0 auto;width:28px;height:28px;border-radius:50%;background:#0B1120;color:var(--accent);display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:900;">${open ? '▼' : '▶'}</span>
+    </div>
+    <div data-fold-body="${key}" style="padding:14px 16px;display:${open ? 'block' : 'none'};">${bodyHtml}</div>
+  </div>`;
+}
+function bindFoldCards(root){
+  root.querySelectorAll('[data-fold-head]').forEach(h => {
+    h.onclick = () => {
+      const key = h.dataset.foldHead;
+      const body = root.querySelector('[data-fold-body="' + key + '"]');
+      if(!body) return;
+      const open = body.style.display === 'none';
+      body.style.display = open ? 'block' : 'none';
+      const ar = h.querySelector('[data-fold-arrow]'); if(ar) ar.textContent = open ? '▼' : '▶';
+      if(open) foldOpen.add(key); else foldOpen.delete(key);
+    };
+  });
+}
+
 async function announcementsAdminHTML(){
   try{
     const snap = await db.collection('announcements').get();
     const list = snap.docs.map(d => Object.assign({id: d.id}, d.data())).sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt))).slice(0, 10);
-    return `<div class="card"><h2>📢 Annonce aux entreprises</h2>
-      <p class="sub">Écrivez un message : toutes les entreprises le verront en haut de leur menu.</p>
+    return foldCardHTML('annonce', '#FBCFE8,#FB923C', '📢', 'Annonce aux entreprises', list.length, `<p class="sub" style="margin-top:0;">Écrivez un message : toutes les entreprises le verront en haut de leur menu.</p>
       <textarea id="annText" rows="3" placeholder="Ex : Maintenance ce soir à 22h..." style="width:100%;margin-bottom:8px;"></textarea>
       <button type="button" class="primary" id="btnAnnPublish">📢 Publier l'annonce</button>` +
       list.map(a => `<div style="margin-top:12px;padding:10px 12px;border:1px solid var(--border);border-radius:12px;background:rgba(255,255,255,0.03);">
           <div style="font-size:13.5px;overflow-wrap:anywhere;white-space:pre-wrap;">${escHtml(a.text)}</div>
           <div class="sub" style="font-size:11px;margin-top:4px;">${fmtDate(a.createdAt)}</div>
           <button type="button" class="miniBtn" style="margin-top:8px;color:var(--danger);border-color:rgba(239,93,93,0.4);" data-ann-del="${a.id}">🗑️ Supprimer</button>
-        </div>`).join('') + `</div>`;
+        </div>`).join(''), '#7C1D4E');
   }catch(e){ return ''; }
 }
 function bindAnnouncements(root, rerender){
@@ -3807,15 +3900,14 @@ async function activityLogHTML(companies){
     const snap = await db.collection('activityLog').get();
     const list = snap.docs.map(d => Object.assign({id: d.id}, d.data())).filter(n => names[n.companyCode]).sort((a,b) => String(b.createdAt).localeCompare(String(a.createdAt))).slice(0, 60);
     if(!list.length) return '';
-    return `<div class="card"><h2>📋 Journal d'activité</h2>
-      <p class="sub">Tout ce qui se passe chez les entreprises et leurs clients. Seule la propriétaire supprime définitivement.</p>` +
+    return foldCardHTML('journal', '#8B5CF6,#EC4899', '📋', "Journal d'activité", list.length, `<p class="sub" style="margin-top:0;">Tout ce qui se passe chez les entreprises et leurs clients. Seule la propriétaire supprime définitivement.</p>` +
       list.map(n => `
         <div style="padding:10px 12px;margin-bottom:8px;border:1px solid var(--border);border-radius:12px;background:rgba(255,255,255,0.03);">
           <div style="font-weight:800;font-size:13.5px;">${n.icon || '🔔'} ${escHtml(n.title)} <span class="sub" style="font-weight:400;font-size:11.5px;">· ${escHtml(names[n.companyCode] || n.companyCode)}</span></div>
           <div style="font-size:13px;margin-top:3px;overflow-wrap:anywhere;">${escHtml(n.text)}</div>
           <div class="sub" style="font-size:11px;margin-top:4px;">${fmtDate(n.createdAt)}${n.dismissedByCompany ? ' · <span style="color:var(--danger);">supprimé par l\'entreprise</span>' : ''}</div>
         </div>`).join('') +
-      `<button type="button" class="ghost" id="btnActClear" style="width:100%;color:var(--danger);border-color:rgba(239,93,93,0.4);">🗑️ Supprimer définitivement le journal</button></div>`;
+      `<button type="button" class="ghost" id="btnActClear" style="width:100%;color:var(--danger);border-color:rgba(239,93,93,0.4);">🗑️ Supprimer définitivement le journal</button>`);
   }catch(e){ return ''; }
 }
 function bindActivityLog(root, rerender){
@@ -3836,14 +3928,14 @@ async function supportRequestsHTML(){
     const snap = await db.collection('supportRequests').get();
     const list = snap.docs.map(d=>Object.assign({id:d.id}, d.data())).sort((a,b)=>String(b.createdAt).localeCompare(String(a.createdAt))).slice(0,30);
     if(!list.length) return '';
-    return `<div class="card"><h2>🆘 Demandes d'aide des entreprises</h2>` + list.map(r=>`
+    return foldCardHTML('aide', '#EF4444,#F97316', '🆘', "Demandes d'aide des entreprises", list.length, list.map(r=>`
       <div class="pkgAdmin" style="flex-direction:column;align-items:stretch;gap:6px;">
         <div style="display:flex;align-items:center;flex-wrap:wrap;gap:8px;"><b>${escHtml(r.companyName)}</b> ${waChatBtn(r.phone, 'Bonjour ' + (r.companyName||'') + ', c\'est Sam Trace Store. Concernant votre demande d\'aide : ')} <span class="sub" style="font-size:11px;">${fmtDate(r.createdAt)}</span></div>
         <div class="name">${escHtml(r.phone||'')}</div>
         <div style="font-size:13.5px;white-space:pre-wrap;">${escHtml(r.message)}</div>
         ${(r.photos||[]).length ? `<div style="display:flex;gap:8px;flex-wrap:wrap;">${r.photos.map(p=>`<img src="${p}" data-zoom="${p}" style="width:72px;height:72px;object-fit:cover;border-radius:10px;cursor:pointer;">`).join('')}</div>` : (r.photoCount ? `<div class="reqPhotos" data-reqphotos="${r.id}" style="display:flex;gap:8px;flex-wrap:wrap;"><span class="sub" style="font-size:11px;">📷 Chargement...</span></div>` : '')}
         <button class="miniBtn" style="color:var(--danger);border-color:rgba(239,93,93,0.4);align-self:flex-start;" data-delreq="${r.id}">Supprimer</button>
-      </div>`).join('') + `</div>`;
+      </div>`).join(''));
   }catch(e){ return ''; }
 }
 function bindSupportRequests(root, rerender){
@@ -3953,6 +4045,7 @@ async function renderOwnerCompanies(){
     bindCompanyPackagesCard(content, renderOwnerCompanies);
     bindAnnouncements(content, renderOwnerCompanies);
     bindMessagesCard(content);
+    bindFoldCards(content);
   }catch(e){
     content.innerHTML = `<div class="card"><div class="empty">Impossible de charger les entreprises.</div></div>`;
   }
