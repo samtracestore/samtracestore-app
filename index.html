@@ -593,21 +593,345 @@ async function markCompaniesSeen(){
 let supportAvatarUrl = null;
 let supportAvatarPos = 50;
 
-function whatsappBubbleHTML(){
-  let msg = "Bonjour, j'ai besoin d'aide concernant l'application SamTraceStore.";
-  if(mode === 'company' && companySession){
-    msg += "\n\n🏢 Entreprise : " + (companySession.companyName || '');
-    if(companySession.phone) msg += "\nMon numéro : " + companySession.phone;
-  } else if(adminSession && !adminSession.isOwner && adminSession.companyName){
-    msg += "\n\n🏢 Entreprise : " + adminSession.companyName;
-  }
-  const text = encodeURIComponent(msg);
-  const inner = supportAvatarUrl
+function whatsappBubbleHTML(){ return samBubbleBtnHTML(); }
+
+// ================= SAM : assistante virtuelle =================
+const SAM_GREETING = "Bonjour ! Je suis Sam, votre assistante virtuelle sur STS suivi de colis. Je suis là pour vous aider. Vous pouvez écrire en créole ou en français.";
+let samChat = [];
+let samFails = 0;
+let samAskedHuman = false;
+let samLang = 'fr';
+let samBusy = false;
+let samLastGreetMode = null;
+let samPanelOpen = false;
+
+function samIsOwnerView(){ return mode === 'admin' && !!adminSession && !!adminSession.isOwner; }
+function samRole(){
+  if(mode === 'client') return 'client';
+  if(mode === 'company' && companySession && companyScreen === 'client') return 'client';
+  return 'company';
+}
+function samAvatarHTML(size){
+  return supportAvatarUrl
     ? `<img src="${supportAvatarUrl}" style="width:100%;height:100%;object-fit:cover;object-position:center ${supportAvatarPos}%;border-radius:50%;">`
-    : `👧`;
-  return `<a href="https://wa.me/${WHATSAPP_NUMBER}?text=${text}" target="_blank" style="position:fixed;bottom:24px;left:20px;width:56px;height:56px;border-radius:50%;
-    background:linear-gradient(135deg,#25D366,#128C7E);display:flex;align-items:center;justify-content:center;
-    font-size:26px;box-shadow:0 6px 18px rgba(37,211,102,0.45);z-index:60;text-decoration:none;overflow:hidden;">${inner}</a>`;
+    : `<span style="font-size:${Math.round(size * 0.5)}px;line-height:1;">🤖</span>`;
+}
+function samBubbleBtnHTML(){
+  if(samIsOwnerView()) return '';
+  return `<button type="button" data-sam-open="1" aria-label="Sam, assistante virtuelle" style="position:fixed;bottom:24px;left:20px;width:56px;height:56px;border-radius:50%;padding:0;cursor:pointer;
+    border:2px solid rgba(255,255,255,0.35);background:linear-gradient(135deg,#FF6A00,#FF5A1A);display:flex;align-items:center;justify-content:center;
+    box-shadow:0 6px 18px rgba(255,106,0,0.45);z-index:60;overflow:hidden;">${samAvatarHTML(56)}</button>`;
+}
+
+function samShowGreeting(){
+  if(samPanelOpen || samIsOwnerView()) return;
+  const old = document.getElementById('samGreet'); if(old) old.remove();
+  const b = document.createElement('div');
+  b.id = 'samGreet';
+  b.style.cssText = 'position:fixed;left:16px;right:16px;bottom:92px;max-width:340px;z-index:61;background:#fff;color:#1A202C;border-radius:16px 16px 16px 4px;padding:12px 14px;font-size:13.5px;line-height:1.45;font-weight:600;box-shadow:0 8px 26px rgba(0,0,0,0.35);transition:opacity .3s;cursor:pointer;';
+  b.textContent = SAM_GREETING;
+  b.onclick = ()=> samOpen();
+  document.body.appendChild(b);
+  setTimeout(()=>{ b.style.opacity = '0'; }, 2700);
+  setTimeout(()=>{ b.remove(); }, 3000);
+}
+function samMaybeGreet(){
+  const eligible = (mode === 'client' || mode === 'company');
+  if(samLastGreetMode !== mode){
+    samChat = []; samFails = 0; samAskedHuman = false;
+    if(eligible) samShowGreeting();
+  }
+  samLastGreetMode = mode;
+}
+
+function samChipsFirst(){
+  return samRole() === 'client'
+    ? [{label: '📦 Où est mon colis ?', act: 'send'}, {label: '🔔 Recevoir les alertes', act: 'send'}, {label: '👩‍💼 Parler à un conseiller', act: 'send'}]
+    : [{label: '➕ Ajouter un colis', act: 'send'}, {label: '💳 Paiement et activation', act: 'send'}, {label: '👩‍💼 Parler à un conseiller', act: 'send'}];
+}
+
+function samOpen(){
+  samPanelOpen = true;
+  const g = document.getElementById('samGreet'); if(g) g.remove();
+  const old = document.getElementById('samOverlay'); if(old) old.remove();
+  if(!samChat.length) samChat.push({from: 'bot', text: SAM_GREETING, chips: samChipsFirst()});
+  const ov = document.createElement('div');
+  ov.id = 'samOverlay';
+  ov.style.cssText = 'position:fixed;left:0;right:0;top:0;height:100%;z-index:280;background:rgba(0,0,0,0.6);display:flex;align-items:flex-end;justify-content:center;padding:12px;box-sizing:border-box;';
+  ov.innerHTML = `
+    <div style="width:100%;max-width:480px;height:100%;max-height:640px;background:var(--panel);border:1px solid var(--border);border-radius:22px;display:flex;flex-direction:column;overflow:hidden;box-shadow:0 12px 40px rgba(0,0,0,0.55);">
+      <div style="background:linear-gradient(135deg,#FF6A00,#FF5A1A);padding:14px 16px;display:flex;align-items:center;gap:12px;">
+        <div style="width:46px;height:46px;border-radius:50%;overflow:hidden;border:2px solid rgba(255,255,255,0.6);background:#0B1120;display:flex;align-items:center;justify-content:center;flex:0 0 auto;">${samAvatarHTML(46)}</div>
+        <div style="flex:1;min-width:0;"><div style="color:#fff;font-weight:800;font-size:18px;">Sam</div><div style="color:#FFE2D0;font-size:12.5px;">Assistante virtuelle STS · Kreyòl / Français</div></div>
+        <button type="button" id="samClose" aria-label="Fermer" style="width:36px;height:36px;border-radius:50%;border:none;background:rgba(0,0,0,0.25);color:#fff;font-size:18px;font-weight:800;cursor:pointer;">✕</button>
+      </div>
+      <div id="samMsgs" style="flex:1;overflow-y:auto;padding:14px;display:flex;flex-direction:column;gap:10px;-webkit-overflow-scrolling:touch;"></div>
+      <div style="border-top:1px solid var(--border);padding:10px;display:flex;gap:8px;align-items:flex-end;background:var(--panel);">
+        <textarea id="samInput" rows="1" placeholder="Ekri mesaj ou… / Écrivez votre message…" style="flex:1;margin:0;resize:none;max-height:96px;"></textarea>
+        <button type="button" id="samSend" aria-label="Envoyer" style="flex:0 0 auto;width:46px;height:46px;border:none;border-radius:14px;background:linear-gradient(135deg,#FF6A00,#FF5A1A);color:#fff;font-size:20px;cursor:pointer;">➤</button>
+      </div>
+    </div>`;
+  document.body.appendChild(ov);
+  const close = ()=>{ samPanelOpen = false; ov.remove(); if(window.visualViewport) window.visualViewport.removeEventListener('resize', fit); };
+  function fit(){ const vv = window.visualViewport; if(!vv) return; ov.style.top = vv.offsetTop + 'px'; ov.style.height = vv.height + 'px'; }
+  if(window.visualViewport){ window.visualViewport.addEventListener('resize', fit); fit(); }
+  document.getElementById('samClose').onclick = close;
+  ov.addEventListener('click', e => { if(e.target === ov) close(); });
+  const input = document.getElementById('samInput');
+  const send = ()=>{ const v = input.value; input.value = ''; input.style.height = 'auto'; samSend(v); };
+  document.getElementById('samSend').onclick = send;
+  input.addEventListener('keydown', e => { if(e.key === 'Enter' && !e.shiftKey){ e.preventDefault(); send(); } });
+  input.addEventListener('input', ()=>{ input.style.height = 'auto'; input.style.height = Math.min(96, input.scrollHeight) + 'px'; });
+  samRender();
+}
+
+function samRender(){
+  const box = document.getElementById('samMsgs'); if(!box) return;
+  const av = `<div style="width:32px;height:32px;border-radius:50%;overflow:hidden;background:#0B1120;display:flex;align-items:center;justify-content:center;flex:0 0 auto;">${samAvatarHTML(32)}</div>`;
+  const fmt = t => escHtml(t).replace(/\n/g, '<br>');
+  let html = '';
+  samChat.forEach((m, mi) => {
+    if(m.from === 'user'){
+      html += `<div style="align-self:flex-end;max-width:82%;background:linear-gradient(135deg,#FF6A00,#FF5A1A);color:#fff;padding:10px 13px;border-radius:16px 16px 4px 16px;font-size:14.5px;line-height:1.45;overflow-wrap:anywhere;">${fmt(m.text)}</div>`;
+    } else {
+      const isLast = mi === samChat.length - 1;
+      const chips = (m.chips && isLast && !samBusy) ? `<div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:8px;">` + m.chips.map((c, ci) => `<button type="button" data-sam-chip="${mi}:${ci}" style="padding:8px 12px;border-radius:18px;border:1px solid var(--accent);background:transparent;color:#fff;font-size:13px;font-weight:700;cursor:pointer;text-align:left;">${escHtml(c.label)}</button>`).join('') + `</div>` : '';
+      html += `<div style="display:flex;gap:8px;align-items:flex-end;max-width:92%;">${av}<div style="min-width:0;"><div style="background:var(--panel2);border:1px solid var(--border);padding:10px 13px;border-radius:16px 16px 16px 4px;font-size:14.5px;line-height:1.5;overflow-wrap:anywhere;">${fmt(m.text)}</div>${chips}</div></div>`;
+    }
+  });
+  if(samBusy) html += `<div style="display:flex;gap:8px;align-items:flex-end;">${av}<div style="background:var(--panel2);border:1px solid var(--border);padding:10px 13px;border-radius:16px 16px 16px 4px;font-size:13px;color:var(--muted);font-style:italic;">Sam écrit…</div></div>`;
+  box.innerHTML = html;
+  box.querySelectorAll('[data-sam-chip]').forEach(b => {
+    b.onclick = ()=>{
+      const [mi, ci] = b.dataset.samChip.split(':').map(Number);
+      const c = samChat[mi] && samChat[mi].chips && samChat[mi].chips[ci]; if(!c) return;
+      if(c.act === 'wa'){ window.open(c.url, '_blank'); return; }
+      samSend(c.send || c.label);
+    };
+  });
+  box.scrollTop = box.scrollHeight;
+}
+
+function samSend(raw){
+  const text = String(raw || '').trim();
+  if(!text || samBusy) return;
+  samChat.push({from: 'user', text});
+  samBusy = true; samRender();
+  setTimeout(async ()=>{
+    let r;
+    try{ r = await samReply(text); }
+    catch(e){ r = {text: "Désolée, un petit problème est survenu. Pouvez-vous réessayer ?"}; }
+    samBusy = false;
+    samChat.push({from: 'bot', text: r.text, chips: r.chips});
+    samRender();
+  }, 650);
+}
+
+// ---------- compréhension ----------
+function samNorm(t){ return String(t || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[’'`]/g, ' ').replace(/[^a-z0-9\s-]/g, ' ').replace(/\s+/g, ' ').trim(); }
+function samHas(n, arr){ return arr.some(k => n.includes(k)); }
+const SAM_HT_RE = /\b(mwen|kolis|kijan|kote|poukisa|eske|tanpri|mesi|bonjou|bonswa|vle|peye|lajan|kod|mande|pale|moun|resevwa|jwenn|voye|jodi|konsa|anyen|pwoblem|toujou|poko|kisa|wi|dako|alo|konseye|kliyan|konpayi|kont|chanje|bliye|enskri|aktive|abonman|ede|yo|nou|nan|pou|ki|gen|pa)\b/;
+function samDetectLang(raw){ return SAM_HT_RE.test(samNorm(raw)) ? 'ht' : 'fr'; }
+const samIsYes = n => /^(oui|ouais|ok|okay|d accord|dacord|yes|wi|dako|dakor|bien sur|volontiers|svp|tanpri)\b/.test(n) || n.includes('parler a un conseiller') || n.includes('pale ak yon konseye');
+const samIsNo = n => /^(non|no|pa |pa$|annule|laisse|laisser)/.test(n);
+
+function samHandoverOffer(lang, kind){
+  samAskedHuman = true;
+  samFails = 0;
+  const ht = lang === 'ht';
+  let text;
+  if(kind === 'ask'){
+    text = ht ? "Byen sèten ! Èske ou vle m mete w an kontak ak yon konseye nan ekip STS la ? L ap reponn ou le pli vit posib."
+              : "Bien sûr ! Souhaitez-vous que je vous mette en relation avec un conseiller de l'équipe STS ? Il vous répondra dès que possible.";
+  } else if(kind === 'issue'){
+    text = ht ? "Dezolé pou pwoblèm sa a. Pou ede w pi byen, èske ou vle m mete w an kontak ak yon konseye nan ekip STS la ? L ap reponn ou le pli vit posib."
+              : "Je suis désolée pour ce problème. Pour mieux vous aider, souhaitez-vous que je vous mette en relation avec un conseiller de l'équipe STS ? Il vous répondra dès que possible.";
+  } else {
+    text = ht ? "Eskize m, mwen pa rive reponn demand ou a kòrèkteman. Èske ou vle m mete w an kontak ak yon konseye nan ekip STS la ? L ap reponn ou le pli vit posib."
+              : "Je suis désolée, je n'arrive pas à répondre correctement à votre demande. Souhaitez-vous que je vous mette en relation avec un conseiller de l'équipe STS ? Il vous répondra dès que possible.";
+  }
+  return {text, chips: ht ? [{label: '✅ Wi, mwen vle pale ak yon konseye', act: 'send'}, {label: 'Non, mèsi', act: 'send'}]
+                          : [{label: '✅ Oui, parler à un conseiller', act: 'send'}, {label: 'Non, merci', act: 'send'}]};
+}
+
+async function samDoHandover(lang){
+  samAskedHuman = false; samFails = 0;
+  const role = samRole();
+  const userMsgs = samChat.filter(m => m.from === 'user').map(m => m.text).filter(t => !samIsYes(samNorm(t))).slice(-6);
+  const transcript = userMsgs.map(t => '- ' + t).join('\n');
+  let waText = "Bonjour STS, j'ai discuté avec Sam (assistante virtuelle) et j'ai besoin d'un conseiller.";
+  let saved = false;
+  if(role === 'company' || (mode === 'company' && companySession)){
+    if(companySession){
+      waText += "\n\n🏢 Entreprise : " + (companySession.companyName || '');
+      if(companySession.phone) waText += "\nMon numéro : " + companySession.phone;
+      try{
+        await db.collection('supportRequests').add({
+          companyCode: companySession.code, companyName: companySession.companyName || '',
+          phone: companySession.phone || '', message: 'Via Sam (assistante virtuelle) :\n' + transcript, photoCount: 0,
+          createdAt: new Date().toISOString()
+        });
+        logActivity(companySession.code, '🆘', "Demande d'aide envoyée à STS (via Sam)", transcript);
+        saved = true;
+      }catch(e){ console.warn('Demande Sam non enregistrée', e); }
+    }
+  } else if(typeof clientPhone !== 'undefined' && clientPhone){
+    waText += "\n\nMon numéro : " + clientPhone;
+  }
+  if(transcript) waText += "\n\nMes messages :\n" + transcript;
+  const url = 'https://wa.me/' + WHATSAPP_NUMBER + '?text=' + encodeURIComponent(waText);
+  if(lang === 'ht'){
+    return {text: (saved ? "Dakò, mwen note l. Mwen voye demand ou a bay ekip STS la. " : "Dakò, mwen prepare mesaj ou a pou ekip STS la. ") + "Yon konseye ap reponn ou le pli vit posib. Pou ale pi vit, ou ka ekri l dirèk sou WhatsApp tou.", chips: [{label: '💬 Ekri sou WhatsApp', act: 'wa', url}]};
+  }
+  return {text: (saved ? "C'est noté, j'ai transmis votre demande à l'équipe STS. " : "C'est noté, j'ai préparé votre message pour l'équipe STS. ") + "Un conseiller vous répondra dès que possible. Pour aller plus vite, vous pouvez aussi lui écrire directement sur WhatsApp.", chips: [{label: '💬 Écrire sur WhatsApp', act: 'wa', url}]};
+}
+
+async function samReply(raw){
+  const lang = samDetectLang(raw); samLang = lang;
+  const n = samNorm(raw);
+  const role = samRole();
+  const R = (fr, ht) => lang === 'ht' ? ht : fr;
+  const ok = (text, chips) => { samFails = 0; samAskedHuman = false; return {text, chips}; };
+
+  if(samAskedHuman){
+    if(samIsYes(n)) return await samDoHandover(lang);
+    if(samIsNo(n)) return ok(R("D'accord, pas de problème. Je reste disponible : posez-moi une autre question quand vous voulez.", "Dakò, pa gen pwoblèm. M la toujou : poze m yon lòt kesyon lè ou vle."));
+  }
+
+  // demande explicite d'un humain
+  if(samHas(n, ['conseiller', 'agent ', 'humain', 'une vraie personne', 'quelqu un de l equipe', 'parler a quelqu', 'responsable', 'service client', 'konseye', 'yon moun', 'moun reyel', 'pale ak yon', 'rele mwen', 'appelez moi']))
+    return samHandoverOffer(lang, 'ask');
+
+  // numéro de suivi
+  const idm = String(raw).match(/sts-[a-z0-9]+(?:-[a-z0-9]+)*/i);
+  if(idm){
+    const id = idm[0].toUpperCase();
+    const p = await getPackage(id);
+    if(p){
+      const label = STATUS_LABEL[p.status] || p.status;
+      const co = await resolveCompanyNameForPkg(p);
+      return ok(R("📦 Colis " + id + "\nStatut : " + label + "\nEntreprise : " + co + "\nDernière mise à jour : " + fmtDate(p.updatedAt || p.createdAt) + "\n\nPour plus de détails, ouvrez l'écran Client et entrez votre numéro de téléphone.",
+                  "📦 Kolis " + id + "\nEstati : " + label + "\nKonpayi : " + co + "\nDènye mizajou : " + fmtDate(p.updatedAt || p.createdAt) + "\n\nPou plis detay, louvri ekran Client lan epi antre nimewo telefòn ou."));
+    }
+    samFails++;
+    if(samFails >= 2) return samHandoverOffer(lang);
+    return {text: R("Je ne trouve pas ce numéro de suivi. Vérifiez-le (exemple : STS-1234-567-AB) puis réessayez.", "Mwen pa jwenn nimewo swivi sa a. Verifye l (egzanp : STS-1234-567-AB) epi eseye ankò.")};
+  }
+
+  // salutations / remerciements
+  if(n.split(' ').length <= 4 && /^(bonjour|bonsoir|salut|hello|coucou|bonjou|bonswa|alo|sak pase|hey)/.test(n))
+    return ok(R("Bonjour ! Comment puis-je vous aider aujourd'hui ?", "Bonjou ! Kijan m ka ede w jodi a ?"), samChipsFirst());
+  if(samHas(n, ['merci', 'mesi', 'thanks']) || /^(ok|okay|d accord|dako|dakor)$/.test(n))
+    return ok(R("Avec plaisir ! N'hésitez pas si vous avez une autre question.", "Ak plezi ! Si ou gen yon lòt kesyon, pa ezite."));
+  if(samHas(n, ['qui es tu', 'tu es qui', 'es tu un robot', 'ki moun ou ye', 'ou se yon robo', 'vous etes qui']))
+    return ok(R("Je suis Sam, l'assistante virtuelle de STS suivi de colis. Je réponds à vos questions en créole ou en français, et je peux vous passer un conseiller si besoin.", "Mwen se Sam, asistan vityèl STS suivi de colis. M reponn kesyon w an kreyòl oswa an franse, epi m ka pase w ak yon konseye si w bezwen."));
+
+  // problèmes sensibles -> relais humain
+  if(samHas(n, ['perdu', 'vole', 'casse', 'abime', 'domaje', 'pedi', 'volè', 'vole', 'plainte', 'rembours', 'ranbouse', 'arnaque', 'pa resevwa kolis', 'jamais recu', 'jamais recue']))
+    return samHandoverOffer(lang, 'issue');
+  if(samHas(n, ['code oublie', 'oublie mon code', 'bliye kod', 'perdu mon code', 'bloque', 'bloke', 'ne marche pas', 'marche pas', 'pa mache', 'bug', 'erreur', 'pwoblem', 'probleme', 'plante']))
+    return samHandoverOffer(lang, 'issue');
+
+  // ----- CLIENT -----
+  if(role === 'client'){
+    const trackReply = async () => {
+      if(samHas(n, ['signifie', 'vle di', 'veut dire', 'difference'])){
+        return ok(R("Les statuts :\n• En préparation : l'entreprise prépare votre colis\n• Expédié : le colis est en route\n• En cours de livraison : un livreur arrive\n• En attente : le colis attend une étape\n• Disponible au bureau : vous pouvez venir le récupérer\n• Livré : vous l'avez reçu",
+                    "Estati yo :\n• En préparation : konpayi a ap prepare kolis ou\n• Expédié : kolis la sou wout\n• En cours de livraison : yon livrè ap vini\n• En attente : kolis la ap tann yon etap\n• Disponible au bureau : ou ka vin pran l\n• Livré : ou resevwa l"));
+      }
+      if(typeof clientPhone !== 'undefined' && clientPhone){
+        const list = await getPackagesForPhone(clientPhone);
+        if(list && list.length){
+          const lines = list.slice(0, 4).map(p => '• ' + p.trackingId + ' — ' + (STATUS_LABEL[p.status] || p.status)).join('\n');
+          return ok(R("Voici vos colis :\n" + lines + (list.length > 4 ? "\n… et " + (list.length - 4) + " autre(s) dans l'écran Client." : ""), "Men kolis ou yo :\n" + lines + (list.length > 4 ? "\n… ak " + (list.length - 4) + " lòt nan ekran Client lan." : "")));
+        }
+        return ok(R("Je ne vois aucun colis pour votre numéro pour le moment. Si l'entreprise vient de l'enregistrer, réessayez dans quelques instants.", "Mwen pa wè okenn kolis pou nimewo ou a pou kounye a. Si konpayi a fenk anrejistre l, eseye ankò nan kèk minit."));
+      }
+      return ok(R("Pour suivre votre colis, ouvrez l'écran Client et entrez votre numéro de téléphone. Vous pouvez aussi m'envoyer votre numéro de suivi (exemple : STS-1234-567-AB) et je vous donne son statut.", "Pou swiv kolis ou, louvri ekran Client lan epi antre nimewo telefòn ou. Ou ka voye m nimewo swivi a tou (egzanp : STS-1234-567-AB) epi m ba w estati l."));
+    };
+    if(samHas(n, ['ou est', 'suivre', 'suivi', 'kote', 'statut', 'estati', 'mon colis', 'mes colis', 'kolis mwen', 'kolis la'])) return await trackReply();
+    if(samHas(n, ['signifie', 'vle di', 'veut dire', 'preparation', 'expedie', 'en attente', 'disponible au bureau', 'en cours de livraison']))
+      return ok(R("Les statuts :\n• En préparation : l'entreprise prépare votre colis\n• Expédié : le colis est en route\n• En cours de livraison : un livreur arrive\n• En attente : le colis attend une étape\n• Disponible au bureau : vous pouvez venir le récupérer\n• Livré : vous l'avez reçu",
+                  "Estati yo :\n• En préparation : konpayi a ap prepare kolis ou\n• Expédié : kolis la sou wout\n• En cours de livraison : yon livrè ap vini\n• En attente : kolis la ap tann yon etap\n• Disponible au bureau : ou ka vin pran l\n• Livré : ou resevwa l"));
+    if(samHas(n, ['email', 'imel', 'alerte', 'alet', 'notification', 'notif', 'prevenu', 'avize', 'recevoir les alertes']))
+      return ok(R("Dans l'écran Client, vous pouvez laisser votre adresse email : vous recevrez un message à chaque changement de statut de votre colis.", "Nan ekran Client lan, ou ka kite adrès imel ou : w ap resevwa yon mesaj chak fwa estati kolis ou chanje."));
+    if(samHas(n, ['delai', 'combien de temps', 'quand', 'retard', 'reta', 'konbyen tan', 'kile', 'poko', 'toujou pa', 'pas encore', 'toujours pas']))
+      return ok(R("Le délai dépend de l'entreprise et de la destination. Regardez d'abord le statut de votre colis. S'il n'a pas changé depuis longtemps, contactez l'entreprise avec le bouton « Sipò · Support », ou je peux vous passer un conseiller STS.", "Delè a depann de konpayi a ak destinasyon an. Gade estati kolis ou an anvan. Si l pa chanje depi lontan, kontakte konpayi a ak bouton « Sipò · Support », oswa m ka pase w ak yon konseye STS."),
+                [{label: '👩‍💼 Parler à un conseiller', act: 'send'}]);
+    if(samHas(n, ['bureau', 'biwo', 'recuperer', 'retirer', 'pran kolis', 'adresse', 'adres', 'ou venir']))
+      return ok(R("Quand le statut est « Disponible au bureau », vous pouvez venir récupérer votre colis. Pour l'adresse et les horaires, demandez directement à l'entreprise avec le bouton « Sipò · Support ».", "Lè estati a se « Disponible au bureau », ou ka vin pran kolis ou. Pou adrès ak orè, mande konpayi a dirèk ak bouton « Sipò · Support »."));
+    if(samHas(n, ['prix', 'tarif', 'payer', 'paiement', 'combien coute', 'peye', 'lajan', 'pri ']))
+      return ok(R("Le prix et le paiement de votre colis se règlent directement avec l'entreprise. Utilisez le bouton « Sipò · Support » pour la contacter.", "Pri ak peman kolis ou yo regle dirèk ak konpayi a. Itilize bouton « Sipò · Support » pou kontakte l."));
+    if(samHas(n, ['colis', 'kolis', 'paquet', 'commande', 'pake'])) return await trackReply();
+  }
+
+  // ----- ENTREPRISE -----
+  if(role === 'company'){
+    if(samHas(n, ['ajouter un colis', 'ajouter colis', 'ajoute kolis', 'ajoute yon kolis', 'nouveau colis', 'enregistrer un colis', 'kreye kolis', 'ajout colis'])){
+      return ok(R("Pour ajouter un colis :\n1. Touchez Colis, puis descendez jusqu'à « Ajouter un colis ».\n2. Écrivez le numéro de suivi, le nom et le téléphone du client.\n3. Choisissez la destination et le statut.\n4. Touchez « Enregistrer le colis ».\nVous pouvez aussi ajouter jusqu'à 6 photos du colis.", "Pou ajoute yon kolis :\n1. Peze sou Colis, epi desann jiska « Ajouter un colis ».\n2. Ekri nimewo swivi a, non ak telefòn kliyan an.\n3. Chwazi destinasyon an ak estati a.\n4. Peze « Enregistrer le colis ».\nOu ka ajoute jiska 6 foto kolis la tou."));
+    }
+    if(samHas(n, ['changer le statut', 'chanje estati', 'changer statut', 'mettre a jour', 'mete ajou', 'marquer livre', 'statut du colis', 'estati kolis'])){
+      return ok(R("Dans Colis > Tous les colis, ouvrez le colis et choisissez le nouveau statut. Le client reçoit un email au nom de votre entreprise, s'il a laissé son adresse email. Pour « Livré », vous pouvez ajouter jusqu'à 5 photos de preuve.", "Nan Colis > Tous les colis, louvri kolis la epi chwazi nouvo estati a. Kliyan an resevwa yon imel nan non konpayi w, si l kite adrès imel li. Pou « Livré », ou ka ajoute jiska 5 foto prèv."));
+    }
+    if(samHas(n, ['inscrire', 'inscription', 'enregistrer mon entreprise', 'enskri', 'kreye kont', 'nouvelle entreprise', 'nouvo konpayi', 'compte entreprise', 'creer un compte'])){
+      let fee = '';
+      try{ const s = await getPaymentSettings(); fee = R("\nFrais d'inscription actuels : " + s.regFeeHTG + " HTG ou " + s.regFeeUSD + " USD.\nUn essai gratuit de " + s.trialDays + " jours est prévu.", "\nFrè enskripsyon kounye a : " + s.regFeeHTG + " HTG oswa " + s.regFeeUSD + " USD.\nGen yon peryòd esè gratis " + s.trialDays + " jou."); }catch(e){}
+      return ok(R("Pour inscrire votre entreprise : touchez le bouton Admin, puis « Nouvelle entreprise ? S'inscrire (Admin) » et remplissez le formulaire." + fee, "Pou enskri konpayi w : peze bouton Admin, epi « Nouvelle entreprise ? S'inscrire (Admin) » epi ranpli fòm lan." + fee));
+    }
+    if(samHas(n, ['paiement', 'payer', 'peye', 'abonnement', 'abonman', 'activer', 'aktive', 'activation', 'mensuel', 'lajan', 'natcash', 'moncash', 'depot', 'renouvel', 'prolonger', 'paiement et activation'])){
+      let amt = '';
+      try{ const s = await getPaymentSettings(); amt = R("\nMontant minimum du dépôt : " + s.minHTG + " HTG ou " + s.minUSD + " USD.", "\nMontan minimòm depo a : " + s.minHTG + " HTG oswa " + s.minUSD + " USD."); }catch(e){}
+      return ok(R("Pour activer ou renouveler votre compte : dans votre espace Entreprise, touchez « Activer mon compte » (ou l'écran Paiement), choisissez la méthode de paiement, envoyez votre dépôt et ajoutez la preuve. STS vérifie, puis vous recevez un message de confirmation." + amt, "Pou aktive oswa renouvle kont ou : nan espas Entreprise ou, peze « Activer mon compte » (oswa ekran Paiement), chwazi metòd peman an, voye depo ou epi ajoute prèv la. STS verifye, epi w resevwa yon mesaj konfimasyon." + amt));
+    }
+    if(samHas(n, ['logo', 'lojo'])){
+      return ok(R("Pour changer votre logo, touchez le petit crayon ✏️ sur votre logo, dans l'accueil de votre espace Entreprise. Vous pouvez ensuite ajuster le zoom et la position.", "Pou chanje lojo ou, peze sou ti kreyon ✏️ ki sou lojo ou a, nan akèy espas Entreprise ou. Apre sa ou ka ajiste zoum nan ak pozisyon an."));
+    }
+    if(samHas(n, ['lien', 'lyen', 'partager', 'pataje', 'mes clients', 'kliyan mwen'])){
+      return ok(R("Dans Paramètre, la carte « Lien pour mes clients » vous permet de copier le lien ou de l'envoyer par WhatsApp. Vos clients y voient seulement les colis de votre entreprise.", "Nan Paramètre, kat « Lien pour mes clients » la pèmèt ou kopye lyen an oswa voye l sou WhatsApp. Kliyan ou yo wè sèlman kolis konpayi w."));
+    }
+    if(samHas(n, ['guide', 'manuel', 'tutoriel', 'comment utiliser', 'kijan pou itilize', 'aide', 'ede'])){
+      return ok(R("Dans Paramètre, vous trouvez le guide de l'entreprise : il explique chaque étape (connexion, colis, statuts, preuves, paiement).", "Nan Paramètre, ou jwenn gid konpayi a : li eksplike chak etap (koneksyon, kolis, estati, prèv, peman)."));
+    }
+    if(samHas(n, ['email', 'imel', 'mail'])){
+      return ok(R("À chaque changement de statut, vos clients reçoivent un email au nom de votre entreprise, s'ils ont laissé leur adresse. La carte « Service Email » dans Paramètre montre combien d'emails restent aujourd'hui.", "Chak fwa estati chanje, kliyan ou yo resevwa yon imel nan non konpayi w, si yo kite adrès yo. Kat « Service Email » nan Paramètre montre konbyen imel ki rete jodi a."));
+    }
+    if(samHas(n, ['colis', 'kolis', 'ou est', 'kote', 'suivi'])){
+      return ok(R("Dans Colis > Tous les colis, vous voyez tous vos colis. Vous pouvez chercher par nom, téléphone ou numéro de suivi.", "Nan Colis > Tous les colis, ou wè tout kolis ou yo. Ou ka chèche pa non, telefòn oswa nimewo swivi."));
+    }
+  }
+
+  // ----- rien compris -----
+  samFails++;
+  if(samFails >= 2) return samHandoverOffer(lang);
+  const ex = role === 'client'
+    ? R("« Où est mon colis ? » ou « Comment recevoir les alertes ? »", "« Kote kolis mwen ye ? » oswa « Kijan pou m resevwa alèt yo ? »")
+    : R("« Comment ajouter un colis ? » ou « Comment payer mon abonnement ? »", "« Kijan pou m ajoute yon kolis ? » oswa « Kijan pou m peye abonman m ? »");
+  return {text: R("Je n'ai pas bien compris votre demande. Pouvez-vous la reformuler avec d'autres mots ? Par exemple : " + ex, "Mwen pa twò konprann demand ou a. Èske ou ka di l yon lòt fason ? Pa egzanp : " + ex)};
+}
+document.addEventListener('click', (e)=>{ if(e.target.closest('[data-sam-open]')) samOpen(); });
+
+// logo de l'entreprise dans l'en-tête
+let headerLogoCache = {};
+async function updateHeaderCompanyLogo(){
+  const top = document.querySelector('header.top'); if(!top) return;
+  let el = document.getElementById('headerCompanyLogo');
+  if(!el){
+    el = document.createElement('div'); el.id = 'headerCompanyLogo';
+    el.style.cssText = 'display:none;align-items:center;justify-content:center;flex:0 0 auto;';
+    const titles = top.querySelector('.titles'); if(titles) titles.insertAdjacentElement('afterend', el); else top.appendChild(el);
+  }
+  let co = null;
+  try{
+    if(mode === 'company' && companySession){
+      const c = headerLogoCache[companySession.code];
+      if(c && Date.now() - c.t < 15000) co = c.co;
+      else { const full = await getCompanyByCode(companySession.code); co = full ? {logoUrl: full.logoUrl, logoZoom: full.logoZoom, logoPosX: full.logoPosX, logoPosY: full.logoPosY} : null; headerLogoCache[companySession.code] = {co, t: Date.now()}; }
+    } else if(mode === 'client' && clientLinkCompany){
+      co = clientLinkCompany;
+    }
+  }catch(e){}
+  if(co && co.logoUrl){ el.innerHTML = logoBoxHTML(co, 48, '12px', 'border:2px solid var(--accent);box-shadow:0 4px 12px rgba(255,106,0,0.3);'); el.style.display = 'flex'; }
+  else { el.innerHTML = ''; el.style.display = 'none'; }
 }
 
 async function loadSupportAvatar(){
@@ -704,7 +1028,7 @@ function courierBlockHTML(av, kind){
 }
 function courierAvatarCardHTML(av){
   return `<div class="card">
-      <h2>Avatars de livraison <span style="font-size:11px;color:var(--muted);font-weight:400;">(v12 oct. E)</span></h2>
+      <h2>Avatars de livraison <span style="font-size:11px;color:var(--muted);font-weight:400;">(v12 oct. F)</span></h2>
       <p class="sub">Ces avatars sont utilisés par toutes les entreprises. Quand vous les changez ici, ils changent pour tout le monde, côté client aussi.</p>
       ${courierBlockHTML(av, 'moto')}
       ${courierBlockHTML(av, 'truck')}
@@ -3055,8 +3379,10 @@ async function renderOwnerPanel(main){
   }
 }
 
-function renderOwnerSettings(){
+async function renderOwnerSettings(){
   const content = document.getElementById('ownerContent');
+  let settings = {};
+  try{ settings = await getPaymentSettings(); }catch(e){}
   const btnStyle = 'display:block;width:100%;text-align:center;text-decoration:none;padding:14px;border-radius:12px;font-weight:800;font-size:15px;color:#C2185B;background:linear-gradient(135deg,var(--accent),#FF5A1A);box-shadow:0 6px 18px rgba(255,106,0,0.35);text-shadow:0 1px 0 rgba(255,255,255,0.25);border:none;cursor:pointer;';
   content.innerHTML = `<div class="card">
       <h2>📄 Guides</h2>
@@ -3065,9 +3391,46 @@ function renderOwnerSettings(){
       <p class="sub" style="margin-bottom:6px;"><b>Guide de l'entreprise</b> : le guide que vos entreprises reçoivent (ajouter un colis, statuts, livraison, preuves).</p>
       <button type="button" id="btnCompanyGuide" style="${btnStyle}">📄 Ouvrir le guide de l'entreprise</button>
       <p class="sub" style="margin:10px 0 0;font-size:12px;">Dans chaque guide : lecture facile, bouton pour le partager par WhatsApp et bouton pour le télécharger en PDF.</p>
+    </div>
+    <div class="card">
+      <h2>🤖 Avatar de Sam</h2>
+      <p class="sub">Sam est l'assistante virtuelle qui répond aux entreprises et aux clients. Choisissez sa photo depuis votre galerie : elle s'affiche dans la bulle en bas à gauche de l'écran.</p>
+      ${settings.supportAvatar ? `<img src="${settings.supportAvatar}" style="width:72px;height:72px;border-radius:50%;object-fit:cover;object-position:center ${settings.supportAvatarPos||50}%;margin-bottom:10px;border:2px solid var(--accent);">` : ''}
+      <input type="file" accept="image/*" id="supportAvatarInput" style="margin-bottom:12px;">
+      <div id="avatarEditor" style="display:none;">
+        <div style="width:110px;height:110px;border-radius:50%;overflow:hidden;margin-bottom:12px;border:1px solid var(--border);">
+          <img id="avatarPreviewImg" style="width:100%;height:100%;object-fit:cover;object-position:center 50%;">
+        </div>
+        <label>Ajuster la position du visage</label>
+        <input type="range" id="avatarPosSlider" min="0" max="100" value="50" style="width:100%;margin-bottom:6px;">
+        <p class="sub" style="margin:0 0 12px;">Déplacez le curseur si le visage est coupé — haut / bas</p>
+        <button class="primary" id="btnSaveAvatarPos">💾 Sauvegarder la photo de Sam</button>
+      </div>
     </div>`;
   document.getElementById('btnAdminGuide').onclick = ()=> openGuide('admin');
   document.getElementById('btnCompanyGuide').onclick = ()=> openGuide('company');
+  document.getElementById('supportAvatarInput').onchange = async (e)=>{
+    const file = e.target.files[0];
+    if(!file) return;
+    try{
+      const dataUrl = await compressImage(file);
+      const editor = document.getElementById('avatarEditor');
+      const previewImg = document.getElementById('avatarPreviewImg');
+      const slider = document.getElementById('avatarPosSlider');
+      previewImg.src = dataUrl;
+      slider.value = 50;
+      previewImg.style.objectPosition = 'center 50%';
+      editor.style.display = 'block';
+      slider.oninput = ()=>{ previewImg.style.objectPosition = `center ${slider.value}%`; };
+      document.getElementById('btnSaveAvatarPos').onclick = async ()=>{
+        try{
+          await saveSupportAvatar(dataUrl, parseInt(slider.value));
+          toast("Photo de Sam enregistrée");
+          renderOwnerSettings();
+        }catch(err){ toast("Erreur lors de l'envoi"); }
+      };
+    }catch(err){ toast("Erreur lors du chargement de l'image"); }
+  };
 }
 
 async function renderOwnerPayments(){
@@ -3256,23 +3619,7 @@ async function renderOwnerPayments(){
     const methodsHtml = compactCardHtml('paymentMethods', '#3ECF8E,#FF7A1A', '💳', 'Icônes de paiement',
       `${PAYMENT_METHODS.length} méthodes — appuyez pour voir la liste`, methodsListContent);
 
-    content.innerHTML = emailCard + codeCard + backupCard + pendingRegHtml + pendingHtml + notifCardOwner + confirmedRegHtml + confirmedHtml + settingsHtml + methodsHtml + `
-      <div class="card">
-        <h2>Avatar du service client</h2>
-        <p class="sub">Choisissez une photo depuis votre galerie pour la bulle WhatsApp affichée aux entreprises.</p>
-        ${settings.supportAvatar ? `<img src="${settings.supportAvatar}" style="width:56px;height:56px;border-radius:50%;object-fit:cover;object-position:center ${settings.supportAvatarPos||50}%;margin-bottom:10px;">` : ''}
-        <input type="file" accept="image/*" id="supportAvatarInput" style="margin-bottom:12px;">
-        <div id="avatarEditor" style="display:none;">
-          <div style="width:110px;height:110px;border-radius:50%;overflow:hidden;margin-bottom:12px;border:1px solid var(--border);">
-            <img id="avatarPreviewImg" style="width:100%;height:100%;object-fit:cover;object-position:center 50%;">
-          </div>
-          <label>Ajuster la position du visage</label>
-          <input type="range" id="avatarPosSlider" min="0" max="100" value="50" style="width:100%;margin-bottom:6px;">
-          <p class="sub" style="margin:0 0 12px;">Déplacez le curseur si le visage est coupé — haut / bas</p>
-          <button class="primary" id="btnSaveAvatarPos">💾 Sauvegarder la position</button>
-        </div>
-      </div>
-      ${courierAvatarCardHTML(courierAv)}`;
+    content.innerHTML = emailCard + codeCard + backupCard + pendingRegHtml + pendingHtml + notifCardOwner + confirmedRegHtml + confirmedHtml + settingsHtml + methodsHtml + `${courierAvatarCardHTML(courierAv)}`;
     bindCourierAvatars(()=>renderOwnerPayments());
 
     content.querySelectorAll('[data-validate-reg]').forEach(b=>{
@@ -3422,28 +3769,6 @@ async function renderOwnerPayments(){
         }
       };
     });
-    document.getElementById('supportAvatarInput').onchange = async (e)=>{
-      const file = e.target.files[0];
-      if(!file) return;
-      try{
-        const dataUrl = await compressImage(file);
-        const editor = document.getElementById('avatarEditor');
-        const previewImg = document.getElementById('avatarPreviewImg');
-        const slider = document.getElementById('avatarPosSlider');
-        previewImg.src = dataUrl;
-        slider.value = 50;
-        previewImg.style.objectPosition = 'center 50%';
-        editor.style.display = 'block';
-        slider.oninput = ()=>{ previewImg.style.objectPosition = `center ${slider.value}%`; };
-        document.getElementById('btnSaveAvatarPos').onclick = async ()=>{
-          try{
-            await saveSupportAvatar(dataUrl, parseInt(slider.value));
-            toast("Avatar enregistré");
-            renderOwnerPayments();
-          }catch(err){ toast("Erreur lors de l'envoi"); }
-        };
-      }catch(err){ toast("Erreur lors du chargement de l'image"); }
-    };
   }catch(e){
     content.innerHTML = `<div class="card"><div class="empty">Impossible de charger les paiements.</div></div>`;
   }
@@ -5701,6 +6026,7 @@ async function renderCompanySettings(main){
 
 async function renderCompany(){
   if(mode !== 'company') return;
+  updateHeaderCompanyLogo();
   const main = document.getElementById('main');
   if(!companySession){
     adminSession = null;
@@ -5838,6 +6164,8 @@ function render(){
   else renderAdmin();
   renderShareFooter();
   renderSupportButton();
+  samMaybeGreet();
+  updateHeaderCompanyLogo();
 }
 
 document.getElementById('btnClientMode').onclick = ()=>{ setMode('client'); };
@@ -5864,7 +6192,7 @@ if ('serviceWorker' in navigator) {
     navigator.serviceWorker.register('sw.js').catch(()=>{});
   });
 }
-resolveClientLinkCompany().then(()=>{ if(clientLinkCompany && mode === 'client') renderClient(); });
+resolveClientLinkCompany().then(()=>{ if(clientLinkCompany && mode === 'client') renderClient(); updateHeaderCompanyLogo(); });
 if(URL_COMPANY_PUB){ const ms = document.querySelector('.modeSwitch'); if(ms) ms.style.display = 'none'; }
 </script>
 </body>
