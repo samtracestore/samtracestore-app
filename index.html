@@ -593,7 +593,22 @@ async function markCompaniesSeen(){
 let supportAvatarUrl = null;
 let supportAvatarPos = 50;
 
-function whatsappBubbleHTML(){ return samBubbleBtnHTML(); }
+function whatsappBubbleHTML(){
+  let msg = "Bonjour, j'ai besoin d'aide concernant l'application SamTraceStore.";
+  if(mode === 'company' && companySession){
+    msg += "\n\n🏢 Entreprise : " + (companySession.companyName || '');
+    if(companySession.phone) msg += "\nMon numéro : " + companySession.phone;
+  } else if(adminSession && !adminSession.isOwner && adminSession.companyName){
+    msg += "\n\n🏢 Entreprise : " + adminSession.companyName;
+  }
+  const text = encodeURIComponent(msg);
+  const inner = supportAvatarUrl
+    ? `<img src="${supportAvatarUrl}" style="width:100%;height:100%;object-fit:cover;object-position:center ${supportAvatarPos}%;border-radius:50%;">`
+    : `👧`;
+  return `<a href="https://wa.me/${WHATSAPP_NUMBER}?text=${text}" target="_blank" style="position:fixed;bottom:24px;left:20px;width:56px;height:56px;border-radius:50%;
+    background:linear-gradient(135deg,#25D366,#128C7E);display:flex;align-items:center;justify-content:center;
+    font-size:26px;box-shadow:0 6px 18px rgba(37,211,102,0.45);z-index:60;text-decoration:none;overflow:hidden;">${inner}</a>`;
+}
 
 // ================= SAM : assistante virtuelle =================
 const SAM_GREETING = "Bonjour ! Je suis Sam, votre assistante virtuelle sur STS suivi de colis. Je suis là pour vous aider. Vous pouvez écrire en créole ou en français.";
@@ -602,6 +617,9 @@ let samFails = 0;
 let samAskedHuman = false;
 let samLang = 'fr';
 let samBusy = false;
+let samAvatarUrl = null;
+let samAvatarPos = 50;
+const SAM_GREET_MS = 10000;
 let samLastGreetMode = null;
 let samPanelOpen = false;
 
@@ -612,15 +630,18 @@ function samRole(){
   return 'company';
 }
 function samAvatarHTML(size){
-  return supportAvatarUrl
-    ? `<img src="${supportAvatarUrl}" style="width:100%;height:100%;object-fit:cover;object-position:center ${supportAvatarPos}%;border-radius:50%;">`
+  return samAvatarUrl
+    ? `<img src="${samAvatarUrl}" style="width:100%;height:100%;object-fit:cover;object-position:center ${samAvatarPos}%;border-radius:50%;">`
     : `<span style="font-size:${Math.round(size * 0.5)}px;line-height:1;">🤖</span>`;
 }
-function samBubbleBtnHTML(){
-  if(samIsOwnerView()) return '';
-  return `<button type="button" data-sam-open="1" aria-label="Sam, assistante virtuelle" style="position:fixed;bottom:24px;left:20px;width:56px;height:56px;border-radius:50%;padding:0;cursor:pointer;
-    border:2px solid rgba(255,255,255,0.35);background:linear-gradient(135deg,#FF6A00,#FF5A1A);display:flex;align-items:center;justify-content:center;
-    box-shadow:0 6px 18px rgba(255,106,0,0.45);z-index:60;overflow:hidden;">${samAvatarHTML(56)}</button>`;
+function renderSamButton(){
+  const old = document.getElementById('samFab'); if(old) old.remove();
+  if(samIsOwnerView()){ const g = document.getElementById('samGreet'); if(g) g.remove(); return; }
+  const b = document.createElement('button');
+  b.id = 'samFab'; b.type = 'button'; b.setAttribute('data-sam-open', '1'); b.setAttribute('aria-label', 'Sam, assistante virtuelle');
+  b.style.cssText = 'position:fixed;right:16px;bottom:96px;width:62px;height:62px;border-radius:50%;padding:0;cursor:pointer;border:3px solid #fff;background:#0B1120;display:flex;align-items:center;justify-content:center;box-shadow:0 6px 20px rgba(0,0,0,0.45);z-index:60;overflow:hidden;';
+  b.innerHTML = samAvatarHTML(62);
+  document.body.appendChild(b);
 }
 
 function samShowGreeting(){
@@ -628,12 +649,15 @@ function samShowGreeting(){
   const old = document.getElementById('samGreet'); if(old) old.remove();
   const b = document.createElement('div');
   b.id = 'samGreet';
-  b.style.cssText = 'position:fixed;left:16px;right:16px;bottom:92px;max-width:340px;z-index:61;background:#fff;color:#1A202C;border-radius:16px 16px 16px 4px;padding:12px 14px;font-size:13.5px;line-height:1.45;font-weight:600;box-shadow:0 8px 26px rgba(0,0,0,0.35);transition:opacity .3s;cursor:pointer;';
-  b.textContent = SAM_GREETING;
-  b.onclick = ()=> samOpen();
+  b.style.cssText = 'position:fixed;left:14px;right:14px;bottom:170px;max-width:430px;margin-left:auto;z-index:61;background:#fff;color:#1A202C;border-radius:20px;padding:14px;display:flex;gap:12px;align-items:flex-start;box-shadow:0 10px 30px rgba(0,0,0,0.4);transition:opacity .4s;cursor:pointer;';
+  b.innerHTML = `<div style="width:52px;height:52px;border-radius:50%;overflow:hidden;background:#0B1120;flex:0 0 auto;display:flex;align-items:center;justify-content:center;">${samAvatarHTML(52)}</div>
+    <div style="flex:1;min-width:0;"><div style="font-weight:800;font-size:15px;color:#FF6A00;margin-bottom:2px;">Sam</div><div style="font-size:15px;line-height:1.5;font-weight:500;">${SAM_GREETING}</div></div>
+    <button type="button" id="samGreetX" aria-label="Fermer" style="flex:0 0 auto;width:32px;height:32px;border-radius:50%;border:none;background:#EEF0F4;color:#1A202C;font-size:16px;font-weight:800;cursor:pointer;">✕</button>`;
   document.body.appendChild(b);
-  setTimeout(()=>{ b.style.opacity = '0'; }, 2700);
-  setTimeout(()=>{ b.remove(); }, 3000);
+  const t1 = setTimeout(()=>{ b.style.opacity = '0'; }, SAM_GREET_MS - 400);
+  const t2 = setTimeout(()=>{ b.remove(); }, SAM_GREET_MS);
+  b.onclick = ()=>{ clearTimeout(t1); clearTimeout(t2); samOpen(); };
+  document.getElementById('samGreetX').onclick = (e)=>{ e.stopPropagation(); clearTimeout(t1); clearTimeout(t2); b.remove(); };
 }
 function samMaybeGreet(){
   const eligible = (mode === 'client' || mode === 'company');
@@ -912,34 +936,23 @@ document.addEventListener('click', (e)=>{ if(e.target.closest('[data-sam-open]')
 
 // logo de l'entreprise dans l'en-tête
 let headerLogoCache = {};
-async function updateHeaderCompanyLogo(){
-  const top = document.querySelector('header.top'); if(!top) return;
-  let el = document.getElementById('headerCompanyLogo');
-  if(!el){
-    el = document.createElement('div'); el.id = 'headerCompanyLogo';
-    el.style.cssText = 'display:none;align-items:center;justify-content:center;flex:0 0 auto;';
-    const titles = top.querySelector('.titles'); if(titles) titles.insertAdjacentElement('afterend', el); else top.appendChild(el);
-  }
-  let co = null;
-  try{
-    if(mode === 'company' && companySession){
-      const c = headerLogoCache[companySession.code];
-      if(c && Date.now() - c.t < 15000) co = c.co;
-      else { const full = await getCompanyByCode(companySession.code); co = full ? {logoUrl: full.logoUrl, logoZoom: full.logoZoom, logoPosX: full.logoPosX, logoPosY: full.logoPosY} : null; headerLogoCache[companySession.code] = {co, t: Date.now()}; }
-    } else if(mode === 'client' && clientLinkCompany){
-      co = clientLinkCompany;
-    }
-  }catch(e){}
-  if(co && co.logoUrl){ el.innerHTML = logoBoxHTML(co, 48, '12px', 'border:2px solid var(--accent);box-shadow:0 4px 12px rgba(255,106,0,0.3);'); el.style.display = 'flex'; }
-  else { el.innerHTML = ''; el.style.display = 'none'; }
-}
+function updateHeaderCompanyLogo(){ const el = document.getElementById('headerCompanyLogo'); if(el) el.remove(); }
 
 async function loadSupportAvatar(){
   try{
     const settings = await getPaymentSettings();
     if(settings.supportAvatar){ supportAvatarUrl = settings.supportAvatar; }
     if(settings.supportAvatarPos !== null && settings.supportAvatarPos !== undefined){ supportAvatarPos = settings.supportAvatarPos; }
+    if(settings.samAvatar){ samAvatarUrl = settings.samAvatar; }
+    if(settings.samAvatarPos !== null && settings.samAvatarPos !== undefined){ samAvatarPos = settings.samAvatarPos; }
   }catch(e){}
+}
+
+async function saveSamAvatar(dataUrl, pos){
+  await db.collection('settings').doc('payment').set({samAvatar: dataUrl, samAvatarPos: pos}, {merge:true});
+  samAvatarUrl = dataUrl;
+  samAvatarPos = pos;
+  renderSamButton();
 }
 
 async function saveSupportAvatar(dataUrl, pos){
@@ -1028,7 +1041,7 @@ function courierBlockHTML(av, kind){
 }
 function courierAvatarCardHTML(av){
   return `<div class="card">
-      <h2>Avatars de livraison <span style="font-size:11px;color:var(--muted);font-weight:400;">(v12 oct. F)</span></h2>
+      <h2>Avatars de livraison <span style="font-size:11px;color:var(--muted);font-weight:400;">(v12 oct. G)</span></h2>
       <p class="sub">Ces avatars sont utilisés par toutes les entreprises. Quand vous les changez ici, ils changent pour tout le monde, côté client aussi.</p>
       ${courierBlockHTML(av, 'moto')}
       ${courierBlockHTML(av, 'truck')}
@@ -1220,6 +1233,9 @@ function compressLogo(file){
     r.onerror = reject; r.readAsDataURL(file);
   });
 }
+function coLogoMini(co){
+  return (co && co.logoUrl) ? '<span style="display:inline-block;vertical-align:middle;margin:0 8px 0 2px;">' + logoBoxHTML(co, 30, '8px', 'border:1.5px solid var(--accent);') + '</span>' : '';
+}
 function logoBoxHTML(co, size, radius, extra){
   if(!co || !co.logoUrl) return '';
   const z = (co.logoZoom || 100) / 100, x = co.logoPosX ?? 50, y = co.logoPosY ?? 50;
@@ -1300,7 +1316,7 @@ async function getPaymentSettings(){
   try{
     const doc = await db.collection('settings').doc('payment').get();
     const data = doc.exists ? doc.data() : {};
-    return {minHTG: data.minHTG || 1680, minUSD: data.minUSD || 12, trialDays: data.trialDays || 20, regFeeHTG: data.regFeeHTG || 1000, regFeeUSD: data.regFeeUSD || 8, icons: data.icons || {}, supportAvatar: data.supportAvatar || null, supportAvatarPos: data.supportAvatarPos};
+    return {minHTG: data.minHTG || 1680, minUSD: data.minUSD || 12, trialDays: data.trialDays || 20, regFeeHTG: data.regFeeHTG || 1000, regFeeUSD: data.regFeeUSD || 8, icons: data.icons || {}, supportAvatar: data.supportAvatar || null, supportAvatarPos: data.supportAvatarPos, samAvatar: data.samAvatar || null, samAvatarPos: data.samAvatarPos};
   }catch(e){ return {minHTG:1680, minUSD:12, trialDays:20, regFeeHTG:1000, regFeeUSD:8, icons:{}, supportAvatar:null, supportAvatarPos:50}; }
 }
 
@@ -3393,38 +3409,38 @@ async function renderOwnerSettings(){
       <p class="sub" style="margin:10px 0 0;font-size:12px;">Dans chaque guide : lecture facile, bouton pour le partager par WhatsApp et bouton pour le télécharger en PDF.</p>
     </div>
     <div class="card">
-      <h2>🤖 Avatar de Sam</h2>
-      <p class="sub">Sam est l'assistante virtuelle qui répond aux entreprises et aux clients. Choisissez sa photo depuis votre galerie : elle s'affiche dans la bulle en bas à gauche de l'écran.</p>
-      ${settings.supportAvatar ? `<img src="${settings.supportAvatar}" style="width:72px;height:72px;border-radius:50%;object-fit:cover;object-position:center ${settings.supportAvatarPos||50}%;margin-bottom:10px;border:2px solid var(--accent);">` : ''}
-      <input type="file" accept="image/*" id="supportAvatarInput" style="margin-bottom:12px;">
-      <div id="avatarEditor" style="display:none;">
+      <h2>🤖 Avatar du robot Sam</h2>
+      <p class="sub">Sam est le robot (assistante virtuelle) qui répond directement dans l'application aux entreprises et aux clients. Choisissez sa photo : elle s'affiche sur le bouton du robot et dans la discussion. L'avatar WhatsApp reste dans l'onglet Paiements.</p>
+      ${settings.samAvatar ? `<img src="${settings.samAvatar}" style="width:72px;height:72px;border-radius:50%;object-fit:cover;object-position:center ${settings.samAvatarPos||50}%;margin-bottom:10px;border:2px solid var(--accent);">` : ''}
+      <input type="file" accept="image/*" id="samAvatarInput" style="margin-bottom:12px;">
+      <div id="samAvatarEditor" style="display:none;">
         <div style="width:110px;height:110px;border-radius:50%;overflow:hidden;margin-bottom:12px;border:1px solid var(--border);">
-          <img id="avatarPreviewImg" style="width:100%;height:100%;object-fit:cover;object-position:center 50%;">
+          <img id="samAvatarPreviewImg" style="width:100%;height:100%;object-fit:cover;object-position:center 50%;">
         </div>
         <label>Ajuster la position du visage</label>
-        <input type="range" id="avatarPosSlider" min="0" max="100" value="50" style="width:100%;margin-bottom:6px;">
+        <input type="range" id="samAvatarPosSlider" min="0" max="100" value="50" style="width:100%;margin-bottom:6px;">
         <p class="sub" style="margin:0 0 12px;">Déplacez le curseur si le visage est coupé — haut / bas</p>
-        <button class="primary" id="btnSaveAvatarPos">💾 Sauvegarder la photo de Sam</button>
+        <button class="primary" id="btnSaveSamAvatar">💾 Sauvegarder la photo de Sam</button>
       </div>
     </div>`;
   document.getElementById('btnAdminGuide').onclick = ()=> openGuide('admin');
   document.getElementById('btnCompanyGuide').onclick = ()=> openGuide('company');
-  document.getElementById('supportAvatarInput').onchange = async (e)=>{
+  document.getElementById('samAvatarInput').onchange = async (e)=>{
     const file = e.target.files[0];
     if(!file) return;
     try{
       const dataUrl = await compressImage(file);
-      const editor = document.getElementById('avatarEditor');
-      const previewImg = document.getElementById('avatarPreviewImg');
-      const slider = document.getElementById('avatarPosSlider');
+      const editor = document.getElementById('samAvatarEditor');
+      const previewImg = document.getElementById('samAvatarPreviewImg');
+      const slider = document.getElementById('samAvatarPosSlider');
       previewImg.src = dataUrl;
       slider.value = 50;
       previewImg.style.objectPosition = 'center 50%';
       editor.style.display = 'block';
       slider.oninput = ()=>{ previewImg.style.objectPosition = `center ${slider.value}%`; };
-      document.getElementById('btnSaveAvatarPos').onclick = async ()=>{
+      document.getElementById('btnSaveSamAvatar').onclick = async ()=>{
         try{
-          await saveSupportAvatar(dataUrl, parseInt(slider.value));
+          await saveSamAvatar(dataUrl, parseInt(slider.value));
           toast("Photo de Sam enregistrée");
           renderOwnerSettings();
         }catch(err){ toast("Erreur lors de l'envoi"); }
@@ -3619,8 +3635,46 @@ async function renderOwnerPayments(){
     const methodsHtml = compactCardHtml('paymentMethods', '#3ECF8E,#FF7A1A', '💳', 'Icônes de paiement',
       `${PAYMENT_METHODS.length} méthodes — appuyez pour voir la liste`, methodsListContent);
 
-    content.innerHTML = emailCard + codeCard + backupCard + pendingRegHtml + pendingHtml + notifCardOwner + confirmedRegHtml + confirmedHtml + settingsHtml + methodsHtml + `${courierAvatarCardHTML(courierAv)}`;
+    content.innerHTML = emailCard + codeCard + backupCard + pendingRegHtml + pendingHtml + notifCardOwner + confirmedRegHtml + confirmedHtml + settingsHtml + methodsHtml + `
+      <div class="card">
+        <h2>Avatar du service client</h2>
+        <p class="sub">Choisissez une photo depuis votre galerie pour la bulle WhatsApp affichée aux entreprises.</p>
+        ${settings.supportAvatar ? `<img src="${settings.supportAvatar}" style="width:56px;height:56px;border-radius:50%;object-fit:cover;object-position:center ${settings.supportAvatarPos||50}%;margin-bottom:10px;">` : ''}
+        <input type="file" accept="image/*" id="supportAvatarInput" style="margin-bottom:12px;">
+        <div id="avatarEditor" style="display:none;">
+          <div style="width:110px;height:110px;border-radius:50%;overflow:hidden;margin-bottom:12px;border:1px solid var(--border);">
+            <img id="avatarPreviewImg" style="width:100%;height:100%;object-fit:cover;object-position:center 50%;">
+          </div>
+          <label>Ajuster la position du visage</label>
+          <input type="range" id="avatarPosSlider" min="0" max="100" value="50" style="width:100%;margin-bottom:6px;">
+          <p class="sub" style="margin:0 0 12px;">Déplacez le curseur si le visage est coupé — haut / bas</p>
+          <button class="primary" id="btnSaveAvatarPos">💾 Sauvegarder la position</button>
+        </div>
+      </div>
+      ${courierAvatarCardHTML(courierAv)}`;
     bindCourierAvatars(()=>renderOwnerPayments());
+    document.getElementById('supportAvatarInput').onchange = async (e)=>{
+      const file = e.target.files[0];
+      if(!file) return;
+      try{
+        const dataUrl = await compressImage(file);
+        const editor = document.getElementById('avatarEditor');
+        const previewImg = document.getElementById('avatarPreviewImg');
+        const slider = document.getElementById('avatarPosSlider');
+        previewImg.src = dataUrl;
+        slider.value = 50;
+        previewImg.style.objectPosition = 'center 50%';
+        editor.style.display = 'block';
+        slider.oninput = ()=>{ previewImg.style.objectPosition = `center ${slider.value}%`; };
+        document.getElementById('btnSaveAvatarPos').onclick = async ()=>{
+          try{
+            await saveSupportAvatar(dataUrl, parseInt(slider.value));
+            toast("Avatar enregistré");
+            renderOwnerPayments();
+          }catch(err){ toast("Erreur lors de l'envoi"); }
+        };
+      }catch(err){ toast("Erreur lors du chargement de l'image"); }
+    };
 
     content.querySelectorAll('[data-validate-reg]').forEach(b=>{
       b.onclick = async ()=>{
@@ -3922,6 +3976,7 @@ let msgCardOpen = true;
 async function messagesAdminHTML(companies){
   try{
     const names = {}; (companies || []).forEach(c => { names[c.code] = c.companyName; });
+    const logos = {}; (companies || []).forEach(c => { logos[c.code] = c; });
     const snap = await db.collection('messages').get();
     const all = snap.docs.map(d => d.data()).filter(m => names[m.companyCode]);
     const byCo = {};
@@ -3944,7 +3999,7 @@ async function messagesAdminHTML(companies){
       <p class="sub" style="margin-top:0;">Les demandes d'activation, les paiements envoyés et les messages des entreprises arrivent ici. Touchez une conversation pour répondre.</p>` +
       (rows.length ? rows.map(r => `
         <div data-msg-open="${escHtml(r.code)}" data-name="${escHtml(r.name)}" style="cursor:pointer;margin-top:8px;padding:10px 12px;border:1px solid ${r.unread ? 'var(--accent)' : 'var(--border)'};border-radius:12px;background:rgba(255,255,255,0.03);">
-          <div style="display:flex;align-items:center;gap:8px;"><b style="flex:1;min-width:0;overflow-wrap:anywhere;">🏢 ${escHtml(r.name)}</b>${r.unread ? `<span style="background:#EF5D5D;color:#fff;border-radius:12px;padding:1px 8px;font-size:11.5px;font-weight:800;">${r.unread}</span>` : ''}</div>
+          <div style="display:flex;align-items:center;gap:8px;"><b style="flex:1;min-width:0;overflow-wrap:anywhere;">🏢 ${coLogoMini(logos[r.code])}${escHtml(r.name)}</b>${r.unread ? `<span style="background:#EF5D5D;color:#fff;border-radius:12px;padding:1px 8px;font-size:11.5px;font-weight:800;">${r.unread}</span>` : ''}</div>
           <div class="sub" style="font-size:12.5px;margin-top:3px;overflow-wrap:anywhere;">${r.last.from === 'owner' ? 'Vous : ' : ''}${escHtml(String(r.last.text).slice(0, 90))}</div>
           <div class="sub" style="font-size:11px;margin-top:2px;">${fmtDate(r.last.createdAt)}</div>
         </div>`).join('') : '<p class="sub" style="margin-top:10px;">Aucun message pour le moment.</p>') + '</div></div>';
@@ -4035,7 +4090,7 @@ function regAccOpen(c){
   return `<div style="margin-bottom:10px;border:1px solid var(--border);border-radius:14px;overflow:hidden;">
     <div data-reg-head="${c.code}" style="display:flex;align-items:center;gap:10px;padding:10px 12px;cursor:pointer;background:rgba(255,255,255,0.03);">
       <span data-reg-arrow style="flex:0 0 auto;color:var(--accent);font-size:18px;font-weight:900;width:18px;text-align:center;">${open ? '▼' : '▶'}</span>
-      <span style="flex:1;min-width:0;font-weight:800;overflow-wrap:anywhere;">🏢 ${c.companyName}</span>
+      <span style="flex:1;min-width:0;font-weight:800;overflow-wrap:anywhere;">🏢 ${coLogoMini(c)}${c.companyName}</span>
       <span style="flex:0 0 auto;padding:2px 9px;border-radius:12px;font-size:11px;font-weight:800;${c.isFree ? 'background:rgba(62,207,142,0.18);color:var(--ok);' : 'background:rgba(255,106,0,0.18);color:var(--accent);'}">${c.isFree ? '🎁 Gratuit' : '💰 Payant'}</span>
     </div>
     <div data-reg-co="${c.code}" style="display:${open ? 'block' : 'none'};padding:8px;">
@@ -4106,7 +4161,7 @@ async function companyPackagesCardHTML(companies){
         <div style="margin-bottom:10px;border:1px solid var(--border);border-radius:14px;padding:10px 12px;background:rgba(255,255,255,0.02);">
           <div data-cpk-head="${escHtml(c.code)}" style="display:flex;align-items:center;gap:10px;cursor:pointer;">
             <span data-cpk-arrow style="color:var(--accent);font-size:18px;font-weight:900;width:16px;text-align:center;">${open ? '▼' : '▶'}</span>
-            <span style="flex:1;min-width:0;font-weight:800;overflow-wrap:anywhere;">🏢 ${escHtml(c.companyName)}</span>
+            <span style="flex:1;min-width:0;font-weight:800;overflow-wrap:anywhere;">🏢 ${coLogoMini(c)}${escHtml(c.companyName)}</span>
             <button type="button" data-cpk-print="${escHtml(c.code)}" data-name="${escHtml(c.companyName)}" style="flex:0 0 auto;padding:3px 10px;border-radius:10px;border:1px solid var(--accent);background:rgba(255,122,26,0.15);color:var(--accent2);font-weight:800;font-size:11px;cursor:pointer;">🖨️ PDF</button>
             <span style="padding:2px 10px;border-radius:12px;font-size:11.5px;font-weight:800;background:rgba(250,204,21,0.18);color:#FACC15;">${arr.length} colis</span>
           </div>
@@ -4199,7 +4254,7 @@ async function deletedByCompaniesHTML(companies){
         <div style="margin-bottom:10px;border:1px solid var(--border);border-radius:14px;padding:10px 12px;background:rgba(255,255,255,0.02);">
           <div data-delco-head="${escHtml(c.code)}" style="display:flex;align-items:center;gap:10px;cursor:pointer;">
             <span data-delarrow style="color:var(--accent);font-size:18px;font-weight:900;width:16px;text-align:center;">${open ? '▼' : '▶'}</span>
-            <span style="flex:1;min-width:0;font-weight:800;overflow-wrap:anywhere;">🏢 ${escHtml(c.companyName)}</span>
+            <span style="flex:1;min-width:0;font-weight:800;overflow-wrap:anywhere;">🏢 ${coLogoMini(c)}${escHtml(c.companyName)}</span>
             <span style="padding:2px 10px;border-radius:12px;font-size:11.5px;font-weight:800;${arr.length ? 'background:rgba(239,93,93,0.18);color:var(--danger);' : 'background:rgba(255,255,255,0.06);color:var(--muted);'}">${arr.length} colis</span>
           </div>
           <div data-delco-box="${escHtml(c.code)}" style="display:${open ? 'block' : 'none'};">${inner}</div>
@@ -4335,6 +4390,7 @@ async function loadAnnouncementBanner(main){
 async function activityLogHTML(companies){
   try{
     const names = {}; (companies || []).forEach(c => { names[c.code] = c.companyName; });
+    const coByCode = {}; (companies || []).forEach(c => { coByCode[c.code] = c; });
     const snap = await db.collection('activityLog').get();
     const list = snap.docs.map(d => Object.assign({id: d.id}, d.data())).filter(n => names[n.companyCode]).sort((a,b) => String(b.createdAt).localeCompare(String(a.createdAt))).slice(0, 150);
     if(!list.length) return '';
@@ -4347,7 +4403,7 @@ async function activityLogHTML(companies){
           <div style="font-size:13px;margin-top:3px;overflow-wrap:anywhere;">${escHtml(n.text)}</div>
           <div class="sub" style="font-size:11px;margin-top:4px;">${fmtDate(n.createdAt)}${n.dismissedByCompany ? ' · <span style="color:var(--danger);">supprimé par l\'entreprise</span>' : ''}</div>
         </div>`;
-    const inner = order.map((code, i) => foldCardHTML('journal-' + code, palette[i % palette.length], '🏢', escHtml(names[code] || code), groups[code].length, groups[code].map(entry).join(''))).join('');
+    const inner = order.map((code, i) => foldCardHTML('journal-' + code, palette[i % palette.length], '🏢' + coLogoMini(coByCode[code]), escHtml(names[code] || code), groups[code].length, groups[code].map(entry).join(''))).join('');
     return foldCardHTML('journal', '#8B5CF6,#EC4899', '📋', "Journal d'activité", list.length,
       `<p class="sub" style="margin-top:0;">Tout ce qui se passe chez les entreprises et leurs clients. Chaque entreprise a sa propre carte : touchez-la pour la déplier. Seule la propriétaire supprime définitivement.</p>` + inner +
       `<button type="button" class="ghost" id="btnActClear" style="width:100%;color:var(--danger);border-color:rgba(239,93,93,0.4);">🗑️ Supprimer définitivement le journal</button>`);
@@ -4366,14 +4422,15 @@ function bindActivityLog(root, rerender){
     }catch(e){ toast('Erreur, réessayez'); }
   };
 }
-async function supportRequestsHTML(){
+async function supportRequestsHTML(companies){
   try{
+    const coByCode = {}; (companies || []).forEach(c => { coByCode[c.code] = c; });
     const snap = await db.collection('supportRequests').get();
     const list = snap.docs.map(d=>Object.assign({id:d.id}, d.data())).sort((a,b)=>String(b.createdAt).localeCompare(String(a.createdAt))).slice(0,30);
     if(!list.length) return '';
     return foldCardHTML('aide', '#EF4444,#F97316', '🆘', "Demandes d'aide des entreprises", list.length, list.map(r=>`
       <div class="pkgAdmin" style="flex-direction:column;align-items:stretch;gap:6px;">
-        <div style="display:flex;align-items:center;flex-wrap:wrap;gap:8px;"><b>${escHtml(r.companyName)}</b> ${waChatBtn(r.phone, 'Bonjour ' + (r.companyName||'') + ', c\'est Sam Trace Store. Concernant votre demande d\'aide : ')} <span class="sub" style="font-size:11px;">${fmtDate(r.createdAt)}</span></div>
+        <div style="display:flex;align-items:center;flex-wrap:wrap;gap:8px;"><b>${coLogoMini(coByCode[r.companyCode])}${escHtml(r.companyName)}</b> ${waChatBtn(r.phone, 'Bonjour ' + (r.companyName||'') + ', c\'est Sam Trace Store. Concernant votre demande d\'aide : ')} <span class="sub" style="font-size:11px;">${fmtDate(r.createdAt)}</span></div>
         <div class="name">${escHtml(r.phone||'')}</div>
         <div style="font-size:13.5px;white-space:pre-wrap;">${escHtml(r.message)}</div>
         ${(r.photos||[]).length ? `<div style="display:flex;gap:8px;flex-wrap:wrap;">${r.photos.map(p=>`<img src="${p}" data-zoom="${p}" style="width:72px;height:72px;object-fit:cover;border-radius:10px;cursor:pointer;">`).join('')}</div>` : (r.photoCount ? `<div class="reqPhotos" data-reqphotos="${r.id}" style="display:flex;gap:8px;flex-wrap:wrap;"><span class="sub" style="font-size:11px;">📷 Chargement...</span></div>` : '')}
@@ -4402,7 +4459,7 @@ async function renderOwnerCompanies(){
   content.innerHTML = `<div class="card"><div class="empty">Chargement...</div></div>`;
   try{
     const companies = await getAllCompanies();
-    const srHtml = await supportRequestsHTML();
+    const srHtml = await supportRequestsHTML(companies);
     const actHtml = await activityLogHTML(companies);
     const delHtml = await deletedByCompaniesHTML(companies);
     const cpkHtml = await companyPackagesCardHTML(companies);
@@ -5068,6 +5125,7 @@ async function renderRegistrationGate(main, company, status){
 }
 
 async function renderAdminCore(){
+  renderSamButton();
   const main = document.getElementById('main');
   if(!adminSession){
     if(showCompanyRegister){
@@ -5657,6 +5715,7 @@ function openSupportModal(forSTS){
 }
 
 function renderSupportButton(){
+  renderSamButton();
   const existing = document.getElementById('clientSupportBtn');
   if(existing) existing.remove();
   const companyClientView = (mode === 'company' && !!companySession && companyScreen === 'client');
