@@ -638,6 +638,8 @@ let samFabPos = null;
 try{ samFabPos = JSON.parse(localStorage.getItem('sts_sam_fab') || 'null'); }catch(e){}
 let samDragJustEnded = false;
 let samUnread = false;
+let samAvatarLoaded = false;
+let samGreetPending = false;
 let samNewReply = false;
 let samLastPoll = 0;
 let samInAgent = false;
@@ -670,7 +672,7 @@ function renderSamButton(){
     + (samUnread ? (() => {
         const onRight = samFabPos ? (samFabPos.x + 31 > window.innerWidth / 2) : true;
         return `<span style="position:absolute;top:-2px;right:-2px;width:18px;height:18px;border-radius:50%;background:#EF4444;border:2px solid #fff;"></span>
-          <span style="position:absolute;top:12px;${onRight ? 'right:72px' : 'left:72px'};white-space:nowrap;background:#FF6A00;color:#fff;font-weight:800;font-size:13px;padding:8px 11px;border-radius:14px;box-shadow:0 6px 18px rgba(0,0,0,0.45);">${onRight ? "💬 L'agent STS vous a répondu " : ''}<span style="display:inline-block;animation:${onRight ? 'samNudge' : 'samNudgeL'} .9s infinite;">${onRight ? '👉' : '👈'}</span>${onRight ? '' : " 💬 L'agent STS vous a répondu"}</span>`;
+          <span style="position:absolute;top:12px;${onRight ? 'right:72px' : 'left:72px'};white-space:nowrap;background:#22C55E;color:#04210F;font-weight:800;font-size:14px;padding:9px 12px;border-radius:14px;box-shadow:0 6px 18px rgba(0,0,0,0.5);border:2px solid #fff;">${onRight ? "💬 L'agent STS vous a répondu " : ''}<span style="display:inline-block;animation:${onRight ? 'samNudge' : 'samNudgeL'} .9s infinite;">${onRight ? '👉' : '👈'}</span>${onRight ? '' : " 💬 L'agent STS vous a répondu"}</span>`;
       })() : '');
   document.body.appendChild(b);
   samPollSoon();
@@ -697,8 +699,17 @@ function renderSamButton(){
 }
 window.addEventListener('resize', ()=>{ if(document.getElementById('samFab')) renderSamButton(); });
 
+function samAvatarsLoaded(){
+  samAvatarLoaded = true;
+  const gAv = document.querySelector('#samGreet [data-sam-gav]'); if(gAv) gAv.innerHTML = samAvatarHTML(52);
+  renderSamButton();
+  if(samPanelOpen) samRender();
+  if(samGreetPending){ samGreetPending = false; samShowGreeting(); }
+}
+setTimeout(()=>{ if(!samAvatarLoaded) samAvatarsLoaded(); }, 3000);
 function samShowGreeting(){
   if(samPanelOpen || samIsOwnerView()) return;
+  if(!samAvatarLoaded){ samGreetPending = true; return; }
   const old = document.getElementById('samGreet'); if(old) old.remove();
   const b = document.createElement('div');
   b.id = 'samGreet';
@@ -707,7 +718,7 @@ function samShowGreeting(){
   if(r && r.top < 240){ b.style.top = (r.bottom + 10) + 'px'; }
   else if(r){ b.style.bottom = (window.innerHeight - r.top + 10) + 'px'; }
   else { b.style.bottom = '170px'; }
-  b.innerHTML = `<div style="width:52px;height:52px;border-radius:50%;overflow:hidden;background:#0B1120;flex:0 0 auto;display:flex;align-items:center;justify-content:center;">${samAvatarHTML(52)}</div>
+  b.innerHTML = `<div data-sam-gav="1" style="width:52px;height:52px;border-radius:50%;overflow:hidden;background:#0B1120;flex:0 0 auto;display:flex;align-items:center;justify-content:center;">${samAvatarHTML(52)}</div>
     <div style="flex:1;min-width:0;"><div style="font-weight:800;font-size:15px;color:#FF6A00;margin-bottom:2px;">Sam</div><div style="font-size:15px;line-height:1.5;font-weight:500;">${SAM_GREETING}</div></div>
     <button type="button" id="samGreetX" aria-label="Fermer" style="flex:0 0 auto;width:32px;height:32px;border-radius:50%;border:none;background:#EEF0F4;color:#1A202C;font-size:16px;font-weight:800;cursor:pointer;">✕</button>`;
   document.body.appendChild(b);
@@ -995,7 +1006,7 @@ function samRender(){
   const hint = document.getElementById('samHint');
   if(hint){
     hint.innerHTML = (samNewReply && !samInAgent && openConv)
-      ? `<div style="background:#FF6A00;color:#fff;font-weight:800;font-size:13px;line-height:1.35;padding:8px 12px;border-radius:12px;max-width:260px;box-shadow:0 6px 16px rgba(0,0,0,0.5);">Cliquez ici : l'agent STS vous a répondu</div><div style="margin-left:34px;font-size:30px;line-height:1;animation:samBounce .8s infinite;text-shadow:0 2px 6px rgba(0,0,0,0.5);">⬇️</div>`
+      ? `<div style="background:#22C55E;color:#04210F;font-weight:800;font-size:14px;line-height:1.35;padding:9px 13px;border-radius:12px;max-width:270px;box-shadow:0 6px 16px rgba(0,0,0,0.5);border:2px solid #fff;">Cliquez ici : l'agent STS vous a répondu</div><div style="margin-left:34px;font-size:30px;line-height:1;animation:samBounce .8s infinite;text-shadow:0 2px 6px rgba(0,0,0,0.5);">⬇️</div>`
       : '';
   }
   box.scrollTop = box.scrollHeight;
@@ -1309,7 +1320,7 @@ function courierBlockHTML(av, kind){
 }
 function courierAvatarCardHTML(av){
   return `<div class="card">
-      <h2>Avatars de livraison <span style="font-size:11px;color:var(--muted);font-weight:400;">(v12 oct. I)</span></h2>
+      <h2>Avatars de livraison <span style="font-size:11px;color:var(--muted);font-weight:400;">(v12 oct. J)</span></h2>
       <p class="sub">Ces avatars sont utilisés par toutes les entreprises. Quand vous les changez ici, ils changent pour tout le monde, côté client aussi.</p>
       ${courierBlockHTML(av, 'moto')}
       ${courierBlockHTML(av, 'truck')}
@@ -3652,14 +3663,22 @@ async function renderOwnerPanel(main){
   document.getElementById('btnOwnerPayments').onclick = ()=>{ ownerView='payments'; renderAdmin(); };
   document.getElementById('btnOwnerSettings').onclick = ()=>{ ownerView='settings'; renderAdmin(); };
 
-  if(ownerView === 'packages'){
-    await renderOwnerPackages();
-  } else if(ownerView === 'settings'){
-    renderOwnerSettings();
-  } else if(ownerView === 'payments'){
-    await renderOwnerPayments();
-  } else {
-    await renderOwnerCompanies();
+  const ownerBox = document.getElementById('ownerContent');
+  const useCache = (ownerView === 'companies' || ownerView === 'payments');
+  if(useCache && ownerViewCache[ownerView]){ ownerBox.innerHTML = ownerViewCache[ownerView]; ownerBox.style.pointerEvents = 'none'; }
+  try{
+    if(ownerView === 'packages'){
+      await renderOwnerPackages();
+    } else if(ownerView === 'settings'){
+      renderOwnerSettings();
+    } else if(ownerView === 'payments'){
+      await renderOwnerPayments();
+    } else {
+      await renderOwnerCompanies();
+    }
+  } finally {
+    ownerBox.style.pointerEvents = '';
+    if(useCache && ownerBox.innerHTML.indexOf('Chargement...') === -1) ownerViewCache[ownerView] = ownerBox.innerHTML;
   }
 }
 
@@ -3728,16 +3747,12 @@ async function renderOwnerSettings(){
 
 async function renderOwnerPayments(){
   const content = document.getElementById('ownerContent');
-  content.innerHTML = `<div class="card"><div class="empty">Chargement...</div></div>`;
+  if(!ownerViewCache.payments) content.innerHTML = `<div class="card"><div class="empty">Chargement...</div></div>`;
   try{
-    const settings = await getPaymentSettings();
-    const courierAv = await getCourierAvatar();
-    const pending = await getPendingDeposits();
-    const pendingReg = await getPendingRegistrations();
-
-    const quota = await getEmailQuota();
+    const [settings, courierAv, pending, pendingReg, quota, gsQuota, currentOwnerCode] = await Promise.all([
+      getPaymentSettings(), getCourierAvatar(), getPendingDeposits(), getPendingRegistrations(), getEmailQuota(), getGoogleScriptQuota(), getOwnerCode()
+    ]);
     const quotaPct = quota.total ? Math.max(0, Math.min(100, Math.round((quota.used/quota.total)*100))) : 0;
-    const gsQuota = await getGoogleScriptQuota();
     const gsPct = gsQuota.total ? Math.max(0, Math.min(100, Math.round((gsQuota.used/gsQuota.total)*100))) : 0;
     const emailCard = `<div class="card" style="padding:0;overflow:hidden;">
         <div style="background:linear-gradient(135deg,#0EA5E9,#6366F1);padding:14px 16px;display:flex;align-items:center;gap:10px;">
@@ -3756,7 +3771,6 @@ async function renderOwnerPayments(){
         </div>
       </div>`;
 
-    const currentOwnerCode = await getOwnerCode();
     const codeCard = `<div class="card" style="padding:0;overflow:hidden;">
         <div style="background:linear-gradient(135deg,#10B981,#0EA5E9);padding:14px 16px;display:flex;align-items:center;gap:10px;">
           <span style="font-size:22px;">🔑</span>
@@ -4170,7 +4184,7 @@ async function openMessagesModal(code, name, side){
     <div style="padding:10px 12px;border-top:1px solid var(--border);background:var(--panel);">
       ${side === 'owner' ? '<button type="button" id="msgPayReq" style="width:100%;margin-bottom:8px;padding:10px;border:none;border-radius:12px;background:linear-gradient(135deg,#8B5CF6,#F97316);color:#fff;font-weight:800;font-size:14px;cursor:pointer;">💳 Passer au paiement mensuel</button>' : ''}
       <div style="display:flex;gap:8px;align-items:flex-end;">
-        <textarea id="msgInput" rows="2" placeholder="Écrivez votre message..." style="flex:1;margin:0;"></textarea>
+        <textarea id="msgInput" rows="2" placeholder="Écrivez votre message..." style="flex:1;margin:0;resize:none;min-height:58px;max-height:150px;background:var(--panel2);color:#fff;border:1px solid var(--border);border-radius:14px;padding:12px 14px;font-size:16px;line-height:1.4;font-family:inherit;box-sizing:border-box;"></textarea>
         <button type="button" id="msgSend" style="flex:0 0 auto;padding:12px 16px;border:none;border-radius:12px;background:var(--accent);color:#fff;font-weight:800;cursor:pointer;">Envoyer</button>
       </div>
     </div>`;
@@ -4670,7 +4684,7 @@ async function activityLogHTML(companies){
     const coByCode = {}; (companies || []).forEach(c => { coByCode[c.code] = c; });
     const snap = await db.collection('activityLog').get();
     const list = snap.docs.map(d => Object.assign({id: d.id}, d.data())).filter(n => names[n.companyCode]).sort((a,b) => String(b.createdAt).localeCompare(String(a.createdAt))).slice(0, 150);
-    if(!list.length) return '';
+    if(!list.length) return foldCardHTML('journal', '#8B5CF6,#EC4899', '📋', "Journal d'activité", 0, `<p class="sub" style="margin:0;">Aucun changement pour le moment.</p>`);
     const groups = {}, order = [];
     list.forEach(n => { if(!groups[n.companyCode]){ groups[n.companyCode] = []; order.push(n.companyCode); } groups[n.companyCode].push(n); });
     const palette = ['#0EA5E9,#6366F1', '#10B981,#0EA5E9', '#F59E0B,#EF4444', '#EC4899,#8B5CF6', '#14B8A6,#22C55E', '#F97316,#EC4899'];
@@ -4703,16 +4717,25 @@ async function supportRequestsHTML(companies){
   try{
     const coByCode = {}; (companies || []).forEach(c => { coByCode[c.code] = c; });
     const snap = await db.collection('supportRequests').get();
-    const list = snap.docs.map(d=>Object.assign({id:d.id}, d.data())).sort((a,b)=>String(b.createdAt).localeCompare(String(a.createdAt))).slice(0,30);
-    if(!list.length) return '';
-    return foldCardHTML('aide', '#EF4444,#F97316', '🆘', "Demandes d'aide des entreprises", list.length, list.map(r=>`
+    const list = snap.docs.map(d=>Object.assign({id:d.id}, d.data())).sort((a,b)=>String(b.createdAt).localeCompare(String(a.createdAt))).slice(0,60);
+    if(!list.length) return foldCardHTML('aide', '#EF4444,#F97316', '🆘', "Demandes d'aide des entreprises", 0, `<p class="sub" style="margin:0;">Aucune demande d'aide pour le moment.</p>`);
+    const groups = {}, order = [];
+    list.forEach(r => { const k = r.companyCode || ('n-' + (r.companyName || '')); if(!groups[k]){ groups[k] = []; order.push(k); } groups[k].push(r); });
+    const palette = ['#0EA5E9,#6366F1', '#10B981,#0EA5E9', '#F59E0B,#EF4444', '#EC4899,#8B5CF6', '#14B8A6,#22C55E', '#F97316,#EC4899'];
+    const rowHtml = r => `
       <div class="pkgAdmin" style="flex-direction:column;align-items:stretch;gap:6px;">
-        <div style="display:flex;align-items:center;flex-wrap:wrap;gap:8px;"><b>${coLogoMini(coByCode[r.companyCode])}${escHtml(r.companyName)}</b> ${waChatBtn(r.phone, 'Bonjour ' + (r.companyName||'') + ', c\'est Sam Trace Store. Concernant votre demande d\'aide : ')} <span class="sub" style="font-size:11px;">${fmtDate(r.createdAt)}</span></div>
+        <div style="display:flex;align-items:center;flex-wrap:wrap;gap:8px;">${waChatBtn(r.phone, 'Bonjour ' + (r.companyName||'') + ', c\'est Sam Trace Store. Concernant votre demande d\'aide : ')} <span class="sub" style="font-size:11px;">${fmtDate(r.createdAt)}</span></div>
         <div class="name">${escHtml(r.phone||'')}</div>
         <div style="font-size:13.5px;white-space:pre-wrap;">${escHtml(r.message)}</div>
         ${(r.photos||[]).length ? `<div style="display:flex;gap:8px;flex-wrap:wrap;">${r.photos.map(p=>`<img src="${p}" data-zoom="${p}" style="width:72px;height:72px;object-fit:cover;border-radius:10px;cursor:pointer;">`).join('')}</div>` : (r.photoCount ? `<div class="reqPhotos" data-reqphotos="${r.id}" style="display:flex;gap:8px;flex-wrap:wrap;"><span class="sub" style="font-size:11px;">📷 Chargement...</span></div>` : '')}
         <button class="miniBtn" style="color:var(--danger);border-color:rgba(239,93,93,0.4);align-self:flex-start;" data-delreq="${r.id}">Supprimer</button>
-      </div>`).join(''));
+      </div>`;
+    const inner = order.map((k, i) => {
+      const g = groups[k];
+      const name = (g[0].companyName || (coByCode[g[0].companyCode] && coByCode[g[0].companyCode].companyName) || 'Entreprise');
+      return foldCardHTML('aide-' + k, palette[i % palette.length], '🏢' + coLogoMini(coByCode[g[0].companyCode]), escHtml(name), g.length, g.map(rowHtml).join(''));
+    }).join('');
+    return foldCardHTML('aide', '#EF4444,#F97316', '🆘', "Demandes d'aide des entreprises", list.length, inner);
   }catch(e){ return ''; }
 }
 function bindSupportRequests(root, rerender){
@@ -4737,7 +4760,7 @@ async function agentChatsAdminHTML(){
   try{
     const snap = await db.collection('agentChats').get();
     const list = snap.docs.map(d => Object.assign({id: d.id}, d.data())).sort((a, b) => String(b.updatedAt).localeCompare(String(a.updatedAt)));
-    if(!list.length) return '';
+    if(!list.length) return foldCardHTML('agents', '#EC4899,#8B5CF6', '👩‍💼', 'Conversations avec les agents', 0, `<p class="sub" style="margin:0;">Aucune conversation pour le moment. Les clients et les entreprises qui parlent à un agent ou signalent une entreprise arriveront ici.</p>`);
     const unread = list.filter(c => c.unreadByOwner && c.status !== 'closed').length;
     const rows = list.map(c => {
       const isRep = c.kind === 'report';
@@ -4835,15 +4858,14 @@ function openAgentChatAdmin(id){
 
 async function renderOwnerCompanies(){
   const content = document.getElementById('ownerContent');
-  content.innerHTML = `<div class="card"><div class="empty">Chargement...</div></div>`;
+  if(!ownerViewCache.companies) content.innerHTML = `<div class="card"><div class="empty">Chargement...</div></div>`;
   try{
     const companies = await getAllCompanies();
-    const srHtml = await supportRequestsHTML(companies);
-    const actHtml = await activityLogHTML(companies);
-    const delHtml = await deletedByCompaniesHTML(companies);
-    const cpkHtml = await companyPackagesCardHTML(companies);
-    const annHtml = await announcementsAdminHTML();
-    const msgHtml = (await messagesAdminHTML(companies)) + (await agentChatsAdminHTML());
+    const [srHtml, actHtml, delHtml, cpkHtml, annHtml, msgHtml0, agHtml] = await Promise.all([
+      supportRequestsHTML(companies), activityLogHTML(companies), deletedByCompaniesHTML(companies),
+      companyPackagesCardHTML(companies), announcementsAdminHTML(), messagesAdminHTML(companies), agentChatsAdminHTML()
+    ]);
+    const msgHtml = msgHtml0 + agHtml;
     if(companies.length===0){
       content.innerHTML = `<div class="card"><div class="empty">Aucune entreprise inscrite pour le moment.</div></div>` + msgHtml + annHtml + cpkHtml + delHtml + srHtml + actHtml;
     } else {
@@ -6464,6 +6486,8 @@ async function renderCompanySettings(main){
 }
 
 const companyHomeCache = {};
+const ownerViewCache = {};
+const coScreenCache = {};
 async function getCompanyFast(code, onChange){
   const c = companyHomeCache[code];
   if(c && Date.now() - c.t < 300000){
@@ -6552,8 +6576,10 @@ async function renderCompany(){
   if(companyScreen === 'colis'){
     adminSession = {code: companySession.code, isOwner:false, companyName: companySession.companyName};
     updateCompanyBar();
-    await renderAdminCore();
-    companyFixLogoutBtn();
+    const ckey = companySession.code + ':colis';
+    if(coScreenCache[ckey]){ main.innerHTML = coScreenCache[ckey]; main.style.pointerEvents = 'none'; }
+    try{ await renderAdminCore(); companyFixLogoutBtn(); }
+    finally{ main.style.pointerEvents = ''; if(companySession && companyScreen === 'colis') coScreenCache[ckey] = main.innerHTML; }
     return;
   }
   if(companyScreen === 'payment'){
@@ -6568,7 +6594,13 @@ async function renderCompany(){
   adminSession = null;
   updateCompanyBar();
   if(companyScreen === 'client'){ await renderClient(); return; }
-  if(companyScreen === 'settings'){ await renderCompanySettings(main); return; }
+  if(companyScreen === 'settings'){
+    const skey = (companySession ? companySession.code : '') + ':settings';
+    if(coScreenCache[skey]){ main.innerHTML = coScreenCache[skey]; main.style.pointerEvents = 'none'; }
+    try{ await renderCompanySettings(main); }
+    finally{ main.style.pointerEvents = ''; if(companySession && companyScreen === 'settings') coScreenCache[skey] = main.innerHTML; }
+    return;
+  }
 
   const co = await getCompanyFast(companySession.code, ()=>{ if(mode === 'company' && companyScreen === 'home' && companySession) renderCompany(); });
   const logoBox = (co && co.logoUrl)
@@ -6627,7 +6659,7 @@ document.getElementById('btnAdminMode').onclick = ()=>{ setMode('admin'); };
 document.getElementById('btnCompanyMode').onclick = ()=>{ setMode('company'); };
 
 render();
-loadSupportAvatar().then(()=>{ if(supportAvatarUrl) render(); });
+loadSupportAvatar().then(()=>{ if(supportAvatarUrl) render(); samAvatarsLoaded(); });
 
 document.addEventListener('click', (e)=>{
   const zoomEl = e.target.closest('[data-zoom]');
