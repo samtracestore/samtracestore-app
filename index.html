@@ -638,6 +638,8 @@ let samFabPos = null;
 try{ samFabPos = JSON.parse(localStorage.getItem('sts_sam_fab') || 'null'); }catch(e){}
 let samDragJustEnded = false;
 let samUnread = false;
+let samNewReply = false;
+let samLastPoll = 0;
 let samInAgent = false;
 try{ samInAgent = localStorage.getItem('sts_sam_agent') === '1'; }catch(e){}
 let samAgentDoc = null;
@@ -649,7 +651,14 @@ function samClampPos(x, y){
   const W = window.innerWidth, H = window.innerHeight;
   return {x: Math.max(6, Math.min(W - 68, x)), y: Math.max(70, Math.min(H - 74, y))};
 }
+function samEnsureStyle(){
+  if(document.getElementById('samStyle')) return;
+  const st = document.createElement('style'); st.id = 'samStyle';
+  st.textContent = '@keyframes samBounce{0%,100%{transform:translateY(0)}50%{transform:translateY(9px)}}@keyframes samNudge{0%,100%{transform:translateX(0)}50%{transform:translateX(8px)}}@keyframes samNudgeL{0%,100%{transform:translateX(0)}50%{transform:translateX(-8px)}}';
+  document.head.appendChild(st);
+}
 function renderSamButton(){
+  samEnsureStyle();
   const old = document.getElementById('samFab'); if(old) old.remove();
   if(samIsOwnerView()){ const g = document.getElementById('samGreet'); if(g) g.remove(); return; }
   const b = document.createElement('div');
@@ -658,8 +667,13 @@ function renderSamButton(){
   if(samFabPos){ const p = samClampPos(samFabPos.x, samFabPos.y); b.style.left = p.x + 'px'; b.style.top = p.y + 'px'; }
   else { b.style.right = '16px'; b.style.bottom = '96px'; }
   b.innerHTML = `<div style="width:62px;height:62px;border-radius:50%;overflow:hidden;border:3px solid #fff;background:#0B1120;display:flex;align-items:center;justify-content:center;box-shadow:0 6px 20px rgba(0,0,0,0.45);box-sizing:border-box;">${samAvatarHTML(62)}</div>`
-    + (samUnread ? `<span style="position:absolute;top:-2px;right:-2px;width:18px;height:18px;border-radius:50%;background:#EF4444;border:2px solid #fff;"></span>` : '');
+    + (samUnread ? (() => {
+        const onRight = samFabPos ? (samFabPos.x + 31 > window.innerWidth / 2) : true;
+        return `<span style="position:absolute;top:-2px;right:-2px;width:18px;height:18px;border-radius:50%;background:#EF4444;border:2px solid #fff;"></span>
+          <span style="position:absolute;top:12px;${onRight ? 'right:72px' : 'left:72px'};white-space:nowrap;background:#FF6A00;color:#fff;font-weight:800;font-size:13px;padding:8px 11px;border-radius:14px;box-shadow:0 6px 18px rgba(0,0,0,0.45);">${onRight ? "💬 L'agent STS vous a répondu " : ''}<span style="display:inline-block;animation:${onRight ? 'samNudge' : 'samNudgeL'} .9s infinite;">${onRight ? '👉' : '👈'}</span>${onRight ? '' : " 💬 L'agent STS vous a répondu"}</span>`;
+      })() : '');
   document.body.appendChild(b);
+  samPollSoon();
   let sx = 0, sy = 0, ox = 0, oy = 0, moved = false, dragging = false;
   b.addEventListener('pointerdown', e => { dragging = true; moved = false; sx = e.clientX; sy = e.clientY; const r = b.getBoundingClientRect(); ox = r.left; oy = r.top; try{ b.setPointerCapture(e.pointerId); }catch(_){} });
   b.addEventListener('pointermove', e => {
@@ -706,15 +720,15 @@ function samMaybeGreet(){
   const eligible = (mode === 'client' || mode === 'company');
   if(samLastGreetMode !== mode){
     samChat = []; samFails = 0; samAskedHuman = false; samFlow = null; samAgentDoc = null;
-    if(eligible) samShowGreeting();
+    if(eligible){ samShowGreeting(); samLastPoll = 0; }
   }
   samLastGreetMode = mode;
 }
 
 function samChipsFirst(){
   return samRole() === 'client'
-    ? [{label: '📦 Où est mon colis ?', act: 'send'}, {label: '🔔 Recevoir les alertes', act: 'send'}]
-    : [{label: '➕ Ajouter un colis', act: 'send'}, {label: '💳 Paiement et activation', act: 'send'}];
+    ? [{label: '📦 Où est mon colis ?', act: 'send'}, {label: '🔔 Recevoir les alertes', act: 'send'}, {label: '⏱️ Délai de livraison', act: 'send'}, {label: '🏢 Récupérer au bureau', act: 'send'}]
+    : [{label: '➕ Ajouter un colis', act: 'send'}, {label: '💳 Paiement et activation', act: 'send'}, {label: '🔄 Changer un statut', act: 'send'}, {label: '🖼️ Changer mon logo', act: 'send'}];
 }
 
 function samConvId(create){
@@ -758,13 +772,19 @@ async function samAgentRefresh(){
     if(!d.exists){ samAgentDoc = null; return; }
     samAgentDoc = d.data();
     if(samPanelOpen && samAgentDoc.unreadByUser){
-      samAgentDoc.unreadByUser = false;
-      db.collection('agentChats').doc(id).set({unreadByUser: false}, {merge: true}).catch(()=>{});
-    }
+      if(samInAgent) samMarkRead(); else samNewReply = true;
+    } else if(!samAgentDoc.unreadByUser){ samNewReply = false; }
     if(samPanelOpen && samUnread){ samUnread = false; renderSamButton(); }
   }catch(e){}
   samRender();
 }
+function samMarkRead(){
+  const id = samConvId(false); if(!id) return;
+  samNewReply = false;
+  if(samAgentDoc) samAgentDoc.unreadByUser = false;
+  db.collection('agentChats').doc(id).set({unreadByUser: false}, {merge: true}).catch(()=>{});
+}
+function samPollSoon(){ if(Date.now() - samLastPoll > 20000){ samLastPoll = Date.now(); samBackgroundPoll(); } }
 async function samBackgroundPoll(){
   if(samPanelOpen || samIsOwnerView()) return;
   const id = samConvId(false); if(!id) return;
@@ -773,7 +793,7 @@ async function samBackgroundPoll(){
     if(d.exists && d.data().unreadByUser && !samUnread){ samUnread = true; renderSamButton(); }
   }catch(e){}
 }
-setInterval(samBackgroundPoll, 45000);
+setInterval(samBackgroundPoll, 30000);
 setTimeout(samBackgroundPoll, 5000);
 
 async function sendOwnerEmail(message){
@@ -864,6 +884,7 @@ function samActionAgent(){
   if(samBusy) return;
   if(samAgentDoc && samAgentDoc.status !== 'closed' && (samAgentDoc.messages || []).length){
     samInAgent = true; try{ localStorage.setItem('sts_sam_agent', '1'); }catch(e){}
+    samMarkRead();
     samRender(); return;
   }
   samChat.push({from: 'user', text: samLang === 'ht' ? 'Mwen vle pale ak yon ajan' : 'Je veux parler à un agent'});
@@ -899,7 +920,8 @@ function samOpen(){
         <button type="button" id="samClose" aria-label="Fermer" style="width:36px;height:36px;border-radius:50%;border:none;background:rgba(0,0,0,0.25);color:#fff;font-size:18px;font-weight:800;cursor:pointer;">✕</button>
       </div>
       <div id="samMsgs" style="flex:1;overflow-y:auto;padding:14px;display:flex;flex-direction:column;gap:10px;-webkit-overflow-scrolling:touch;"></div>
-      <div style="display:flex;gap:8px;padding:8px 10px 0;flex-wrap:wrap;border-top:1px solid var(--border);">
+      <div style="position:relative;display:flex;gap:8px;padding:8px 10px 0;flex-wrap:wrap;border-top:1px solid var(--border);">
+        <div id="samHint" style="position:absolute;left:14px;bottom:100%;z-index:3;pointer-events:none;"></div>
         <button type="button" data-sam-act="agent" id="samBarAgent" style="${barBtn}border:1px solid var(--accent);color:#fff;">👩‍💼 Parler à un agent</button>
         ${isClient ? `<button type="button" data-sam-act="report" style="${barBtn}border:1px solid #EF5D5D;color:#FF8A8A;">🚩 Signaler une entreprise</button>` : ''}
       </div>
@@ -968,7 +990,14 @@ function samRender(){
   const inp = document.getElementById('samInput');
   if(inp) inp.placeholder = samInAgent ? "Écrivez à l'agent STS… / Ekri bay ajan an…" : "Ekri mesaj ou… / Écrivez votre message…";
   const bar = document.getElementById('samBarAgent');
-  if(bar){ const open = samAgentDoc && samAgentDoc.status !== 'closed' && (samAgentDoc.messages || []).length; bar.textContent = open ? "💬 Ma discussion avec l'agent" : "👩‍💼 Parler à un agent"; }
+  const openConv = !!(samAgentDoc && samAgentDoc.status !== 'closed' && (samAgentDoc.messages || []).length);
+  if(bar){ bar.textContent = openConv ? "💬 Ma discussion avec l'agent" : "👩‍💼 Parler à un agent"; }
+  const hint = document.getElementById('samHint');
+  if(hint){
+    hint.innerHTML = (samNewReply && !samInAgent && openConv)
+      ? `<div style="background:#FF6A00;color:#fff;font-weight:800;font-size:13px;line-height:1.35;padding:8px 12px;border-radius:12px;max-width:260px;box-shadow:0 6px 16px rgba(0,0,0,0.5);">Cliquez ici : l'agent STS vous a répondu</div><div style="margin-left:34px;font-size:30px;line-height:1;animation:samBounce .8s infinite;text-shadow:0 2px 6px rgba(0,0,0,0.5);">⬇️</div>`
+      : '';
+  }
   box.scrollTop = box.scrollHeight;
 }
 
@@ -1115,7 +1144,7 @@ async function samReply(raw){
     if(samHas(n, ['ajouter un colis', 'ajouter colis', 'ajoute kolis', 'ajoute yon kolis', 'nouveau colis', 'enregistrer un colis', 'kreye kolis', 'ajout colis'])){
       return ok(R("Pour ajouter un colis :\n1. Touchez Colis, puis descendez jusqu'à « Ajouter un colis ».\n2. Écrivez le numéro de suivi, le nom et le téléphone du client.\n3. Choisissez la destination et le statut.\n4. Touchez « Enregistrer le colis ».\nVous pouvez aussi ajouter jusqu'à 6 photos du colis.", "Pou ajoute yon kolis :\n1. Peze sou Colis, epi desann jiska « Ajouter un colis ».\n2. Ekri nimewo swivi a, non ak telefòn kliyan an.\n3. Chwazi destinasyon an ak estati a.\n4. Peze « Enregistrer le colis ».\nOu ka ajoute jiska 6 foto kolis la tou."));
     }
-    if(samHas(n, ['changer le statut', 'chanje estati', 'changer statut', 'mettre a jour', 'mete ajou', 'marquer livre', 'statut du colis', 'estati kolis'])){
+    if(samHas(n, ['changer le statut', 'changer un statut', 'chanje yon estati', 'chanje estati', 'changer statut', 'mettre a jour', 'mete ajou', 'marquer livre', 'statut du colis', 'estati kolis'])){
       return ok(R("Dans Colis > Tous les colis, ouvrez le colis et choisissez le nouveau statut. Le client reçoit un email au nom de votre entreprise, s'il a laissé son adresse email. Pour « Livré », vous pouvez ajouter jusqu'à 5 photos de preuve.", "Nan Colis > Tous les colis, louvri kolis la epi chwazi nouvo estati a. Kliyan an resevwa yon imel nan non konpayi w, si l kite adrès imel li. Pou « Livré », ou ka ajoute jiska 5 foto prèv."));
     }
     if(samHas(n, ['inscrire', 'inscription', 'enregistrer mon entreprise', 'enskri', 'kreye kont', 'nouvelle entreprise', 'nouvo konpayi', 'compte entreprise', 'creer un compte'])){
@@ -1173,10 +1202,22 @@ async function loadSupportAvatar(){
       if(v.pos !== null && v.pos !== undefined){ samAvatarPos = v.pos; }
     }
   }catch(e){}
+  try{
+    if(!samAvatarUrl){
+      const ps = await getPaymentSettings();
+      if(ps.samAvatar){ samAvatarUrl = ps.samAvatar; if(ps.samAvatarPos !== null && ps.samAvatarPos !== undefined) samAvatarPos = ps.samAvatarPos; }
+    }
+  }catch(e){}
 }
 
 async function saveSamAvatar(dataUrl, pos){
-  await db.collection('settings').doc('sam').set({avatar: dataUrl, pos: pos});
+  const withTimeout = (p) => Promise.race([p, new Promise((_, rej) => setTimeout(() => rej(new Error('Connexion trop lente, réessayez')), 15000))]);
+  try{
+    await withTimeout(db.collection('settings').doc('sam').set({avatar: dataUrl, pos: pos}, {merge: true}));
+  }catch(e1){
+    // secours : même document que l'avatar WhatsApp
+    await withTimeout(db.collection('settings').doc('payment').set({samAvatar: dataUrl, samAvatarPos: pos}, {merge: true}));
+  }
   samAvatarUrl = dataUrl;
   samAvatarPos = pos;
   renderSamButton();
@@ -1268,7 +1309,7 @@ function courierBlockHTML(av, kind){
 }
 function courierAvatarCardHTML(av){
   return `<div class="card">
-      <h2>Avatars de livraison <span style="font-size:11px;color:var(--muted);font-weight:400;">(v12 oct. H)</span></h2>
+      <h2>Avatars de livraison <span style="font-size:11px;color:var(--muted);font-weight:400;">(v12 oct. I)</span></h2>
       <p class="sub">Ces avatars sont utilisés par toutes les entreprises. Quand vous les changez ici, ils changent pour tout le monde, côté client aussi.</p>
       ${courierBlockHTML(av, 'moto')}
       ${courierBlockHTML(av, 'truck')}
@@ -3648,6 +3689,7 @@ async function renderOwnerSettings(){
         <input type="range" id="samAvatarPosSlider" min="0" max="100" value="50" style="width:100%;margin-bottom:6px;">
         <p class="sub" style="margin:0 0 12px;">Déplacez le curseur si le visage est coupé — haut / bas</p>
         <button class="primary" id="btnSaveSamAvatar">💾 Sauvegarder la photo de Sam</button>
+        <div id="samAvatarMsg" class="sub" style="margin-top:10px;font-weight:700;overflow-wrap:anywhere;"></div>
       </div>
     </div>`;
   document.getElementById('btnAdminGuide').onclick = ()=> openGuide('admin');
@@ -3667,14 +3709,17 @@ async function renderOwnerSettings(){
       slider.oninput = ()=>{ previewImg.style.objectPosition = `center ${slider.value}%`; };
       const saveBtn = document.getElementById('btnSaveSamAvatar');
       saveBtn.onclick = async ()=>{
-        saveBtn.disabled = true; saveBtn.textContent = '⏳ Enregistrement…';
+        const msg = document.getElementById('samAvatarMsg');
+        saveBtn.disabled = true; saveBtn.textContent = '⏳ Enregistrement…'; msg.style.color = ''; msg.textContent = '';
         try{
-          await saveSamAvatar(dataUrl, parseInt(slider.value));
+          await saveSamAvatar(dataUrl, parseInt(slider.value) || 50);
+          msg.style.color = 'var(--ok)'; msg.textContent = '✅ Photo de Sam enregistrée';
           toast("✅ Photo de Sam enregistrée");
-          renderOwnerSettings();
+          setTimeout(()=>{ renderOwnerSettings(); }, 900);
         }catch(err){
           saveBtn.disabled = false; saveBtn.textContent = '💾 Sauvegarder la photo de Sam';
-          toast("Erreur : " + (err && (err.code || err.message) ? (err.code || err.message) : "envoi impossible"));
+          msg.style.color = 'var(--danger)';
+          msg.textContent = '❌ Erreur : ' + ((err && (err.code || err.message)) || 'envoi impossible') + ' — réessayez ou envoyez-moi une capture de ce message.';
         }
       };
     }catch(err){ toast("Erreur lors du chargement de l'image"); }
@@ -6228,7 +6273,7 @@ function subscriptionBannerHTML(co){
 }
 function coEmailCardHTML(gs, companyName){
   const pct = gs.total ? Math.max(0, Math.min(100, Math.round((gs.used / gs.total) * 100))) : 0;
-  return `<div class="card" style="padding:0;overflow:hidden;">
+  return `<div class="card" id="coEmailCard" style="padding:0;overflow:hidden;">
       <div style="background:linear-gradient(135deg,#0EA5E9,#6366F1);padding:14px 16px;display:flex;align-items:center;gap:10px;">
         <span style="font-size:22px;">📧</span>
         <div style="color:#fff;font-weight:700;font-size:16px;">Service Email</div>
@@ -6243,9 +6288,9 @@ function coEmailCardHTML(gs, companyName){
     </div>`;
 }
 async function renderCompanySettings(main){
-  const company = await getCompanyByCode(companySession.code);
-  let gsQuota = {total: APPS_SCRIPT_DAILY_QUOTA, used: 0, remaining: APPS_SCRIPT_DAILY_QUOTA};
-  try{ gsQuota = await getGoogleScriptQuota(); }catch(e){}
+  const company = await getCompanyFast(companySession.code);
+  const gsQuota = {total: APPS_SCRIPT_DAILY_QUOTA, used: 0, remaining: APPS_SCRIPT_DAILY_QUOTA};
+  getGoogleScriptQuota().then(q => { const el = document.getElementById('coEmailCard'); if(el) el.outerHTML = coEmailCardHTML(q, company && company.companyName); }).catch(()=>{});
   const hasLogo = !!(company && company.logoUrl);
   const lz = (company && company.logoZoom) || 100, lx = (company && company.logoPosX) ?? 50, ly = (company && company.logoPosY) ?? 50;
   main.innerHTML = `
@@ -6418,6 +6463,20 @@ async function renderCompanySettings(main){
   };
 }
 
+const companyHomeCache = {};
+async function getCompanyFast(code, onChange){
+  const c = companyHomeCache[code];
+  if(c && Date.now() - c.t < 300000){
+    getCompanyByCode(code).then(fresh => {
+      companyHomeCache[code] = {co: fresh, t: Date.now()};
+      if(onChange && fresh && JSON.stringify(fresh) !== JSON.stringify(c.co)) onChange();
+    }).catch(()=>{});
+    return c.co;
+  }
+  const co = await getCompanyByCode(code);
+  companyHomeCache[code] = {co: co, t: Date.now()};
+  return co;
+}
 async function renderCompany(){
   if(mode !== 'company') return;
   updateHeaderCompanyLogo();
@@ -6511,7 +6570,7 @@ async function renderCompany(){
   if(companyScreen === 'client'){ await renderClient(); return; }
   if(companyScreen === 'settings'){ await renderCompanySettings(main); return; }
 
-  const co = await getCompanyByCode(companySession.code);
+  const co = await getCompanyFast(companySession.code, ()=>{ if(mode === 'company' && companyScreen === 'home' && companySession) renderCompany(); });
   const logoBox = (co && co.logoUrl)
     ? logoBoxHTML(co, 104, '18px', 'border:2px solid var(--accent);box-shadow:0 6px 18px rgba(255,106,0,0.35);')
     : `<div style="width:80px;height:80px;border-radius:18px;border:2px dashed var(--accent);display:flex;flex-direction:column;align-items:center;justify-content:center;font-size:10.5px;font-weight:700;color:var(--accent2);line-height:1.2;text-align:center;"><span style="font-size:22px;">📷</span>Mon logo</div>`;
@@ -6542,6 +6601,7 @@ async function renderCompany(){
 
 function setMode(m){
   if(mode === 'admin') adminStash = adminSession;
+  if(mode === 'company' && m !== 'company'){ companySession = null; companyScreen = 'home'; }
   mode = m;
   adminSession = (m === 'admin') ? adminStash : null;
   if(m === 'company') companyScreen = 'home';
