@@ -1449,7 +1449,7 @@ function courierBlockHTML(av, kind){
 }
 function courierAvatarCardHTML(av){
   return `<div class="card">
-      <h2>Avatars de livraison <span style="font-size:11px;color:var(--muted);font-weight:400;">(v12 oct. M)</span></h2>
+      <h2>Avatars de livraison <span style="font-size:11px;color:var(--muted);font-weight:400;">(v12 oct. N)</span></h2>
       <p class="sub">Ces avatars sont utilisés par toutes les entreprises. Quand vous les changez ici, ils changent pour tout le monde, côté client aussi.</p>
       ${courierBlockHTML(av, 'moto')}
       ${courierBlockHTML(av, 'truck')}
@@ -1665,6 +1665,27 @@ async function saveCompanyLogo(code, dataUrl){
 }
 
 // --- Paiement ---
+function paymentMethodsFor(settings){
+  const act = (settings && settings.methodActive) || {};
+  const base = PAYMENT_METHODS.map(m => Object.assign({}, m, {active: act[m.key] !== false}));
+  const extras = ((settings && settings.extraAccounts) || []).map(a => ({
+    key: 'x' + a.id, iconKey: a.kind, label: (a.kind === 'moncash' ? 'MonCash' : 'NatCash') + ' · ' + a.beneficiary,
+    currency: 'HTG', beneficiary: a.beneficiary, number: a.number, active: a.active !== false, extra: true
+  }));
+  return base.concat(extras);
+}
+function showAmountError(inputEl){
+  if(!inputEl) return;
+  let d = inputEl.nextElementSibling;
+  if(!d || !d.dataset || !d.dataset.amtErr){
+    d = document.createElement('div'); d.dataset.amtErr = '1';
+    d.style.cssText = 'color:var(--danger);font-weight:800;font-size:13px;margin:-4px 0 10px;';
+    inputEl.insertAdjacentElement('afterend', d);
+  }
+  d.textContent = '⚠️ Montant incorrect. Veuillez vérifier et réessayer.';
+  inputEl.oninput = ()=>{ if(d && d.parentNode) d.remove(); };
+}
+const ACCOUNT_OFF_MSG = "⛔ Ce compte n'est pas disponible pour le moment. Veuillez utiliser un autre compte.";
 const PAYMENT_METHODS = [
   {key:'moncash', label:'MonCash', currency:'HTG', beneficiary:'Sarah Fleuranvil', number:'48789614'},
   {key:'natcash', label:'NatCash', currency:'HTG', beneficiary:'Sarah Fleuranvil', number:'40788131'},
@@ -1735,8 +1756,8 @@ async function getPaymentSettings(){
   try{
     const doc = await db.collection('settings').doc('payment').get();
     const data = doc.exists ? doc.data() : {};
-    return {minHTG: data.minHTG || 1680, minUSD: data.minUSD || 12, trialDays: data.trialDays || 20, regFeeHTG: data.regFeeHTG || 1000, regFeeUSD: data.regFeeUSD || 8, icons: data.icons || {}, supportAvatar: data.supportAvatar || null, supportAvatarPos: data.supportAvatarPos, samAvatar: data.samAvatar || null, samAvatarPos: data.samAvatarPos, samAiUrl: data.samAiUrl || null};
-  }catch(e){ return {minHTG:1680, minUSD:12, trialDays:20, regFeeHTG:1000, regFeeUSD:8, icons:{}, supportAvatar:null, supportAvatarPos:50}; }
+    return {minHTG: data.minHTG || 1680, minUSD: data.minUSD || 12, trialDays: data.trialDays || 20, regFeeHTG: data.regFeeHTG || 1000, regFeeUSD: data.regFeeUSD || 8, extraAccounts: data.extraAccounts || [], methodActive: data.methodActive || {}, icons: data.icons || {}, supportAvatar: data.supportAvatar || null, supportAvatarPos: data.supportAvatarPos, samAvatar: data.samAvatar || null, samAvatarPos: data.samAvatarPos, samAiUrl: data.samAiUrl || null};
+  }catch(e){ return {minHTG:1680, minUSD:12, trialDays:20, regFeeHTG:1000, regFeeUSD:8, extraAccounts:[], methodActive:{}, icons:{}, supportAvatar:null, supportAvatarPos:50}; }
 }
 
 async function updateMinAmount(field, amount){
@@ -4091,6 +4112,7 @@ async function renderOwnerPayments(){
               <label>${m.label} — Icône</label>
               <input type="file" accept="image/*" id="icon-${m.key}" style="margin-bottom:8px;">
               <div id="preview-icon-${m.key}" style="margin-bottom:10px;">${icon ? `<img src="${icon}" style="width:44px;height:44px;border-radius:10px;object-fit:cover;">` : `<span class="sub" style="font-size:11px;">Aucune icône enregistrée pour l'instant</span>`}</div>
+              <button type="button" data-meth-toggle="${m.key}" style="margin:2px 0 10px;padding:8px 14px;border-radius:12px;font-weight:800;cursor:pointer;border:1px solid ${((settings.methodActive || {})[m.key] === false) ? 'rgba(239,93,93,0.5)' : 'rgba(62,207,142,0.5)'};background:transparent;color:${((settings.methodActive || {})[m.key] === false) ? 'var(--danger)' : 'var(--ok)'};">${((settings.methodActive || {})[m.key] === false) ? '🔴 Non actif — toucher pour activer' : '🟢 Actif — toucher pour désactiver'}</button>
               <p class="sub" style="margin:2px 0;">Bénéficiaire : ${m.beneficiary}</p>
               ${m.number ? `<p class="sub" style="margin:2px 0;">Numéro : ${m.number}</p>` : ''}
               ${m.email ? `<p class="sub" style="margin:2px 0;">Email : ${m.email}</p>` : ''}
@@ -4101,7 +4123,27 @@ async function renderOwnerPayments(){
     const methodsHtml = compactCardHtml('paymentMethods', '#3ECF8E,#FF7A1A', '💳', 'Icônes de paiement',
       `${PAYMENT_METHODS.length} méthodes — appuyez pour voir la liste`, methodsListContent);
 
-    content.innerHTML = emailCard + codeCard + backupCard + pendingRegHtml + pendingHtml + notifCardOwner + confirmedRegHtml + confirmedHtml + settingsHtml + methodsHtml + `
+    const extras = settings.extraAccounts || [];
+    const extraAccountsHtml = `<div class="card">
+        <h2>➕ Autres comptes NatCash / MonCash</h2>
+        <p class="sub">Ajoutez d'autres numéros (avec un autre nom) si les comptes principaux ne sont pas disponibles. Quand un compte est « Non actif », l'entreprise voit un message et ne peut pas envoyer d'argent dessus.</p>
+        ${extras.length ? extras.map(a => `<div style="padding:10px 12px;margin-bottom:8px;border:1px solid var(--border);border-left:4px solid ${a.active === false ? '#EF5D5D' : '#3ECF8E'};border-radius:10px;background:rgba(255,255,255,0.03);">
+            <div style="font-weight:800;">${a.kind === 'moncash' ? 'MonCash' : 'NatCash'} · ${escHtml(a.beneficiary)}</div>
+            <div class="sub" style="margin:2px 0 8px;">Numéro : ${escHtml(a.number)}</div>
+            <div style="display:flex;gap:8px;">
+              <button type="button" data-xacc-toggle="${a.id}" style="flex:1;padding:8px 10px;border-radius:12px;font-weight:800;cursor:pointer;background:transparent;border:1px solid ${a.active === false ? 'rgba(239,93,93,0.5)' : 'rgba(62,207,142,0.5)'};color:${a.active === false ? 'var(--danger)' : 'var(--ok)'};">${a.active === false ? '🔴 Non actif' : '🟢 Actif'}</button>
+              <button type="button" data-xacc-del="${a.id}" class="ghost" style="width:auto;padding:8px 14px;color:var(--danger);">🗑️</button>
+            </div>
+          </div>`).join('') : '<p class="sub" style="margin:0 0 10px;">Aucun compte supplémentaire pour le moment.</p>'}
+        <label>Type de compte</label>
+        <select id="xaccKind"><option value="natcash">NatCash</option><option value="moncash">MonCash</option></select>
+        <label>Numéro</label>
+        <input id="xaccNumber" type="tel" placeholder="Ex : 40 12 34 56">
+        <label>Nom du bénéficiaire</label>
+        <input id="xaccName" placeholder="Ex : Marie Pierre">
+        <button class="primary" id="btnAddXacc">➕ Ajouter ce compte</button>
+      </div>`;
+    content.innerHTML = emailCard + codeCard + backupCard + pendingRegHtml + pendingHtml + notifCardOwner + confirmedRegHtml + confirmedHtml + settingsHtml + methodsHtml + extraAccountsHtml + `
       <div class="card">
         <h2>Avatar du service client</h2>
         <p class="sub">Choisissez une photo depuis votre galerie pour la bulle WhatsApp affichée aux entreprises.</p>
@@ -4119,6 +4161,32 @@ async function renderOwnerPayments(){
       </div>
       ${courierAvatarCardHTML(courierAv)}`;
     bindCourierAvatars(()=>renderOwnerPayments());
+    content.querySelectorAll('[data-meth-toggle]').forEach(b => {
+      b.onclick = async ()=>{
+        const k = b.dataset.methToggle;
+        const cur = ((settings.methodActive || {})[k] !== false);
+        try{ await db.collection('settings').doc('payment').set({methodActive: {[k]: !cur}}, {merge: true}); toast(cur ? 'Compte désactivé' : 'Compte activé'); renderOwnerPayments(); }
+        catch(e){ toast('Erreur, réessayez'); }
+      };
+    });
+    const saveExtras = async (arr, okMsg)=>{
+      try{ await db.collection('settings').doc('payment').set({extraAccounts: arr}, {merge: true}); toast(okMsg); renderOwnerPayments(); }
+      catch(e){ toast('Erreur, réessayez'); }
+    };
+    content.querySelectorAll('[data-xacc-toggle]').forEach(b => {
+      b.onclick = ()=>{ saveExtras(extras.map(a => a.id === b.dataset.xaccToggle ? Object.assign({}, a, {active: a.active === false}) : a), 'Compte mis à jour'); };
+    });
+    content.querySelectorAll('[data-xacc-del]').forEach(b => {
+      b.onclick = ()=>{ if(!confirm('Supprimer ce compte ?')) return; saveExtras(extras.filter(a => a.id !== b.dataset.xaccDel), 'Compte supprimé'); };
+    });
+    const addX = document.getElementById('btnAddXacc');
+    if(addX) addX.onclick = ()=>{
+      const kind = document.getElementById('xaccKind').value;
+      const number = document.getElementById('xaccNumber').value.trim();
+      const beneficiary = document.getElementById('xaccName').value.trim();
+      if(!number || !beneficiary){ toast('Écrivez le numéro et le nom du bénéficiaire.'); return; }
+      saveExtras(extras.concat([{id: Date.now().toString(36), kind, number, beneficiary, active: true}]), 'Compte ajouté');
+    };
     document.getElementById('supportAvatarInput').onchange = async (e)=>{
       const file = e.target.files[0];
       if(!file) return;
@@ -5573,8 +5641,8 @@ async function renderPaymentGate(main, company, status){
   }
 
   // status === 'none'
-  const methodCards = PAYMENT_METHODS.map(m=>{
-    const icon = settings.icons[`${m.key}_icon`];
+  const methodCards = paymentMethodsFor(settings).map(m=>{
+    const icon = settings.icons[`${m.iconKey || m.key}_icon`];
     const min = m.currency === 'HTG' ? settings.minHTG : settings.minUSD;
     const shortNumber = m.number || m.email || '';
     return `
@@ -5584,12 +5652,13 @@ async function renderPaymentGate(main, company, status){
           ${icon ? `<img src="${icon}" style="width:100%;height:100%;object-fit:cover;">` : `<span style="font-size:20px;">💳</span>`}
         </div>
         <div style="flex:1;">
-          <div style="font-weight:700;font-size:14.5px;">${m.label}</div>
+          <div style="font-weight:700;font-size:14.5px;">${m.label}${m.active ? '' : ' <span style="color:var(--danger);font-size:12px;font-weight:800;">⛔ Indisponible</span>'}</div>
           <div class="sub" style="margin:1px 0 0;">${shortNumber}</div>
         </div>
         <span class="chevron" id="chevron-${m.key}" style="color:var(--muted);font-size:18px;transition:transform 0.2s;">›</span>
       </div>
       <div id="detail-${m.key}" style="display:none;padding:0 18px 18px;border-top:1px solid var(--border);">
+        ${m.active ? '' : '<div class="warnBox" style="margin:14px 0 6px;color:var(--danger);border-color:rgba(239,93,93,0.3);background:rgba(239,93,93,0.1);">' + ACCOUNT_OFF_MSG + '</div>'}
         <p class="sub" style="margin:14px 0 2px;">Bénéficiaire : ${m.beneficiary}</p>
         ${m.number ? `<p class="sub" style="margin:2px 0;">Numéro : ${m.number}</p>` : ''}
         ${m.email ? `<p class="sub" style="margin:2px 0;">Email : ${m.email}</p>` : ''}
@@ -5625,12 +5694,18 @@ async function renderPaymentGate(main, company, status){
       <h2>Activer votre compte entreprise</h2>
       <p class="sub" style="margin:0;">Choisissez un moyen de paiement pour activer l'accès à l'application.</p>
     </div>
+    <div class="card"><div class="warnBox">
+      💳 Abonnement : <b>${settings.minHTG} HTG</b> (ou <b>${settings.minUSD} USD</b>) par mois pour continuer à utiliser la plateforme.<br>
+      ✅ Envoyez un montant égal ou supérieur à ce prix, dans la monnaie du compte choisi.<br>
+      ⚠️ Un montant plus bas sera refusé : « Montant incorrect ».<br>
+      🕐 Votre dépôt est vérifié en quelques minutes, parfois jusqu'à une heure.
+    </div></div>
     ${methodCards}
     ${whatsappBubbleHTML()}`;
 
   document.getElementById('btnAdminLogout').onclick = ()=>{ adminSession=null; renderAdmin(); };
 
-  PAYMENT_METHODS.forEach(m=>{
+  paymentMethodsFor(settings).forEach(m=>{
     document.querySelector(`[data-toggle-method="${m.key}"]`).onclick = ()=>{
       const detail = document.getElementById(`detail-${m.key}`);
       const chevron = document.getElementById(`chevron-${m.key}`);
@@ -5640,6 +5715,7 @@ async function renderPaymentGate(main, company, status){
     };
     const btn = main.querySelector(`[data-method="${m.key}"]`);
     btn.onclick = ()=>{
+      if(!m.active){ toast(ACCOUNT_OFF_MSG); return; }
       document.getElementById(`form-${m.key}`).style.display = 'block';
       btn.style.display = 'none';
     };
@@ -5655,6 +5731,7 @@ async function renderPaymentGate(main, company, status){
     };
     const submitBtn = main.querySelector(`[data-submit="${m.key}"]`);
     submitBtn.onclick = async ()=>{
+      if(!m.active){ toast(ACCOUNT_OFF_MSG); return; }
       const amount = parseFloat(document.getElementById(`amt-${m.key}`).value);
       const name = document.getElementById(`nom-${m.key}`).value.trim();
       const firstName = document.getElementById(`prenom-${m.key}`).value.trim();
@@ -5668,7 +5745,7 @@ async function renderPaymentGate(main, company, status){
         return;
       }
       if(amount < min){
-        toast(`Le montant minimum requis pour le dépôt est de ${min} ${m.currency}. Veuillez corriger le montant.`);
+        showAmountError(document.getElementById(`amt-${m.key}`)); toast('⚠️ Montant incorrect. Veuillez vérifier et réessayer.');
         return;
       }
       if(!file){
@@ -5728,8 +5805,8 @@ async function renderRegistrationGate(main, company, status){
   }
 
   // status === 'none'
-  const methodCards = PAYMENT_METHODS.map(m=>{
-    const icon = settings.icons[`${m.key}_icon`];
+  const methodCards = paymentMethodsFor(settings).map(m=>{
+    const icon = settings.icons[`${m.iconKey || m.key}_icon`];
     const min = m.currency === 'HTG' ? settings.regFeeHTG : settings.regFeeUSD;
     const shortNumber = m.number || m.email || '';
     return `
@@ -5739,12 +5816,13 @@ async function renderRegistrationGate(main, company, status){
           ${icon ? `<img src="${icon}" style="width:100%;height:100%;object-fit:cover;">` : `<span style="font-size:20px;">💳</span>`}
         </div>
         <div style="flex:1;">
-          <div style="font-weight:700;font-size:14.5px;">${m.label}</div>
+          <div style="font-weight:700;font-size:14.5px;">${m.label}${m.active ? '' : ' <span style="color:var(--danger);font-size:12px;font-weight:800;">⛔ Indisponible</span>'}</div>
           <div class="sub" style="margin:1px 0 0;">${shortNumber}</div>
         </div>
         <span class="chevron" id="chevron-reg-${m.key}" style="color:var(--muted);font-size:18px;transition:transform 0.2s;">›</span>
       </div>
       <div id="detail-reg-${m.key}" style="display:none;padding:0 18px 18px;border-top:1px solid var(--border);">
+        ${m.active ? '' : '<div class="warnBox" style="margin:14px 0 6px;color:var(--danger);border-color:rgba(239,93,93,0.3);background:rgba(239,93,93,0.1);">' + ACCOUNT_OFF_MSG + '</div>'}
         <p class="sub" style="margin:14px 0 2px;">Bénéficiaire : ${m.beneficiary}</p>
         ${m.number ? `<p class="sub" style="margin:2px 0;">Numéro : ${m.number}</p>` : ''}
         ${m.email ? `<p class="sub" style="margin:2px 0;">Email : ${m.email}</p>` : ''}
@@ -5780,12 +5858,18 @@ async function renderRegistrationGate(main, company, status){
       <h2>Payer les frais d'inscription</h2>
       <p class="sub" style="margin:0;">Choisissez un moyen de paiement pour payer les frais d'inscription (${settings.regFeeHTG} HTG ou ${settings.regFeeUSD} USD) et activer votre essai gratuit de ${settings.trialDays} jours.</p>
     </div>
+    <div class="card"><div class="warnBox">
+      💰 Frais d'inscription : <b>${settings.regFeeHTG} HTG</b> (ou <b>${settings.regFeeUSD} USD</b>), à payer une seule fois.<br>
+      🎁 Essai gratuit de ${settings.trialDays} jours inclus dès l'inscription.<br>
+      💳 Ensuite, abonnement de ${settings.minHTG} HTG (ou ${settings.minUSD} USD) par mois.<br>
+      ⚠️ Un montant plus bas sera refusé : « Montant incorrect ».
+    </div></div>
     ${methodCards}
     ${whatsappBubbleHTML()}`;
 
   document.getElementById('btnAdminLogout').onclick = ()=>{ adminSession=null; renderAdmin(); };
 
-  PAYMENT_METHODS.forEach(m=>{
+  paymentMethodsFor(settings).forEach(m=>{
     document.querySelector(`[data-toggle-regmethod="${m.key}"]`).onclick = ()=>{
       const detail = document.getElementById(`detail-reg-${m.key}`);
       const chevron = document.getElementById(`chevron-reg-${m.key}`);
@@ -5795,6 +5879,7 @@ async function renderRegistrationGate(main, company, status){
     };
     const btn = main.querySelector(`[data-regmethod="${m.key}"]`);
     btn.onclick = ()=>{
+      if(!m.active){ toast(ACCOUNT_OFF_MSG); return; }
       document.getElementById(`form-reg-${m.key}`).style.display = 'block';
       btn.style.display = 'none';
     };
@@ -5810,6 +5895,7 @@ async function renderRegistrationGate(main, company, status){
     };
     const submitBtn = main.querySelector(`[data-regsubmit="${m.key}"]`);
     submitBtn.onclick = async ()=>{
+      if(!m.active){ toast(ACCOUNT_OFF_MSG); return; }
       const amount = parseFloat(document.getElementById(`reg-amt-${m.key}`).value);
       const name = document.getElementById(`reg-nom-${m.key}`).value.trim();
       const firstName = document.getElementById(`reg-prenom-${m.key}`).value.trim();
@@ -5823,7 +5909,7 @@ async function renderRegistrationGate(main, company, status){
         return;
       }
       if(amount < min){
-        toast(`Le montant minimum requis pour les frais d'inscription est de ${min} ${m.currency}. Veuillez corriger le montant.`);
+        showAmountError(document.getElementById(`reg-amt-${m.key}`)); toast('⚠️ Montant incorrect. Veuillez vérifier et réessayer.');
         return;
       }
       if(!file){
@@ -6657,16 +6743,16 @@ async function renderCompanySettings(main){
         <button type="button" id="coLinkWa" style="flex:1;border:none;border-radius:12px;background:#25D366;color:#06210F;font-weight:800;cursor:pointer;">💬 WhatsApp</button>
       </div>
     </div>
-    <div class="card">
-      <h2>🔑 Mon code d'accès</h2>
-      <p class="sub">Ce code sert à vous connecter avec le bouton Entreprise. Il est visible par SamTraceStore dans l'espace Admin.</p>
+    <div class="card" style="background:rgba(245,185,61,0.1);border:1px solid rgba(245,185,61,0.3);">
+      <h2 style="color:var(--warn);">🔑 Mon code d'accès</h2>
+      <p class="sub" style="color:var(--warn);">Ce code sert à vous connecter avec le bouton Entreprise. Il est visible par SamTraceStore dans l'espace Admin.</p>
       <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px;">
-        <div id="curCode" style="font-size:22px;font-weight:800;letter-spacing:4px;">••••</div>
+        <div id="curCode" style="font-size:22px;font-weight:800;letter-spacing:4px;color:var(--warn);">••••</div>
         <button class="ghost" id="btnShowCode" style="width:auto;padding:6px 12px;">👁️ Voir</button>
       </div>
-      <label>Nouveau code (4 chiffres)</label>
+      <label style="color:var(--warn);">Nouveau code (4 chiffres)</label>
       <input id="newCode" type="text" inputmode="numeric" maxlength="4" placeholder="Ex : 7788">
-      <label>Confirmer le nouveau code</label>
+      <label style="color:var(--warn);">Confirmer le nouveau code</label>
       <input id="newCode2" type="text" inputmode="numeric" maxlength="4" placeholder="Répétez le code">
       <button class="primary" id="btnChangeCode">Changer mon code</button>
     </div>
