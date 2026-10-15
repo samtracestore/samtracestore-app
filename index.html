@@ -940,18 +940,16 @@ function samOpen(){
         <button type="button" id="samClose" aria-label="Fermer" style="width:36px;height:36px;border-radius:50%;border:none;background:rgba(0,0,0,0.25);color:#fff;font-size:18px;font-weight:800;cursor:pointer;">✕</button>
       </div>
       <div id="samMsgs" style="flex:1;overflow-y:auto;padding:14px;display:flex;flex-direction:column;gap:10px;-webkit-overflow-scrolling:touch;"></div>
-      <div style="position:relative;display:flex;gap:8px;padding:8px 10px 0;flex-wrap:wrap;border-top:1px solid var(--border);">
+      <div style="position:relative;display:flex;gap:8px;padding:8px 10px 0;flex-wrap:wrap;align-items:center;border-top:1px solid var(--border);">
         <div id="samHint" style="position:absolute;left:14px;bottom:100%;z-index:3;pointer-events:none;"></div>
         <button type="button" data-sam-act="agent" id="samBarAgent" style="${barBtn}border:1px solid var(--accent);color:#fff;">👩‍💼 Parler à un agent</button>
         ${isClient ? `<button type="button" data-sam-act="report" style="${barBtn}border:1px solid #EF5D5D;color:#FF8A8A;">🚩 Signaler une entreprise</button>` : ''}
+        <input type="file" id="samPhotoInput" accept="image/*" multiple style="display:none;">
+        <button type="button" id="samPhotoBtn" aria-label="Envoyer une photo" style="margin-left:auto;width:48px;height:48px;border:1px solid var(--border);border-radius:14px;background:var(--panel2);color:#fff;font-size:22px;cursor:pointer;">🖼️</button>
       </div>
-      <div style="padding:10px;display:flex;gap:8px;align-items:stretch;background:var(--panel);">
+      <div style="padding:10px;display:flex;gap:8px;align-items:flex-end;background:var(--panel);">
         <textarea id="samInput" rows="3" style="flex:1;margin:0;resize:none;min-height:104px;max-height:170px;background:var(--panel2);color:#fff;border:1px solid var(--border);border-radius:14px;padding:12px 14px;font-size:16px;line-height:1.4;font-family:inherit;box-sizing:border-box;"></textarea>
-        <div style="display:flex;flex-direction:column;gap:8px;flex:0 0 auto;">
-          <input type="file" id="samPhotoInput" accept="image/*" multiple style="display:none;">
-          <button type="button" id="samPhotoBtn" aria-label="Envoyer une photo" style="width:48px;height:48px;border:1px solid var(--border);border-radius:14px;background:var(--panel2);color:#fff;font-size:22px;cursor:pointer;">🖼️</button>
-          <button type="button" id="samSend" aria-label="Envoyer" style="width:48px;height:48px;border:none;border-radius:14px;background:linear-gradient(135deg,#FF6A00,#FF5A1A);color:#fff;font-size:22px;cursor:pointer;">➤</button>
-        </div>
+        <button type="button" id="samSend" aria-label="Envoyer" style="flex:0 0 auto;width:48px;height:48px;border:none;border-radius:14px;background:linear-gradient(135deg,#FF6A00,#FF5A1A);color:#fff;font-size:22px;cursor:pointer;">➤</button>
       </div>
     </div>`;
   document.body.appendChild(ov);
@@ -1451,7 +1449,7 @@ function courierBlockHTML(av, kind){
 }
 function courierAvatarCardHTML(av){
   return `<div class="card">
-      <h2>Avatars de livraison <span style="font-size:11px;color:var(--muted);font-weight:400;">(v12 oct. L)</span></h2>
+      <h2>Avatars de livraison <span style="font-size:11px;color:var(--muted);font-weight:400;">(v12 oct. M)</span></h2>
       <p class="sub">Ces avatars sont utilisés par toutes les entreprises. Quand vous les changez ici, ils changent pour tout le monde, côté client aussi.</p>
       ${courierBlockHTML(av, 'moto')}
       ${courierBlockHTML(av, 'truck')}
@@ -4620,6 +4618,7 @@ async function companyPackagesCardHTML(companies){
             <div style="font-weight:700;">👤 ${escHtml(p.name || '—')} <span class="sub" style="font-weight:400;">· ${escHtml(p.phone || '')}</span></div>
             <div style="font-size:13px;margin-top:2px;">#${escHtml(p.trackingId)} — ${STATUS_LABEL[p.status] || p.status}</div>
             ${(p.destCommune || p.destDepartment) ? `<div class="sub" style="font-size:11px;margin-top:2px;">📍 ${escHtml([p.destCommune, p.destDepartment, p.destCountry].filter(Boolean).join(', '))}</div>` : ''}
+            ${p.carrier ? `<div class="sub" style="font-size:12px;margin-top:3px;">🚚 Transport : <b>${escHtml(p.carrier)}</b></div>` : ''}
             <div data-cpk-photos="${escHtml(p.trackingId)}" data-count="${p.photoCount || 0}" style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px;">${p.photoCount ? '<span class="sub" style="font-size:11px;">📷 ' + p.photoCount + ' photo(s)</span>' : '<span class="sub" style="font-size:11px;">📷 Aucune photo</span>'}</div>
             ${p.hasProof ? proofFoldHTML(p, 'delivery') : '<div class="sub" style="font-size:11.5px;margin-top:6px;">📦 Aucune preuve de livraison</div>'}
             ${p.hasClientProof ? proofFoldHTML(p, 'client') : ''}
@@ -5060,8 +5059,9 @@ function bindSupportRequests(root, rerender){
 
 
 // ===== CONVERSATIONS AVEC LES AGENTS (propriétaire) =====
-async function agentChatsAdminHTML(){
+async function agentChatsAdminHTML(companies){
   try{
+    const coByCode = {}; (companies || []).forEach(c => { coByCode[c.code] = c; });
     const snap = await db.collection('agentChats').where('kind', 'in', ['agent', 'report']).get();
     const list = snap.docs.map(d => Object.assign({id: d.id}, d.data())).sort((a, b) => String(b.updatedAt).localeCompare(String(a.updatedAt)));
     if(!list.length) return foldCardHTML('agents', '#EC4899,#8B5CF6', '👩‍💼', 'Conversations avec les agents', 0, `<p class="sub" style="margin:0;">Aucune conversation pour le moment. Les clients et les entreprises qui parlent à un agent ou signalent une entreprise arriveront ici.</p>`);
@@ -5073,7 +5073,7 @@ async function agentChatsAdminHTML(){
       const hot = c.unreadByOwner && c.status !== 'closed';
       return `<div data-agent-open="${escHtml(c.id)}" style="cursor:pointer;margin-top:8px;padding:10px 12px;border:1px solid ${hot ? 'var(--accent)' : 'var(--border)'};border-radius:12px;background:rgba(255,255,255,0.03);">
         <div style="display:flex;gap:8px;align-items:center;">
-          <b style="flex:1;min-width:0;overflow-wrap:anywhere;">${isRep ? '🚩' : '👩‍💼'} ${escHtml(who)}</b>
+          <b style="flex:1;min-width:0;overflow-wrap:anywhere;">${isRep ? '🚩' : '👩‍💼'} ${c.role === 'company' ? coLogoMini(coByCode[c.companyCode]) : ''}${escHtml(who)}</b>
           ${hot ? '<span style="background:#EF4444;color:#fff;border-radius:10px;padding:2px 8px;font-size:11px;font-weight:800;">nouveau</span>' : ''}
           ${c.status === 'closed' ? '<span style="color:var(--ok);font-size:11.5px;font-weight:800;">terminé</span>' : ''}
         </div>
@@ -5177,7 +5177,7 @@ async function renderOwnerCompanies(){
     const companies = await getAllCompanies();
     const [srHtml, actHtml, delHtml, cpkHtml, annHtml, msgHtml0, agHtml] = await Promise.all([
       supportRequestsHTML(companies), activityLogHTML(companies), deletedByCompaniesHTML(companies),
-      companyPackagesCardHTML(companies), announcementsAdminHTML(), messagesAdminHTML(companies), agentChatsAdminHTML()
+      companyPackagesCardHTML(companies), announcementsAdminHTML(), messagesAdminHTML(companies), agentChatsAdminHTML(companies)
     ]);
     const msgHtml = msgHtml0 + agHtml;
     if(companies.length===0){
