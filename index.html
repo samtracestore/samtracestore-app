@@ -592,8 +592,11 @@ async function markCompaniesSeen(){
 
 let supportAvatarUrl = null;
 let supportAvatarPos = 50;
+try{ const wc = JSON.parse(localStorage.getItem('sts_wa_av') || 'null'); if(wc && wc.url){ supportAvatarUrl = wc.url; supportAvatarPos = wc.pos || 50; } }catch(e){}
+let waHidden = false;
 
 function whatsappBubbleHTML(){
+  if(!supportAvatarUrl && !samAvatarLoaded){ waHidden = true; return ''; }
   let msg = "Bonjour, j'ai besoin d'aide concernant l'application SamTraceStore.";
   if(mode === 'company' && companySession){
     msg += "\n\n🏢 Entreprise : " + (companySession.companyName || '');
@@ -619,6 +622,10 @@ let samLang = 'fr';
 let samBusy = false;
 let samAvatarUrl = null;
 let samAvatarPos = 50;
+let samAiUrl = null;
+let samAnswered = 0;
+const samPhotoCache = {};
+try{ const sc = JSON.parse(localStorage.getItem('sts_sam_av') || 'null'); if(sc && sc.url){ samAvatarUrl = sc.url; samAvatarPos = sc.pos || 50; } }catch(e){}
 const SAM_GREET_MS = 10000;
 let samLastGreetMode = null;
 let samPanelOpen = false;
@@ -639,6 +646,7 @@ try{ samFabPos = JSON.parse(localStorage.getItem('sts_sam_fab') || 'null'); }cat
 let samDragJustEnded = false;
 let samUnread = false;
 let samAvatarLoaded = false;
+try{ if(JSON.parse(localStorage.getItem('sts_sam_av') || 'null')) samAvatarLoaded = true; }catch(e){}
 let samGreetPending = false;
 let samNewReply = false;
 let samLastPoll = 0;
@@ -662,6 +670,7 @@ function samEnsureStyle(){
 function renderSamButton(){
   samEnsureStyle();
   const old = document.getElementById('samFab'); if(old) old.remove();
+  if(!samAvatarLoaded) return;
   if(samIsOwnerView()){ const g = document.getElementById('samGreet'); if(g) g.remove(); return; }
   const b = document.createElement('div');
   b.id = 'samFab'; b.setAttribute('role', 'button'); b.setAttribute('data-sam-open', '1'); b.setAttribute('aria-label', 'Sam, assistante virtuelle');
@@ -706,7 +715,7 @@ function samAvatarsLoaded(){
   if(samPanelOpen) samRender();
   if(samGreetPending){ samGreetPending = false; samShowGreeting(); }
 }
-setTimeout(()=>{ if(!samAvatarLoaded) samAvatarsLoaded(); }, 3000);
+setTimeout(()=>{ if(!samAvatarLoaded) samAvatarsLoaded(); }, 6000);
 function samShowGreeting(){
   if(samPanelOpen || samIsOwnerView()) return;
   if(!samAvatarLoaded){ samGreetPending = true; return; }
@@ -730,7 +739,7 @@ function samShowGreeting(){
 function samMaybeGreet(){
   const eligible = (mode === 'client' || mode === 'company');
   if(samLastGreetMode !== mode){
-    samChat = []; samFails = 0; samAskedHuman = false; samFlow = null; samAgentDoc = null;
+    samChat = []; samFails = 0; samAskedHuman = false; samFlow = null; samAgentDoc = null; samAnswered = 0;
     if(eligible){ samShowGreeting(); samLastPoll = 0; }
   }
   samLastGreetMode = mode;
@@ -766,7 +775,7 @@ async function samAgentWrite(msgs, meta){
   const id = samConvId(true);
   const ref = db.collection('agentChats').doc(id);
   const now = new Date().toISOString();
-  const arr = msgs.map(m => ({from: m.from, text: String(m.text).slice(0, 1500), at: now}));
+  const arr = msgs.map(m => { const o = {from: m.from, text: String(m.text).slice(0, 1500), at: now}; if(m.photoId) o.photoId = m.photoId; return o; });
   const snap = await ref.get();
   const data = {updatedAt: now, status: 'open', unreadByOwner: true, unreadByUser: false, lastFrom: msgs[msgs.length - 1].from, messages: firebase.firestore.FieldValue.arrayUnion(...arr)};
   if(meta) Object.assign(data, meta);
@@ -937,6 +946,8 @@ function samOpen(){
         ${isClient ? `<button type="button" data-sam-act="report" style="${barBtn}border:1px solid #EF5D5D;color:#FF8A8A;">🚩 Signaler une entreprise</button>` : ''}
       </div>
       <div style="padding:10px;display:flex;gap:8px;align-items:flex-end;background:var(--panel);">
+        <input type="file" id="samPhotoInput" accept="image/*" multiple style="display:none;">
+        <button type="button" id="samPhotoBtn" aria-label="Envoyer une photo" style="flex:0 0 auto;width:54px;height:54px;border:1px solid var(--border);border-radius:16px;background:var(--panel2);color:#fff;font-size:22px;cursor:pointer;">🖼️</button>
         <textarea id="samInput" rows="2" style="flex:1;margin:0;resize:none;min-height:58px;max-height:150px;background:var(--panel2);color:#fff;border:1px solid var(--border);border-radius:14px;padding:12px 14px;font-size:16px;line-height:1.4;font-family:inherit;box-sizing:border-box;"></textarea>
         <button type="button" id="samSend" aria-label="Envoyer" style="flex:0 0 auto;width:54px;height:54px;border:none;border-radius:16px;background:linear-gradient(135deg,#FF6A00,#FF5A1A);color:#fff;font-size:22px;cursor:pointer;">➤</button>
       </div>
@@ -948,6 +959,8 @@ function samOpen(){
   document.getElementById('samClose').onclick = close;
   ov.addEventListener('click', e => { if(e.target === ov) close(); });
   ov.querySelectorAll('[data-sam-act]').forEach(b => { b.onclick = ()=>{ const a = b.dataset.samAct; if(a === 'agent') samActionAgent(); else if(a === 'report') samActionReport(); }; });
+  document.getElementById('samPhotoBtn').onclick = ()=>{ document.getElementById('samPhotoInput').click(); };
+  document.getElementById('samPhotoInput').onchange = (e)=>{ const fl = Array.from(e.target.files || []); e.target.value = ''; if(fl.length) samSendPhotos(fl); };
   const input = document.getElementById('samInput');
   const send = ()=>{ const v = input.value; input.value = ''; input.style.height = 'auto'; samSend(v); };
   document.getElementById('samSend').onclick = send;
@@ -963,6 +976,12 @@ function samRender(){
   const av = `<div style="width:32px;height:32px;border-radius:50%;overflow:hidden;background:#0B1120;display:flex;align-items:center;justify-content:center;flex:0 0 auto;">${samAvatarHTML(32)}</div>`;
   const agAv = `<div style="width:32px;height:32px;border-radius:50%;background:#FF6A00;display:flex;align-items:center;justify-content:center;flex:0 0 auto;font-size:17px;">👩‍💼</div>`;
   const fmt = t => escHtml(t).replace(/\n/g, '<br>');
+  const photoOf = m => {
+    const src = m.photoLocal || (m.photoId && samPhotoCache[m.photoId]);
+    if(!src && m.photoId) samLoadPhoto(m.photoId);
+    return src ? `<div style="align-self:flex-end;max-width:70%;"><img src="${src}" data-zoom="${src}" style="width:100%;border-radius:14px;border:2px solid #FF6A00;cursor:zoom-in;display:block;"></div>`
+               : `<div style="align-self:flex-end;font-size:13px;color:var(--muted);">📷 Chargement de la photo…</div>`;
+  };
   const userBubble = t => `<div style="align-self:flex-end;max-width:82%;background:linear-gradient(135deg,#FF6A00,#FF5A1A);color:#fff;padding:10px 13px;border-radius:16px 16px 4px 16px;font-size:15px;line-height:1.45;overflow-wrap:anywhere;">${fmt(t)}</div>`;
   let html = '';
   samChat.forEach((m, mi) => {
@@ -977,7 +996,7 @@ function samRender(){
     const msgs = samAgentDoc.messages || [];
     html += `<div style="align-self:center;text-align:center;font-size:12.5px;color:var(--muted);padding:6px 0;">— 👩‍💼 Discussion avec un agent STS —</div>`;
     msgs.forEach(m => {
-      if(m.from === 'user') html += userBubble(m.text);
+      if(m.from === 'user') html += (m.photoId ? photoOf(m) : userBubble(m.text));
       else if(m.from === 'agent') html += `<div style="display:flex;gap:8px;align-items:flex-end;max-width:92%;">${agAv}<div style="min-width:0;"><div style="font-size:11.5px;color:#FF8A3D;font-weight:800;margin:0 0 3px 4px;">Agent STS</div><div style="background:rgba(255,106,0,0.14);border:1px solid rgba(255,106,0,0.45);padding:10px 13px;border-radius:16px 16px 16px 4px;font-size:15px;line-height:1.5;overflow-wrap:anywhere;">${fmt(m.text)}</div></div></div>`;
       else html += `<div style="align-self:center;max-width:90%;font-size:12px;color:var(--muted);background:rgba(255,255,255,0.04);border-radius:10px;padding:8px 10px;line-height:1.45;">${fmt(m.text)}</div>`;
     });
@@ -996,7 +1015,7 @@ function samRender(){
     };
   });
   box.querySelectorAll('[data-sam-act2="backsam"]').forEach(b => {
-    b.onclick = ()=>{ samInAgent = false; try{ localStorage.setItem('sts_sam_agent', '0'); }catch(e){} samChat.push({from: 'bot', text: samLang === 'ht' ? "Mwen la ankò ! Ou ka kontinye poze m kesyon. Si ajan an reponn ou, w a wè sa nan bouton « Pale ak yon ajan »." : "Me revoilà ! Vous pouvez continuer à me poser vos questions. Si l'agent vous répond, vous le verrez avec le bouton « Parler à un agent »."}); samRender(); };
+    b.onclick = ()=>{ samInAgent = false; try{ localStorage.setItem('sts_sam_agent', '0'); }catch(e){} samChat.push({from: 'bot', text: samLang === 'ht' ? "Mwen la ankò ! Ki jan m ka ede w ?" : "Me revoilà ! Comment puis-je vous aider ?", chips: samChipsFirst()}); samAnswered = 0; samRender(); };
   });
   const inp = document.getElementById('samInput');
   if(inp) inp.placeholder = samInAgent ? "Écrivez à l'agent STS… / Ekri bay ajan an…" : "Ekri mesaj ou… / Écrivez votre message…";
@@ -1012,6 +1031,41 @@ function samRender(){
   box.scrollTop = box.scrollHeight;
 }
 
+function samLoadPhoto(id){
+  if(samPhotoCache[id] !== undefined) return;
+  samPhotoCache[id] = null;
+  db.collection('agentChats').doc(id).get().then(d => { if(d.exists && d.data().dataUrl){ samPhotoCache[id] = d.data().dataUrl; samRender(); } else { delete samPhotoCache[id]; } }).catch(()=>{ delete samPhotoCache[id]; });
+}
+function samNotifyOwnerThrottled(text){
+  const key = 'sts_agent_mail_' + samConvId(false);
+  let last = 0; try{ last = parseInt(localStorage.getItem(key) || '0'); }catch(e){}
+  if(Date.now() - last > 10 * 60 * 1000){
+    try{ localStorage.setItem(key, String(Date.now())); }catch(e){}
+    sendOwnerEmail(samOwnerEmailText('agent', samConvMeta('agent'), text));
+  }
+}
+async function samSendPhotos(files){
+  if(!samInAgent){
+    samChat.push({from: 'bot', text: samLang === 'ht' ? "Pou voye foto, louvri yon diskisyon ak yon ajan dabò." : "Pour envoyer une photo, ouvrez d'abord une discussion avec un agent.", chips: [{label: '👩‍💼 Parler à un agent', act: 'send', send: samLang === 'ht' ? 'Mwen vle pale ak yon ajan' : 'Je veux parler à un agent'}]});
+    samRender(); return;
+  }
+  const list = Array.from(files).slice(0, 4);
+  for(const f of list){
+    try{
+      const dataUrl = await compressImage(f, 800);
+      const convId = samConvId(true);
+      const pid = convId + '__p_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+      samPhotoCache[pid] = dataUrl;
+      if(!samAgentDoc) samAgentDoc = {messages: [], status: 'open'};
+      samAgentDoc.messages = (samAgentDoc.messages || []).concat([{from: 'user', text: '📷 Photo', photoId: pid, photoLocal: dataUrl, at: new Date().toISOString()}]);
+      samAgentDoc.status = 'open';
+      samRender();
+      await db.collection('agentChats').doc(pid).set({photoOf: convId, dataUrl: dataUrl, at: new Date().toISOString()});
+      await samAgentWrite([{from: 'user', text: '📷 Photo', photoId: pid}], null);
+      samNotifyOwnerThrottled('📷 Le client a envoyé une photo.');
+    }catch(e){ toast('Photo non envoyée, réessayez'); }
+  }
+}
 function samSend(raw){
   const text = String(raw || '').trim();
   if(!text || samBusy) return;
@@ -1055,12 +1109,57 @@ function samHandoverOffer(lang, kind){
                           : [{label: '✅ Oui, parler à un agent', act: 'send'}, {label: 'Non, merci', act: 'send'}]};
 }
 
+async function samAskAI(question, lang, role){
+  if(!samAiUrl) return null;
+  const hist = samChat.slice(0, -1).slice(-8).map(m => ({from: m.from === 'user' ? 'user' : 'sam', text: m.text}));
+  const ctrl = (typeof AbortController !== 'undefined') ? new AbortController() : null;
+  const to = setTimeout(()=>{ try{ if(ctrl) ctrl.abort(); }catch(e){} }, 14000);
+  try{
+    const res = await fetch(samAiUrl, {method: 'POST', headers: {'Content-Type': 'text/plain'}, body: JSON.stringify({question: question, role: role, lang: lang, history: hist}), signal: ctrl ? ctrl.signal : undefined});
+    const d = await res.json(); clearTimeout(to);
+    if(d && typeof d.answer === 'string' && d.answer.trim()) return d.answer.trim();
+  }catch(e){ clearTimeout(to); }
+  return null;
+}
+let samGuideIdx = null;
+let samGuideScore = 0;
+const SAM_STOP = new Set(['le','la','les','des','du','une','est','que','qui','pour','dans','sur','avec','pas','mon','mes','votre','vos','comment','quand','aux','cette','ses','son','plus','par','vous','nous','faire','peut','puis','etre','avoir','quel','quelle','dois','doit','veux','voulez','pouvez','peux','mais','donc','car']);
+const SAM_HT2FR = {kolis:'colis', pake:'colis', peye:'paiement', peman:'paiement', kont:'compte', kod:'code', ajoute:'ajouter', chanje:'changer', estati:'statut', foto:'photo', lojo:'logo', mesaj:'message', kliyan:'client', aktive:'activer', bliye:'oublie', sipo:'support', gid:'guide', lyen:'lien', imel:'email', konekte:'connecter', antre:'connecter', livrezon:'livraison', kamyon:'camion', efase:'supprimer', retire:'supprimer', notifikasyon:'notifications', alet:'notifications'};
+function samTokens(t){ return samNorm(t).split(' ').map(w => SAM_HT2FR[w] || w).filter(w => w.length >= 4 && !SAM_STOP.has(w)).map(w => w.replace(/(s|x)$/, '')); }
+function samBuildGuideIdx(){
+  if(samGuideIdx) return samGuideIdx;
+  samGuideIdx = String(GUIDE_HTML).split(/(?=<h2)/).slice(1).map(p => {
+    const title = ((p.match(/<h2[^>]*>(.*?)<\/h2>/) || [])[1] || '').replace(/<[^>]+>/g, '').trim();
+    const text = p.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
+    return {title: title, text: text, toks: new Set(samTokens(text + ' ' + title)), tt: samTokens(title)};
+  });
+  return samGuideIdx;
+}
+function samGuideSearch(raw){
+  const q = samTokens(raw); if(!q.length) return null;
+  let best = null, bestScore = 0;
+  samBuildGuideIdx().forEach(e => {
+    let sc = 0;
+    q.forEach(w => { if(e.toks.has(w)) sc += 1; if(e.tt.indexOf(w) >= 0) sc += 1.5; });
+    if(sc > bestScore){ bestScore = sc; best = e; }
+  });
+  samGuideScore = bestScore;
+  return (best && bestScore >= 2) ? best : null;
+}
 async function samReply(raw){
   const lang = samDetectLang(raw); samLang = lang;
   const n = samNorm(raw);
   const role = samRole();
   const R = (fr, ht) => lang === 'ht' ? ht : fr;
-  const ok = (text, chips) => { samFails = 0; samAskedHuman = false; return {text, chips}; };
+  const ok = (text, chips) => {
+    samFails = 0; samAskedHuman = false; samAnswered++;
+    if(samAnswered === 2 || samAnswered === 6){
+      samAskedHuman = true;
+      return {text: text + R("\n\nSi vous préférez, je peux vous mettre en relation avec un agent de l'équipe STS.", "\n\nSi ou pito, m ka mete w an kontak ak yon ajan nan ekip STS la."),
+        chips: lang === 'ht' ? [{label: '✅ Wi, mwen vle pale ak yon ajan', act: 'send'}, {label: 'Non, mèsi', act: 'send'}] : [{label: '✅ Oui, parler à un agent', act: 'send'}, {label: 'Non, merci', act: 'send'}]};
+    }
+    return {text, chips};
+  };
 
   // flux « signaler une entreprise »
   if(samFlow && samHas(n, ['annuler', 'anile', 'cancel'])){ samFlow = null; return ok(R("D'accord, j'annule le signalement.", "Dakò, m anile siyalman an.")); }
@@ -1116,6 +1215,15 @@ async function samReply(raw){
     return samHandoverOffer(lang, 'issue');
   if(samHas(n, ['code oublie', 'oublie mon code', 'bliye kod', 'perdu mon code', 'bloque', 'bloke', 'ne marche pas', 'marche pas', 'pa mache', 'bug', 'erreur', 'pwoblem', 'probleme', 'plante']))
     return samHandoverOffer(lang, 'issue');
+
+  // ----- IA (si configurée) -----
+  if(samAiUrl){
+    const ai = await samAskAI(raw, lang, role);
+    if(ai){
+      if(ai.indexOf('[AGENT]') === 0) return samHandoverOffer(lang);
+      return ok(ai);
+    }
+  }
 
   // ----- CLIENT -----
   if(role === 'client'){
@@ -1180,8 +1288,22 @@ async function samReply(raw){
     if(samHas(n, ['email', 'imel', 'mail'])){
       return ok(R("À chaque changement de statut, vos clients reçoivent un email au nom de votre entreprise, s'ils ont laissé leur adresse. La carte « Service Email » dans Paramètre montre combien d'emails restent aujourd'hui.", "Chak fwa estati chanje, kliyan ou yo resevwa yon imel nan non konpayi w, si yo kite adrès yo. Kat « Service Email » nan Paramètre montre konbyen imel ki rete jodi a."));
     }
+    { const g0 = samGuideSearch(raw);
+      if(g0 && samGuideScore >= 3){
+        const body0 = g0.text.length > 520 ? g0.text.slice(0, 520).replace(/\s+\S*$/, '') + '…' : g0.text;
+        return ok(R("📖 Voici ce que dit le guide (« " + g0.title + " ») :\n" + body0 + "\n\nPour tout lire, ouvrez Paramètre > Guide de l'entreprise.", "📖 Men sa gid la di (« " + g0.title + " ») :\n" + body0 + "\n\nPou li tout, louvri Paramètre > Guide de l'entreprise."));
+      } }
     if(samHas(n, ['colis', 'kolis', 'ou est', 'kote', 'suivi'])){
       return ok(R("Dans Colis > Tous les colis, vous voyez tous vos colis. Vous pouvez chercher par nom, téléphone ou numéro de suivi.", "Nan Colis > Tous les colis, ou wè tout kolis ou yo. Ou ka chèche pa non, telefòn oswa nimewo swivi."));
+    }
+  }
+
+  // ----- recherche dans le guide (entreprises) -----
+  if(role === 'company'){
+    const g = samGuideSearch(raw);
+    if(g){
+      let body = g.text.length > 520 ? g.text.slice(0, 520).replace(/\s+\S*$/, '') + '…' : g.text;
+      return ok(R("📖 Voici ce que dit le guide (« " + g.title + " ») :\n" + body + "\n\nPour tout lire, ouvrez Paramètre > Guide de l'entreprise.", "📖 Men sa gid la di (« " + g.title + " ») :\n" + body + "\n\nPou li tout, louvri Paramètre > Guide de l'entreprise."));
     }
   }
 
@@ -1199,7 +1321,7 @@ document.addEventListener('click', (e)=>{ if(e.target.closest('[data-sam-open]')
 let headerLogoCache = {};
 function updateHeaderCompanyLogo(){ const el = document.getElementById('headerCompanyLogo'); if(el) el.remove(); }
 
-async function loadSupportAvatar(){
+async function loadSupportAvatarCore(){
   try{
     const settings = await getPaymentSettings();
     if(settings.supportAvatar){ supportAvatarUrl = settings.supportAvatar; }
@@ -1211,13 +1333,20 @@ async function loadSupportAvatar(){
       const v = sd.data();
       if(v.avatar){ samAvatarUrl = v.avatar; }
       if(v.pos !== null && v.pos !== undefined){ samAvatarPos = v.pos; }
+      if(v.aiUrl){ samAiUrl = v.aiUrl; }
     }
   }catch(e){}
   try{
-    if(!samAvatarUrl){
-      const ps = await getPaymentSettings();
-      if(ps.samAvatar){ samAvatarUrl = ps.samAvatar; if(ps.samAvatarPos !== null && ps.samAvatarPos !== undefined) samAvatarPos = ps.samAvatarPos; }
-    }
+    const ps = await getPaymentSettings();
+    if(!samAvatarUrl && ps.samAvatar){ samAvatarUrl = ps.samAvatar; if(ps.samAvatarPos !== null && ps.samAvatarPos !== undefined) samAvatarPos = ps.samAvatarPos; }
+    if(!samAiUrl && ps.samAiUrl){ samAiUrl = ps.samAiUrl; }
+  }catch(e){}
+}
+async function loadSupportAvatar(){
+  await loadSupportAvatarCore();
+  try{
+    localStorage.setItem('sts_sam_av', JSON.stringify({url: samAvatarUrl, pos: samAvatarPos}));
+    localStorage.setItem('sts_wa_av', JSON.stringify({url: supportAvatarUrl, pos: supportAvatarPos}));
   }catch(e){}
 }
 
@@ -1320,7 +1449,7 @@ function courierBlockHTML(av, kind){
 }
 function courierAvatarCardHTML(av){
   return `<div class="card">
-      <h2>Avatars de livraison <span style="font-size:11px;color:var(--muted);font-weight:400;">(v12 oct. J)</span></h2>
+      <h2>Avatars de livraison <span style="font-size:11px;color:var(--muted);font-weight:400;">(v12 oct. K)</span></h2>
       <p class="sub">Ces avatars sont utilisés par toutes les entreprises. Quand vous les changez ici, ils changent pour tout le monde, côté client aussi.</p>
       ${courierBlockHTML(av, 'moto')}
       ${courierBlockHTML(av, 'truck')}
@@ -1441,9 +1570,20 @@ async function getAllPackages(){
 }
 
 async function getCompanyPackages(code){
-  const all = await getAllPackages();
   const ownerCode = await getOwnerCode();
+  if(code !== ownerCode){
+    // requête ciblée : seulement les colis de cette entreprise (au lieu de tout télécharger)
+    const snap = await db.collection('packages').where('companyCode', '==', code).get();
+    const pkgs = []; snap.forEach(doc => pkgs.push(doc.data()));
+    pkgs.sort((a, b) => new Date(b.updatedAt) - new Date(a.updatedAt));
+    return pkgs;
+  }
+  const all = await getAllPackages();
   return all.filter(p => (p.companyCode || ownerCode) === code);
+}
+async function getAnnouncementsList(){
+  const snap = await db.collection('announcements').get();
+  return snap.docs.map(d => Object.assign({id: d.id}, d.data())).sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)));
 }
 
 function compressImage(file, maxSizeArg){
@@ -1595,7 +1735,7 @@ async function getPaymentSettings(){
   try{
     const doc = await db.collection('settings').doc('payment').get();
     const data = doc.exists ? doc.data() : {};
-    return {minHTG: data.minHTG || 1680, minUSD: data.minUSD || 12, trialDays: data.trialDays || 20, regFeeHTG: data.regFeeHTG || 1000, regFeeUSD: data.regFeeUSD || 8, icons: data.icons || {}, supportAvatar: data.supportAvatar || null, supportAvatarPos: data.supportAvatarPos, samAvatar: data.samAvatar || null, samAvatarPos: data.samAvatarPos};
+    return {minHTG: data.minHTG || 1680, minUSD: data.minUSD || 12, trialDays: data.trialDays || 20, regFeeHTG: data.regFeeHTG || 1000, regFeeUSD: data.regFeeUSD || 8, icons: data.icons || {}, supportAvatar: data.supportAvatar || null, supportAvatarPos: data.supportAvatarPos, samAvatar: data.samAvatar || null, samAvatarPos: data.samAvatarPos, samAiUrl: data.samAiUrl || null};
   }catch(e){ return {minHTG:1680, minUSD:12, trialDays:20, regFeeHTG:1000, regFeeUSD:8, icons:{}, supportAvatar:null, supportAvatarPos:50}; }
 }
 
@@ -3710,9 +3850,42 @@ async function renderOwnerSettings(){
         <button class="primary" id="btnSaveSamAvatar">💾 Sauvegarder la photo de Sam</button>
         <div id="samAvatarMsg" class="sub" style="margin-top:10px;font-weight:700;overflow-wrap:anywhere;"></div>
       </div>
+    </div>
+    <div class="card">
+      <h2>🧠 Cerveau IA de Sam (facultatif)</h2>
+      <p class="sub">Avec l'IA, Sam comprend beaucoup mieux les questions et répond avec le contenu du guide. Collez ici l'adresse du Google Script « Sam IA » (voir les instructions). Sans adresse, Sam fonctionne comme avant.</p>
+      <input type="url" id="samAiUrlInput" placeholder="https://script.google.com/macros/s/…/exec" value="${samAiUrl ? escHtml(samAiUrl) : ''}" style="margin-bottom:10px;">
+      <div style="display:flex;gap:8px;flex-wrap:wrap;">
+        <button class="primary" id="btnSaveSamAi" style="flex:1;">💾 Enregistrer</button>
+        <button class="ghost" id="btnTestSamAi" style="flex:1;">🧪 Tester</button>
+      </div>
+      <div id="samAiMsg" class="sub" style="margin-top:10px;font-weight:700;overflow-wrap:anywhere;"></div>
     </div>`;
   document.getElementById('btnAdminGuide').onclick = ()=> openGuide('admin');
   document.getElementById('btnCompanyGuide').onclick = ()=> openGuide('company');
+  document.getElementById('btnSaveSamAi').onclick = async ()=>{
+    const url = document.getElementById('samAiUrlInput').value.trim();
+    const msg = document.getElementById('samAiMsg'); msg.style.color = ''; msg.textContent = '⏳ Enregistrement…';
+    try{
+      if(url && !/^https:\/\/script\.google\.com\//.test(url)) throw new Error("L'adresse doit commencer par https://script.google.com/");
+      try{ await db.collection('settings').doc('sam').set({aiUrl: url}, {merge: true}); }
+      catch(e1){ await db.collection('settings').doc('payment').set({samAiUrl: url}, {merge: true}); }
+      samAiUrl = url || null;
+      msg.style.color = 'var(--ok)'; msg.textContent = url ? '✅ IA activée pour Sam' : '✅ IA désactivée';
+    }catch(err){ msg.style.color = 'var(--danger)'; msg.textContent = '❌ ' + ((err && (err.code || err.message)) || 'erreur'); }
+  };
+  document.getElementById('btnTestSamAi').onclick = async ()=>{
+    const url = document.getElementById('samAiUrlInput').value.trim();
+    const msg = document.getElementById('samAiMsg'); msg.style.color = '';
+    if(!url){ msg.textContent = "Collez d'abord l'adresse."; return; }
+    msg.textContent = '⏳ Test en cours…';
+    try{
+      const res = await fetch(url, {method: 'POST', headers: {'Content-Type': 'text/plain'}, body: JSON.stringify({question: 'Comment ajouter un colis ?', role: 'company', lang: 'fr', history: []})});
+      const d = await res.json();
+      if(d && d.answer){ msg.style.color = 'var(--ok)'; msg.textContent = '✅ Ça marche. Réponse de test : ' + String(d.answer).slice(0, 220); }
+      else { msg.style.color = 'var(--danger)'; msg.textContent = '❌ Réponse inattendue : ' + JSON.stringify(d).slice(0, 200); }
+    }catch(err){ msg.style.color = 'var(--danger)'; msg.textContent = '❌ Impossible de joindre le script : ' + ((err && err.message) || 'erreur'); }
+  };
   document.getElementById('samAvatarInput').onchange = async (e)=>{
     const file = e.target.files[0];
     if(!file) return;
@@ -4603,6 +4776,61 @@ function bindDeletedByCompanies(root, rerender){
   });
 }
 
+// ===== VITESSE : cache des lectures + invalidation à chaque écriture =====
+function perfInstall(){
+  if(typeof db === 'undefined' || !db || db.__perf) return;
+  db.__perf = true;
+  const caches = [];
+  const clearAll = ()=> caches.forEach(c => { for(const k in c) delete c[k]; });
+  const WATCH = {companies: 1, settings: 1, packages: 1, announcements: 1};
+  const origCol = db.collection.bind(db);
+  db.collection = function(name){
+    const col = origCol(name);
+    if(!WATCH[name]) return col;
+    const origDoc = col.doc.bind(col);
+    col.doc = function(...a){
+      const d = origDoc(...a);
+      ['set', 'update', 'delete'].forEach(m => {
+        const f = d[m].bind(d);
+        d[m] = function(...x){ clearAll(); const r = f(...x); if(r && r.then) r.then(clearAll, clearAll); return r; };
+      });
+      return d;
+    };
+    const origAdd = col.add.bind(col);
+    col.add = function(...x){ clearAll(); const r = origAdd(...x); if(r && r.then) r.then(clearAll, clearAll); return r; };
+    return col;
+  };
+  if(db.batch){
+    const origBatch = db.batch.bind(db);
+    db.batch = function(){ const b = origBatch(); const oc = b.commit.bind(b); b.commit = function(){ clearAll(); const r = oc(); r.then(clearAll, clearAll); return r; }; return b; };
+  }
+  const memo = (name, ttl)=>{
+    const orig = window[name]; if(typeof orig !== 'function') return;
+    const cache = {}; caches.push(cache);
+    window[name] = function(...args){
+      const k = JSON.stringify(args);
+      const c = cache[k];
+      if(c && Date.now() - c.t < ttl) return c.p.then(v => Array.isArray(v) ? v.slice() : v);
+      const p = orig.apply(this, args);
+      cache[k] = {t: Date.now(), p: p};
+      p.catch(()=>{ delete cache[k]; });
+      return p.then(v => Array.isArray(v) ? v.slice() : v);
+    };
+  };
+  memo('getCompanyByCode', 30000);
+  memo('getPaymentSettings', 60000);
+  memo('getAllCompanies', 20000);
+  memo('getOwnerCode', 300000);
+  memo('getAllPackages', 15000);
+  memo('getCompanyPackages', 15000);
+  memo('getAnnouncementsList', 20000);
+}
+function perfPrefetchCompany(){
+  if(!companySession) return;
+  const code = companySession.code;
+  setTimeout(()=>{ try{ getCompanyPackages(code); getPaymentSettings(); getAnnouncementsList(); getCompanyByCode(code); }catch(e){} }, 400);
+}
+
 // ===== CARTES PLIANTES COLOREES (Admin) =====
 const foldOpen = new Set();
 function foldCardHTML(key, gradient, icon, title, count, bodyHtml, textColor){
@@ -4664,18 +4892,35 @@ function bindAnnouncements(root, rerender){
 }
 async function loadAnnouncementBanner(main){
   try{
-    const snap = await db.collection('announcements').get();
-    const list = snap.docs.map(d => Object.assign({id: d.id}, d.data())).sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)));
-    const a = list.find(x => { try{ return !localStorage.getItem('sts_ann_off_' + x.id); }catch(e){ return true; } });
-    if(!a || !document.getElementById('coBtnColis')) return;
-    if(document.getElementById('annBanner')) return;
-    main.insertAdjacentHTML('afterbegin', `<div id="annBanner" style="margin-bottom:14px;padding:12px 14px;border-radius:14px;border:1px solid var(--info);background:rgba(96,165,250,0.12);">
-      <div style="font-weight:800;color:var(--info);margin-bottom:4px;">📢 Annonce de STS</div>
-      <div style="font-size:13.5px;overflow-wrap:anywhere;white-space:pre-wrap;">${escHtml(a.text)}</div>
-      <div class="sub" style="font-size:11px;margin-top:4px;">${fmtDate(a.createdAt)}</div>
-      <button type="button" class="ghost" id="annClose" style="margin-top:8px;width:auto;padding:6px 14px;">✕ Fermer</button>
-    </div>`);
-    document.getElementById('annClose').onclick = ()=>{ try{ localStorage.setItem('sts_ann_off_' + a.id, '1'); }catch(e){} const b = document.getElementById('annBanner'); if(b) b.remove(); };
+    if(!document.getElementById('coBtnColis')) return;
+    const all = await getAnnouncementsList();
+    const off = id => { try{ return !!localStorage.getItem('sts_ann_off_' + id); }catch(e){ return false; } };
+    const seen = id => { try{ return !!localStorage.getItem('sts_ann_seen_' + id); }catch(e){ return true; } };
+    const list = all.filter(x => !off(x.id));
+    if(list.some(x => !seen(x.id))) foldOpen.add('ann-co');
+    const body = list.length
+      ? list.map(a => `<div style="padding:10px 12px;margin-bottom:8px;border:1px solid var(--border);border-radius:12px;background:rgba(255,255,255,0.04);">
+          <div style="font-size:14px;overflow-wrap:anywhere;white-space:pre-wrap;">${escHtml(a.text)}</div>
+          <div class="sub" style="font-size:11px;margin-top:4px;">${fmtDate(a.createdAt)}</div>
+          <button type="button" class="miniBtn" data-ann-del="${a.id}" style="margin-top:8px;color:var(--danger);border-color:rgba(239,93,93,0.4);">🗑️ Supprimer</button>
+        </div>`).join('')
+      : `<p class="sub" style="margin:0;">Aucune annonce pour le moment.</p>`;
+    const draw = ()=>{
+      const old = document.getElementById('annCoCard'); if(old) old.remove();
+      const cur = list.filter(x => !off(x.id));
+      const html = foldCardHTML('ann-co', '#FBCFE8,#FB923C', '📢', 'Annonces de STS', cur.length, cur.length ? cur.map(a => `<div style="padding:10px 12px;margin-bottom:8px;border:1px solid var(--border);border-radius:12px;background:rgba(255,255,255,0.04);">
+          <div style="font-size:14px;overflow-wrap:anywhere;white-space:pre-wrap;">${escHtml(a.text)}</div>
+          <div class="sub" style="font-size:11px;margin-top:4px;">${fmtDate(a.createdAt)}</div>
+          <button type="button" class="miniBtn" data-ann-del="${a.id}" style="margin-top:8px;color:var(--danger);border-color:rgba(239,93,93,0.4);">🗑️ Supprimer</button>
+        </div>`).join('') : `<p class="sub" style="margin:0;">Aucune annonce pour le moment.</p>`, '#7C1D4E');
+      main.insertAdjacentHTML('afterbegin', `<div id="annCoCard">${html}</div>`);
+      const card = document.getElementById('annCoCard');
+      bindFoldCards(card);
+      card.querySelectorAll('[data-ann-del]').forEach(btn => { btn.onclick = ()=>{ if(!confirm('Supprimer cette annonce de votre liste ?')) return; try{ localStorage.setItem('sts_ann_off_' + btn.dataset.annDel, '1'); }catch(e){} draw(); }; });
+      if(foldOpen.has('ann-co')) list.forEach(x => { try{ localStorage.setItem('sts_ann_seen_' + x.id, '1'); }catch(e){} });
+      card.querySelector('[data-fold-head]').addEventListener('click', ()=>{ list.forEach(x => { try{ localStorage.setItem('sts_ann_seen_' + x.id, '1'); }catch(e){} }); });
+    };
+    draw();
   }catch(e){}
 }
 async function activityLogHTML(companies){
@@ -4758,7 +5003,7 @@ function bindSupportRequests(root, rerender){
 // ===== CONVERSATIONS AVEC LES AGENTS (propriétaire) =====
 async function agentChatsAdminHTML(){
   try{
-    const snap = await db.collection('agentChats').get();
+    const snap = await db.collection('agentChats').where('kind', 'in', ['agent', 'report']).get();
     const list = snap.docs.map(d => Object.assign({id: d.id}, d.data())).sort((a, b) => String(b.updatedAt).localeCompare(String(a.updatedAt)));
     if(!list.length) return foldCardHTML('agents', '#EC4899,#8B5CF6', '👩‍💼', 'Conversations avec les agents', 0, `<p class="sub" style="margin:0;">Aucune conversation pour le moment. Les clients et les entreprises qui parlent à un agent ou signalent une entreprise arriveront ici.</p>`);
     const unread = list.filter(c => c.unreadByOwner && c.status !== 'closed').length;
@@ -4806,6 +5051,7 @@ function openAgentChatAdmin(id){
   document.body.appendChild(ov);
   const ref = db.collection('agentChats').doc(id);
   let timer = null;
+  const agPhotos = {};
   const close = ()=>{ clearInterval(timer); ov.remove(); if(typeof ownerView !== 'undefined' && ownerView === 'companies' && mode === 'admin' && adminSession && adminSession.isOwner) renderOwnerCompanies(); };
   const paint = (c)=>{
     const isRep = c.kind === 'report';
@@ -4816,9 +5062,15 @@ function openAgentChatAdmin(id){
     box.innerHTML = (c.messages || []).map(m => {
       const t = escHtml(m.text || '').replace(/\n/g, '<br>');
       if(m.from === 'agent') return `<div style="align-self:flex-end;max-width:84%;background:linear-gradient(135deg,#8B5CF6,#EC4899);color:#fff;padding:10px 13px;border-radius:16px 16px 4px 16px;font-size:15px;line-height:1.45;overflow-wrap:anywhere;">${t}<div style="font-size:10.5px;opacity:.8;margin-top:4px;">${fmtDate(m.at)}</div></div>`;
+      if(m.photoId){ const ph = agPhotos[m.photoId]; return `<div style="align-self:flex-start;max-width:70%;"><img data-agphoto="${m.photoId}" ${ph ? 'src="' + ph + '" data-zoom="' + ph + '"' : ''} style="width:100%;min-height:60px;border-radius:14px;border:2px solid var(--border);cursor:zoom-in;display:block;background:var(--panel2);"><div style="font-size:10.5px;color:var(--muted);margin-top:4px;">${fmtDate(m.at)}</div></div>`; }
       if(m.from === 'user') return `<div style="align-self:flex-start;max-width:84%;background:var(--panel2);border:1px solid var(--border);padding:10px 13px;border-radius:16px 16px 16px 4px;font-size:15px;line-height:1.45;overflow-wrap:anywhere;">${t}<div style="font-size:10.5px;color:var(--muted);margin-top:4px;">${fmtDate(m.at)}</div></div>`;
       return `<div style="align-self:center;max-width:90%;font-size:12px;color:var(--muted);background:rgba(255,255,255,0.04);border-radius:10px;padding:8px 10px;line-height:1.45;">${t}</div>`;
     }).join('');
+    box.querySelectorAll('img[data-agphoto]').forEach(img => {
+      if(img.getAttribute('src')) return;
+      const pid = img.dataset.agphoto;
+      db.collection('agentChats').doc(pid).get().then(d => { if(d.exists && d.data().dataUrl){ agPhotos[pid] = d.data().dataUrl; img.src = agPhotos[pid]; img.dataset.zoom = agPhotos[pid]; } }).catch(()=>{});
+    });
     if(atBottom) box.scrollTop = box.scrollHeight;
   };
   const load = async ()=>{
@@ -4850,7 +5102,10 @@ function openAgentChatAdmin(id){
   };
   document.getElementById('agDel').onclick = async ()=>{
     if(!confirm('Supprimer définitivement cette conversation ?')) return;
-    try{ await ref.delete(); toast('Conversation supprimée'); close(); }catch(e){ toast('Erreur, réessayez'); }
+    try{
+      try{ const ps = await db.collection('agentChats').where('photoOf', '==', id).get(); await Promise.all(ps.docs.map(d => d.ref.delete())); }catch(e){}
+      await ref.delete(); toast('Conversation supprimée'); close();
+    }catch(e){ toast('Erreur, réessayez'); }
   };
   load();
   timer = setInterval(load, 6000);
@@ -6628,10 +6883,12 @@ async function renderCompany(){
   document.getElementById('coLogoBtn').onclick = ()=>{ companyScreen = 'settings'; renderCompany(); };
   document.getElementById('coBtnMsgs').onclick = ()=>{ openMessagesModal(companySession.code, companySession.companyName, 'company'); };
   loadAnnouncementBanner(main);
+  perfPrefetchCompany();
   refreshCoMsgBadge(main);
 }
 
 function setMode(m){
+  if(mode === 'admin' && m !== 'admin'){ adminSession = null; adminStash = null; try{ stopPendingListener(); }catch(e){} }
   if(mode === 'admin') adminStash = adminSession;
   if(mode === 'company' && m !== 'company'){ companySession = null; companyScreen = 'home'; }
   mode = m;
@@ -6658,8 +6915,9 @@ document.getElementById('btnClientMode').onclick = ()=>{ setMode('client'); };
 document.getElementById('btnAdminMode').onclick = ()=>{ setMode('admin'); };
 document.getElementById('btnCompanyMode').onclick = ()=>{ setMode('company'); };
 
+perfInstall();
 render();
-loadSupportAvatar().then(()=>{ if(supportAvatarUrl) render(); samAvatarsLoaded(); });
+loadSupportAvatar().then(()=>{ if(supportAvatarUrl || waHidden){ waHidden = false; render(); } samAvatarsLoaded(); });
 
 document.addEventListener('click', (e)=>{
   const zoomEl = e.target.closest('[data-zoom]');
