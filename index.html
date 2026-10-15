@@ -254,7 +254,7 @@ async function sendViaAppsScript(pkg, client, companyName){
 function buildStatusMessage(pkg, companyName){
   const statusMsg = STATUS_EMAIL_MESSAGE[pkg.status] || '';
   const statusLabel = STATUS_LABEL[pkg.status] || pkg.status;
-  return `${statusMsg}\n\nNuméro de suivi : ${pkg.trackingId}\nStatut actuel : ${statusLabel}` + (companyName ? `\nEntreprise : ${companyName}` : '');
+  return `${statusMsg}\n\nNuméro de suivi : ${pkg.trackingId}\nStatut actuel : ${statusLabel}` + (pkg.carrier ? `\nTransport : ${pkg.carrier}` : '') + (companyName ? `\nEntreprise : ${companyName}` : '');
 }
 
 async function sendStatusEmail(pkg){
@@ -945,11 +945,13 @@ function samOpen(){
         <button type="button" data-sam-act="agent" id="samBarAgent" style="${barBtn}border:1px solid var(--accent);color:#fff;">👩‍💼 Parler à un agent</button>
         ${isClient ? `<button type="button" data-sam-act="report" style="${barBtn}border:1px solid #EF5D5D;color:#FF8A8A;">🚩 Signaler une entreprise</button>` : ''}
       </div>
-      <div style="padding:10px;display:flex;gap:8px;align-items:flex-end;background:var(--panel);">
-        <input type="file" id="samPhotoInput" accept="image/*" multiple style="display:none;">
-        <button type="button" id="samPhotoBtn" aria-label="Envoyer une photo" style="flex:0 0 auto;width:54px;height:54px;border:1px solid var(--border);border-radius:16px;background:var(--panel2);color:#fff;font-size:22px;cursor:pointer;">🖼️</button>
-        <textarea id="samInput" rows="2" style="flex:1;margin:0;resize:none;min-height:58px;max-height:150px;background:var(--panel2);color:#fff;border:1px solid var(--border);border-radius:14px;padding:12px 14px;font-size:16px;line-height:1.4;font-family:inherit;box-sizing:border-box;"></textarea>
-        <button type="button" id="samSend" aria-label="Envoyer" style="flex:0 0 auto;width:54px;height:54px;border:none;border-radius:16px;background:linear-gradient(135deg,#FF6A00,#FF5A1A);color:#fff;font-size:22px;cursor:pointer;">➤</button>
+      <div style="padding:10px;display:flex;gap:8px;align-items:stretch;background:var(--panel);">
+        <textarea id="samInput" rows="3" style="flex:1;margin:0;resize:none;min-height:104px;max-height:170px;background:var(--panel2);color:#fff;border:1px solid var(--border);border-radius:14px;padding:12px 14px;font-size:16px;line-height:1.4;font-family:inherit;box-sizing:border-box;"></textarea>
+        <div style="display:flex;flex-direction:column;gap:8px;flex:0 0 auto;">
+          <input type="file" id="samPhotoInput" accept="image/*" multiple style="display:none;">
+          <button type="button" id="samPhotoBtn" aria-label="Envoyer une photo" style="width:48px;height:48px;border:1px solid var(--border);border-radius:14px;background:var(--panel2);color:#fff;font-size:22px;cursor:pointer;">🖼️</button>
+          <button type="button" id="samSend" aria-label="Envoyer" style="width:48px;height:48px;border:none;border-radius:14px;background:linear-gradient(135deg,#FF6A00,#FF5A1A);color:#fff;font-size:22px;cursor:pointer;">➤</button>
+        </div>
       </div>
     </div>`;
   document.body.appendChild(ov);
@@ -965,7 +967,7 @@ function samOpen(){
   const send = ()=>{ const v = input.value; input.value = ''; input.style.height = 'auto'; samSend(v); };
   document.getElementById('samSend').onclick = send;
   input.addEventListener('keydown', e => { if(e.key === 'Enter' && !e.shiftKey){ e.preventDefault(); send(); } });
-  input.addEventListener('input', ()=>{ input.style.height = 'auto'; input.style.height = Math.min(150, Math.max(58, input.scrollHeight)) + 'px'; });
+  input.addEventListener('input', ()=>{ input.style.height = 'auto'; input.style.height = Math.min(170, Math.max(104, input.scrollHeight)) + 'px'; });
   samRender();
   samAgentRefresh();
   samAgentTimer = setInterval(samAgentRefresh, 6000);
@@ -1449,7 +1451,7 @@ function courierBlockHTML(av, kind){
 }
 function courierAvatarCardHTML(av){
   return `<div class="card">
-      <h2>Avatars de livraison <span style="font-size:11px;color:var(--muted);font-weight:400;">(v12 oct. K)</span></h2>
+      <h2>Avatars de livraison <span style="font-size:11px;color:var(--muted);font-weight:400;">(v12 oct. L)</span></h2>
       <p class="sub">Ces avatars sont utilisés par toutes les entreprises. Quand vous les changez ici, ils changent pour tout le monde, côté client aussi.</p>
       ${courierBlockHTML(av, 'moto')}
       ${courierBlockHTML(av, 'truck')}
@@ -2064,6 +2066,7 @@ function pkgCardHTML(p, label){
         ${(label && typeof label === 'string') ? `<div style="display:inline-block;background:rgba(255,122,26,0.15);color:var(--accent2);border:1px solid var(--accent);border-radius:20px;padding:2px 10px;font-size:11px;font-weight:800;margin-bottom:6px;">${escHtml(label)}</div>` : ''}
         <div class="tid">#${p.trackingId}</div>
         <div class="desc">${p.name||''}</div>
+        ${p.carrier ? `<div class="sub" style="font-size:12px;margin-top:3px;">🚚 Transport : <b>${escHtml(p.carrier)}</b></div>` : ''}
         ${(p.destCommune||p.destDepartment) ? `<div class="sub" style="font-size:11px;margin-top:2px;">📍 ${[p.destCommune,p.destDepartment,p.destCountry].filter(Boolean).join(', ')}</div>` : ''}
         ${deliveryLine(p) ? `<div class="sub" style="font-size:12px;margin-top:4px;color:var(--accent2);font-weight:600;">📅 Livraison prévue : ${deliveryLine(p)}</div>` : ''}
       </div>
@@ -3272,6 +3275,7 @@ async function renderAdminPkgList(pkgs){
         <div class="info" data-edit="${escHtml(p.trackingId)}" style="cursor:pointer;">
           <div style="margin:6px 0 3px;display:flex;flex-wrap:wrap;gap:6px;align-items:center;">${numBadge}<select class="statusSelect" data-status-for="${escHtml(p.trackingId)}" data-current="${escHtml(p.status)}" style="${(p.pickedUpAt && p.status === 'livre') ? 'background:#BE185D;border:1px solid #BE185D;color:#fff;' : 'background:rgba(255,122,26,0.12);border:1px solid var(--accent);color:var(--accent2);'}border-radius:20px;padding:4px 10px;font-size:12px;font-weight:700;width:auto;margin:0;">${STATUSES.map(st => `<option value="${st.key}" ${st.key === p.status ? 'selected' : ''}>${st.label}</option>`).join('')}</select></div>
           <div class="name">${escHtml(p.name)} · ${escHtml(p.phone)} <button type="button" class="waMini" data-send-wa="${escHtml(p.trackingId)}" style="margin-left:6px;background:rgba(37,211,102,0.12);border:1px solid rgba(37,211,102,0.5);color:#25D366;border-radius:8px;padding:3px 9px;font-size:11px;font-weight:700;cursor:pointer;">💬 WhatsApp</button> <button type="button" class="waMini" data-send-mail="${escHtml(p.trackingId)}" style="margin-left:4px;background:rgba(96,165,250,0.12);border:1px solid rgba(96,165,250,0.5);color:var(--info);border-radius:8px;padding:3px 9px;font-size:11px;font-weight:700;cursor:pointer;">📧 Email</button></div>
+          ${p.carrier ? `<div class="sub" style="font-size:11.5px;">🚚 ${escHtml(p.carrier)}</div>` : ''}
           ${(p.destCommune || p.destDepartment) ? `<div class="sub" style="font-size:11px;">📍 ${[p.destCommune, p.destDepartment, p.destCountry].filter(Boolean).map(escHtml).join(', ')}</div>` : ''}
           ${deliveryLine(p) ? `<div class="sub" style="font-size:11.5px;color:var(--accent2);">📅 Livraison prévue : ${deliveryLine(p)}</div>` : ''}
         </div>
@@ -4831,6 +4835,48 @@ function perfPrefetchCompany(){
   setTimeout(()=>{ try{ getCompanyPackages(code); getPaymentSettings(); getAnnouncementsList(); getCompanyByCode(code); }catch(e){} }, 400);
 }
 
+// ===== COMPAGNIE DE TRANSPORT (champ du colis) =====
+const CARRIERS = ['Haïti Trans', 'Rotation Tours', 'Remito Transport', 'SOS Transport', 'Sam Trace Store (STS)'];
+function carrierKey(){ return 'sts_carriers_' + (adminSession ? adminSession.code : ''); }
+function customCarriers(){ try{ return JSON.parse(localStorage.getItem(carrierKey()) || '[]'); }catch(e){ return []; } }
+function carrierOptionsHTML(){
+  return '<option value="">— Choisir la compagnie —</option>'
+    + CARRIERS.concat(customCarriers()).map(c => `<option value="${escHtml(c)}">${escHtml(c)}</option>`).join('')
+    + '<option value="__other__">Autre (écrire le nom)</option>';
+}
+function carrierFieldHTML(){
+  return `<label>Compagnie de transport <span style="color:var(--muted);font-weight:400;">(qui fait la livraison)</span></label>
+      <select id="pCarrier">${carrierOptionsHTML()}</select>
+      <input id="pCarrierOther" placeholder="Nom de la compagnie de transport" style="display:none;">`;
+}
+function bindCarrierField(){
+  const sel = document.getElementById('pCarrier'), inp = document.getElementById('pCarrierOther');
+  if(!sel || !inp) return;
+  sel.onchange = ()=>{ const other = sel.value === '__other__'; inp.style.display = other ? 'block' : 'none'; if(other) inp.focus(); };
+}
+function readCarrier(){
+  const sel = document.getElementById('pCarrier'), inp = document.getElementById('pCarrierOther');
+  if(!sel) return '';
+  if(sel.value !== '__other__') return sel.value || '';
+  const name = (inp.value || '').trim().slice(0, 60);
+  if(name){
+    const all = CARRIERS.concat(customCarriers());
+    if(!all.some(c => c.toLowerCase() === name.toLowerCase())){
+      try{ localStorage.setItem(carrierKey(), JSON.stringify(customCarriers().concat([name]))); }catch(e){}
+    }
+  }
+  return name;
+}
+function setCarrierField(val){
+  const sel = document.getElementById('pCarrier'), inp = document.getElementById('pCarrierOther');
+  if(!sel || !inp) return;
+  val = val || '';
+  if(!val){ sel.value = ''; inp.style.display = 'none'; return; }
+  const exists = Array.from(sel.options).some(o => o.value === val);
+  if(exists){ sel.value = val; inp.style.display = 'none'; }
+  else { sel.value = '__other__'; inp.style.display = 'block'; inp.value = val; }
+}
+
 // ===== CARTES PLIANTES COLOREES (Admin) =====
 const foldOpen = new Set();
 function foldCardHTML(key, gradient, icon, title, count, bodyHtml, textColor){
@@ -4890,35 +4936,48 @@ function bindAnnouncements(root, rerender){
     };
   });
 }
+function annOff(id){ try{ return !!localStorage.getItem('sts_ann_off_' + id); }catch(e){ return false; } }
+function annSeen(id){ try{ return !!localStorage.getItem('sts_ann_seen_' + id); }catch(e){ return true; } }
+function annMarkSeen(list){ list.forEach(x => { try{ localStorage.setItem('sts_ann_seen_' + x.id, '1'); }catch(e){} }); }
+
+// Accueil : petite bannière bleue quand il y a une annonce non lue -> ouvre Paramètre
 async function loadAnnouncementBanner(main){
   try{
     if(!document.getElementById('coBtnColis')) return;
     const all = await getAnnouncementsList();
-    const off = id => { try{ return !!localStorage.getItem('sts_ann_off_' + id); }catch(e){ return false; } };
-    const seen = id => { try{ return !!localStorage.getItem('sts_ann_seen_' + id); }catch(e){ return true; } };
-    const list = all.filter(x => !off(x.id));
-    if(list.some(x => !seen(x.id))) foldOpen.add('ann-co');
-    const body = list.length
-      ? list.map(a => `<div style="padding:10px 12px;margin-bottom:8px;border:1px solid var(--border);border-radius:12px;background:rgba(255,255,255,0.04);">
-          <div style="font-size:14px;overflow-wrap:anywhere;white-space:pre-wrap;">${escHtml(a.text)}</div>
-          <div class="sub" style="font-size:11px;margin-top:4px;">${fmtDate(a.createdAt)}</div>
-          <button type="button" class="miniBtn" data-ann-del="${a.id}" style="margin-top:8px;color:var(--danger);border-color:rgba(239,93,93,0.4);">🗑️ Supprimer</button>
-        </div>`).join('')
-      : `<p class="sub" style="margin:0;">Aucune annonce pour le moment.</p>`;
+    const unseen = all.filter(x => !annOff(x.id) && !annSeen(x.id));
+    const old = document.getElementById('annBanner'); if(old) old.remove();
+    if(!unseen.length) return;
+    const a = unseen[0];
+    main.insertAdjacentHTML('afterbegin', `<div id="annBanner" style="margin-bottom:14px;padding:12px 14px;border-radius:14px;border:1px solid var(--info);background:rgba(96,165,250,0.12);cursor:pointer;">
+      <div style="font-weight:800;color:var(--info);margin-bottom:4px;">📢 Annonce de STS${unseen.length > 1 ? ' (' + unseen.length + ')' : ''}</div>
+      <div style="font-size:13.5px;overflow-wrap:anywhere;white-space:pre-wrap;">${escHtml(a.text)}</div>
+      <div class="sub" style="font-size:11px;margin-top:4px;">${fmtDate(a.createdAt)}</div>
+      <div style="margin-top:8px;font-weight:800;font-size:13px;color:var(--accent2);">👉 Touchez ici pour lire dans Paramètre</div>
+    </div>`);
+    document.getElementById('annBanner').onclick = ()=>{ companyScreen = 'settings'; renderCompany(); };
+  }catch(e){}
+}
+
+// Paramètre : carte pliante des annonces (rose pâle et orange)
+async function fillCoAnnouncements(){
+  const host = document.getElementById('annCoHost'); if(!host) return;
+  try{
+    const all = await getAnnouncementsList();
+    const list = all.filter(x => !annOff(x.id));
+    if(list.some(x => !annSeen(x.id))) foldOpen.add('ann-co');
     const draw = ()=>{
-      const old = document.getElementById('annCoCard'); if(old) old.remove();
-      const cur = list.filter(x => !off(x.id));
-      const html = foldCardHTML('ann-co', '#FBCFE8,#FB923C', '📢', 'Annonces de STS', cur.length, cur.length ? cur.map(a => `<div style="padding:10px 12px;margin-bottom:8px;border:1px solid var(--border);border-radius:12px;background:rgba(255,255,255,0.04);">
+      const cur = all.filter(x => !annOff(x.id));
+      host.innerHTML = foldCardHTML('ann-co', '#FBCFE8,#FB923C', '📢', 'Annonces de STS', cur.length, cur.length ? cur.map(a => `<div style="padding:10px 12px;margin-bottom:8px;border:1px solid var(--border);border-radius:12px;background:rgba(255,255,255,0.04);">
           <div style="font-size:14px;overflow-wrap:anywhere;white-space:pre-wrap;">${escHtml(a.text)}</div>
           <div class="sub" style="font-size:11px;margin-top:4px;">${fmtDate(a.createdAt)}</div>
           <button type="button" class="miniBtn" data-ann-del="${a.id}" style="margin-top:8px;color:var(--danger);border-color:rgba(239,93,93,0.4);">🗑️ Supprimer</button>
         </div>`).join('') : `<p class="sub" style="margin:0;">Aucune annonce pour le moment.</p>`, '#7C1D4E');
-      main.insertAdjacentHTML('afterbegin', `<div id="annCoCard">${html}</div>`);
-      const card = document.getElementById('annCoCard');
-      bindFoldCards(card);
-      card.querySelectorAll('[data-ann-del]').forEach(btn => { btn.onclick = ()=>{ if(!confirm('Supprimer cette annonce de votre liste ?')) return; try{ localStorage.setItem('sts_ann_off_' + btn.dataset.annDel, '1'); }catch(e){} draw(); }; });
-      if(foldOpen.has('ann-co')) list.forEach(x => { try{ localStorage.setItem('sts_ann_seen_' + x.id, '1'); }catch(e){} });
-      card.querySelector('[data-fold-head]').addEventListener('click', ()=>{ list.forEach(x => { try{ localStorage.setItem('sts_ann_seen_' + x.id, '1'); }catch(e){} }); });
+      bindFoldCards(host);
+      host.querySelectorAll('[data-ann-del]').forEach(btn => { btn.onclick = ()=>{ if(!confirm('Supprimer cette annonce de votre liste ?')) return; try{ localStorage.setItem('sts_ann_off_' + btn.dataset.annDel, '1'); }catch(e){} draw(); }; });
+      const head = host.querySelector('[data-fold-head]');
+      if(head) head.addEventListener('click', ()=>{ annMarkSeen(all); });
+      if(foldOpen.has('ann-co')) annMarkSeen(all);
     };
     draw();
   }catch(e){}
@@ -5222,6 +5281,7 @@ async function renderCompanyPackagesView(code, companyName){
             <div><b>#${p.trackingId}</b> — ${STATUS_LABEL[p.status]||p.status}</div>
             <div style="font-size:14px;font-weight:700;margin-top:2px;">👤 ${escHtml(p.name||'—')} <span class="name" style="font-weight:400;">· ${escHtml(p.phone||'')}</span></div>
             <div class="pkgPhotos" data-pkgphotos-for="${escHtml(p.trackingId)}" style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px;"><span class="sub" style="font-size:11px;">📷 ${p.photoCount ? 'Chargement des photos...' : 'Aucune photo'}</span></div>
+            ${p.carrier ? `<div class="sub" style="font-size:11.5px;">🚚 ${escHtml(p.carrier)}</div>` : ''}
             ${(p.destCommune||p.destDepartment) ? `<div class="sub" style="font-size:11px;">📍 ${[p.destCommune,p.destDepartment,p.destCountry].filter(Boolean).join(', ')}</div>` : ''}
             ${p.hasProof ? `<button type="button" class="miniBtn" style="margin-top:6px;color:var(--ok);border-color:rgba(62,207,142,0.5);" data-proof-view="${escHtml(p.trackingId)}">📦 Voir la preuve de livraison</button>` : ''}
             ${p.hasClientProof ? `<button type="button" class="miniBtn" style="margin-top:6px;color:var(--ok);border-color:rgba(62,207,142,0.5);" data-cproof-view="${escHtml(p.trackingId)}">📦 Voir la preuve du client</button>` : ''}
@@ -5277,6 +5337,7 @@ async function renderOwnerPackages(){
       ${buildLocationSelectsHTML()}
       <label>Statut</label>
       <select id="pStatus">${optionsHtml}</select>
+      ${carrierFieldHTML()}
       <label>Livraison prévue dans (jours) <span style="color:var(--muted);font-weight:400;">(facultatif)</span></label>
       <input id="pDeliveryDays" type="number" min="1" max="365" inputmode="numeric" placeholder="Ex : 4">
       <div id="pDeliveryPreview" style="font-size:12px;color:var(--accent2);margin:-6px 0 12px;"></div>
@@ -5299,6 +5360,7 @@ async function renderOwnerPackages(){
       <div id="adminList"><div class="empty">Chargement...</div></div>`)}`;
   initLocationFields('','','');
   initColisNumField(isEditing);
+  bindCarrierField();
   bindFoldCards(document.getElementById('main'));
 
   if(isEditing){
@@ -5309,6 +5371,7 @@ async function renderOwnerPackages(){
         document.getElementById('pName').value = existing.name || '';
         document.getElementById('pPhone').value = existing.phone || '';
         document.getElementById('pStatus').value = existing.status || 'preparation';
+        setCarrierField(existing.carrier);
         if(document.getElementById('pColisNum')) document.getElementById('pColisNum').value = existing.colisNum || '';
         if(document.getElementById('pDeliveryDays')){
           document.getElementById('pDeliveryDays').value = existing.deliveryDays || '';
@@ -5327,6 +5390,7 @@ async function renderOwnerPackages(){
     const name = document.getElementById('pName').value.trim();
     const phone = document.getElementById('pPhone').value.trim();
     const status = document.getElementById('pStatus').value;
+    const carrier = readCarrier();
     const destCountry = getDestCountryValue();
     if(destCountry === null){ toast("Écrivez le nom du pays"); return; }
     const destDepartment = document.getElementById('pDept') ? document.getElementById('pDept').value : '';
@@ -5376,7 +5440,7 @@ async function renderOwnerPackages(){
       if(statusChanged){
         history.push({status, date:new Date().toISOString()});
       }
-      const pkg = {trackingId, name, phone: normalizePhone(phone), status, destCountry, destDepartment, destCommune, updatedAt:new Date().toISOString(), history, companyCode: adminSession.code};
+      const pkg = {trackingId, name, phone: normalizePhone(phone), status, destCountry, destDepartment, destCommune, updatedAt:new Date().toISOString(), history, companyCode: adminSession.code, carrier: carrier || ''};
       if(existingPickedUpAt) pkg.pickedUpAt = existingPickedUpAt;
       if(existingHidden){ pkg.hiddenByClient = true; pkg.hiddenByClientAt = (existingHidden === true) ? null : existingHidden; }
       if(colisNum) pkg.colisNum = colisNum;
@@ -6009,6 +6073,7 @@ async function renderAdminCore(){
       ${buildLocationSelectsHTML()}
       <label>Statut</label>
       <select id="pStatus">${optionsHtml}</select>
+      ${carrierFieldHTML()}
       <label>Livraison prévue dans (jours) <span style="color:var(--muted);font-weight:400;">(facultatif)</span></label>
       <input id="pDeliveryDays" type="number" min="1" max="365" inputmode="numeric" placeholder="Ex : 4">
       <div id="pDeliveryPreview" style="font-size:12px;color:var(--accent2);margin:-6px 0 12px;"></div>
@@ -6023,6 +6088,7 @@ async function renderAdminCore(){
     ${whatsappBubbleHTML()}`;
   initLocationFields('','','');
   initColisNumField(isEditing);
+  bindCarrierField();
   bindFoldCards(document.getElementById('main'));
   document.getElementById('btnAdminLogout').onclick = ()=>{ adminSession=null; editingTrackingId=null; renderAdmin(); };
   if(showConfirmBanner){
@@ -6040,6 +6106,7 @@ async function renderAdminCore(){
         document.getElementById('pName').value = existing.name || '';
         document.getElementById('pPhone').value = existing.phone || '';
         document.getElementById('pStatus').value = existing.status || 'preparation';
+        setCarrierField(existing.carrier);
         if(document.getElementById('pColisNum')) document.getElementById('pColisNum').value = existing.colisNum || '';
         if(document.getElementById('pDeliveryDays')){
           document.getElementById('pDeliveryDays').value = existing.deliveryDays || '';
@@ -6058,6 +6125,7 @@ async function renderAdminCore(){
     const name = document.getElementById('pName').value.trim();
     const phone = document.getElementById('pPhone').value.trim();
     const status = document.getElementById('pStatus').value;
+    const carrier = readCarrier();
     const destCountry = getDestCountryValue();
     if(destCountry === null){ toast("Écrivez le nom du pays"); return; }
     const destDepartment = document.getElementById('pDept') ? document.getElementById('pDept').value : '';
@@ -6107,7 +6175,7 @@ async function renderAdminCore(){
       if(statusChanged){
         history.push({status, date:new Date().toISOString()});
       }
-      const pkg = {trackingId, name, phone: normalizePhone(phone), status, destCountry, destDepartment, destCommune, updatedAt:new Date().toISOString(), history, companyCode: adminSession.code};
+      const pkg = {trackingId, name, phone: normalizePhone(phone), status, destCountry, destDepartment, destCommune, updatedAt:new Date().toISOString(), history, companyCode: adminSession.code, carrier: carrier || ''};
       if(existingPickedUpAt) pkg.pickedUpAt = existingPickedUpAt;
       if(existingHidden){ pkg.hiddenByClient = true; pkg.hiddenByClientAt = (existingHidden === true) ? null : existingHidden; }
       if(colisNum) pkg.colisNum = colisNum;
@@ -6570,7 +6638,9 @@ async function renderCompanySettings(main){
   getGoogleScriptQuota().then(q => { const el = document.getElementById('coEmailCard'); if(el) el.outerHTML = coEmailCardHTML(q, company && company.companyName); }).catch(()=>{});
   const hasLogo = !!(company && company.logoUrl);
   const lz = (company && company.logoZoom) || 100, lx = (company && company.logoPosX) ?? 50, ly = (company && company.logoPosY) ?? 50;
+  setTimeout(fillCoAnnouncements, 0);
   main.innerHTML = `
+    <div id="annCoHost"></div>
     ${coEmailCardHTML(gsQuota, company && company.companyName)}
     <div class="card">
       <h2>🔔 Notifications · historique</h2>
