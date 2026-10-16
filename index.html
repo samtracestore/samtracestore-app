@@ -1125,26 +1125,35 @@ let samGuideIdx = null;
 let samGuideScore = 0;
 const SAM_STOP = new Set(['le','la','les','des','du','une','est','que','qui','pour','dans','sur','avec','pas','mon','mes','votre','vos','comment','quand','aux','cette','ses','son','plus','par','vous','nous','faire','peut','puis','etre','avoir','quel','quelle','dois','doit','veux','voulez','pouvez','peux','mais','donc','car']);
 const SAM_HT2FR = {kolis:'colis', pake:'colis', peye:'paiement', peman:'paiement', kont:'compte', kod:'code', ajoute:'ajouter', chanje:'changer', estati:'statut', foto:'photo', lojo:'logo', mesaj:'message', kliyan:'client', aktive:'activer', bliye:'oublie', sipo:'support', gid:'guide', lyen:'lien', imel:'email', konekte:'connecter', antre:'connecter', livrezon:'livraison', kamyon:'camion', efase:'supprimer', retire:'supprimer', notifikasyon:'notifications', alet:'notifications'};
-function samTokens(t){ return samNorm(t).split(' ').map(w => SAM_HT2FR[w] || w).filter(w => w.length >= 4 && !SAM_STOP.has(w)).map(w => w.replace(/(s|x)$/, '')); }
+function samTokens(t){ return samNorm(t).split(' ').map(w => SAM_HT2FR[w] || w).filter(w => w.length >= 4 && !SAM_STOP.has(w)).map(w => w.slice(0, 5)); }
 function samBuildGuideIdx(){
   if(samGuideIdx) return samGuideIdx;
-  samGuideIdx = String(GUIDE_HTML).split(/(?=<h2)/).slice(1).map(p => {
+  samGuideIdx = [];
+  String(GUIDE_HTML).split(/(?=<h2)/).slice(1).forEach(p => {
     const title = ((p.match(/<h2[^>]*>(.*?)<\/h2>/) || [])[1] || '').replace(/<[^>]+>/g, '').trim();
-    const text = p.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
-    return {title: title, text: text, toks: new Set(samTokens(text + ' ' + title)), tt: samTokens(title)};
+    const text = p.replace(/<[^>]+>/g, ' ').replace(/&nbsp;/g, ' ').replace(/&gt;/g, '>').replace(/&lt;/g, '<').replace(/\s+/g, ' ').trim()
+      .replace(/Sam Trace Store - Suivi de colis \|? ?Guide de l'entreprise \|? ?page \d+/g, '');
+    const sents = text.split(/(?<=[.!?»])\s+/).filter(x => x.length > 3);
+    const tt = samTokens(title);
+    sents.forEach((st, i) => { samGuideIdx.push({title: title, sents: sents, i: i, toks: new Set(samTokens(st)), tt: tt}); });
   });
   return samGuideIdx;
 }
 function samGuideSearch(raw){
-  const q = samTokens(raw); if(!q.length) return null;
+  const q = Array.from(new Set(samTokens(raw))); samGuideScore = 0;
+  if(!q.length) return null;
   let best = null, bestScore = 0;
   samBuildGuideIdx().forEach(e => {
     let sc = 0;
-    q.forEach(w => { if(e.toks.has(w)) sc += 1; if(e.tt.indexOf(w) >= 0) sc += 1.5; });
+    q.forEach(w => { if(e.toks.has(w)) sc += 1; else if(e.tt.indexOf(w) >= 0) sc += 0.6; });
     if(sc > bestScore){ bestScore = sc; best = e; }
   });
+  if(!best || bestScore < 2) return null;
   samGuideScore = bestScore;
-  return (best && bestScore >= 2) ? best : null;
+  const from = Math.max(0, best.i - 1), to = Math.min(best.sents.length, best.i + 3);
+  let text = best.sents.slice(from, to).join(' ');
+  if(text.length > 650) text = text.slice(0, 650).replace(/\s+\S*$/, '') + '…';
+  return {title: best.title, text: text};
 }
 async function samReply(raw){
   const lang = samDetectLang(raw); samLang = lang;
@@ -1177,6 +1186,10 @@ async function samReply(raw){
     if(samIsYes(n)){ samLang = lang; return await samStartAgent('agent'); }
     if(samIsNo(n)) return ok(R("D'accord, pas de problème. Je reste disponible : posez-moi une autre question quand vous voulez.", "Dakò, pa gen pwoblèm. M la toujou : poze m yon lòt kesyon lè ou vle."));
   }
+
+  // la personne dit que la réponse n'est pas bonne -> proposer un agent
+  if(samHas(n, ['pas la bonne reponse', 'mauvaise reponse', 'pas la bonne', 'ce n est pas ca', 'c est pas ca', 'pa bon repons', 'repons lan pa bon', 'se pa sa', 'vous ne comprenez pas', 'tu ne comprends pas', 'ou pa konprann']))
+    return samHandoverOffer(lang, 'ask');
 
   // signaler une entreprise
   if(samHas(n, ['signaler', 'signale ', 'porter plainte', 'plainte', 'denonc', 'arnaque', 'fraude', 'escroc', 'siyale', 'siyalman', 'rapote', 'repote', 'plent']))
@@ -1242,8 +1255,8 @@ async function samReply(raw){
       }
       return ok(R("Pour suivre votre colis, ouvrez l'écran Client et entrez votre numéro de téléphone. Vous pouvez aussi m'envoyer votre numéro de suivi (exemple : STS-1234-567-AB) et je vous donne son statut.", "Pou swiv kolis ou, louvri ekran Client lan epi antre nimewo telefòn ou. Ou ka voye m nimewo swivi a tou (egzanp : STS-1234-567-AB) epi m ba w estati l."));
     };
-    if(samHas(n, ['ou est', 'suivre', 'suivi', 'kote', 'statut', 'estati', 'mon colis', 'mes colis', 'kolis mwen', 'kolis la'])) return await trackReply();
-    if(samHas(n, ['signifie', 'vle di', 'veut dire', 'preparation', 'expedie', 'en attente', 'disponible au bureau', 'en cours de livraison']))
+    if(samHas(n, ['ou est', 'suivre', 'suivi', 'kote', 'statut de mon', 'estati kolis', 'mon colis', 'mes colis', 'kolis mwen', 'kolis la'])) return await trackReply();
+    if(samHas(n, ['signifie', 'vle di', 'veut dire', 'statut', 'estati', 'preparation', 'expedie', 'en attente', 'disponible au bureau', 'en cours de livraison']))
       return ok(R("Les statuts :\n• En préparation : l'entreprise prépare votre colis\n• Expédié : le colis est en route\n• En cours de livraison : un livreur arrive\n• En attente : le colis attend une étape\n• Disponible au bureau : vous pouvez venir le récupérer\n• Livré : vous l'avez reçu",
                   "Estati yo :\n• En préparation : konpayi a ap prepare kolis ou\n• Expédié : kolis la sou wout\n• En cours de livraison : yon livrè ap vini\n• En attente : kolis la ap tann yon etap\n• Disponible au bureau : ou ka vin pran l\n• Livré : ou resevwa l"));
     if(samHas(n, ['email', 'imel', 'alerte', 'alet', 'notification', 'notif', 'prevenu', 'avize', 'recevoir les alertes']))
@@ -1276,10 +1289,13 @@ async function samReply(raw){
       try{ const s = await getPaymentSettings(); amt = R("\nMontant minimum du dépôt : " + s.minHTG + " HTG ou " + s.minUSD + " USD.", "\nMontan minimòm depo a : " + s.minHTG + " HTG oswa " + s.minUSD + " USD."); }catch(e){}
       return ok(R("Pour activer ou renouveler votre compte : dans votre espace Entreprise, touchez « Activer mon compte » (ou l'écran Paiement), choisissez la méthode de paiement, envoyez votre dépôt et ajoutez la preuve. STS vérifie, puis vous recevez un message de confirmation." + amt, "Pou aktive oswa renouvle kont ou : nan espas Entreprise ou, peze « Activer mon compte » (oswa ekran Paiement), chwazi metòd peman an, voye depo ou epi ajoute prèv la. STS verifye, epi w resevwa yon mesaj konfimasyon." + amt));
     }
+    if(samHas(n, ['compagnie de transport', 'transporteur', 'haiti trans', 'rotation tours', 'remito', 'sos transport', 'konpayi transpo', 'ajouter une compagnie'])){
+      return ok(R("Dans « Ajouter un colis », sous le statut, choisissez la compagnie de transport dans la liste : Haïti Trans, Rotation Tours, Remito Transport, SOS Transport ou Sam Trace Store (STS). Si elle n'est pas dans la liste, choisissez « Autre » et écrivez son nom : elle sera gardée pour la prochaine fois.", "Nan « Ajouter un colis », anba estati a, chwazi konpayi transpò a nan lis la : Haïti Trans, Rotation Tours, Remito Transport, SOS Transport oswa Sam Trace Store (STS). Si li pa nan lis la, chwazi « Autre » epi ekri non li."));
+    }
     if(samHas(n, ['logo', 'lojo'])){
       return ok(R("Pour changer votre logo, touchez le petit crayon ✏️ sur votre logo, dans l'accueil de votre espace Entreprise. Vous pouvez ensuite ajuster le zoom et la position.", "Pou chanje lojo ou, peze sou ti kreyon ✏️ ki sou lojo ou a, nan akèy espas Entreprise ou. Apre sa ou ka ajiste zoum nan ak pozisyon an."));
     }
-    if(samHas(n, ['lien', 'lyen', 'partager', 'pataje', 'mes clients', 'kliyan mwen'])){
+    if(samHas(n, ['le lien', 'mon lien', 'lien pour', 'lyen', 'partager le lien', 'pataje', 'mes clients', 'kliyan mwen'])){
       return ok(R("Dans Paramètre, la carte « Lien pour mes clients » vous permet de copier le lien ou de l'envoyer par WhatsApp. Vos clients y voient seulement les colis de votre entreprise.", "Nan Paramètre, kat « Lien pour mes clients » la pèmèt ou kopye lyen an oswa voye l sou WhatsApp. Kliyan ou yo wè sèlman kolis konpayi w."));
     }
     if(samHas(n, ['guide', 'manuel', 'tutoriel', 'comment utiliser', 'kijan pou itilize', 'aide', 'ede'])){
@@ -1289,7 +1305,7 @@ async function samReply(raw){
       return ok(R("À chaque changement de statut, vos clients reçoivent un email au nom de votre entreprise, s'ils ont laissé leur adresse. La carte « Service Email » dans Paramètre montre combien d'emails restent aujourd'hui.", "Chak fwa estati chanje, kliyan ou yo resevwa yon imel nan non konpayi w, si yo kite adrès yo. Kat « Service Email » nan Paramètre montre konbyen imel ki rete jodi a."));
     }
     { const g0 = samGuideSearch(raw);
-      if(g0 && samGuideScore >= 3){
+      if(g0 && samGuideScore >= 2){
         const body0 = g0.text.length > 520 ? g0.text.slice(0, 520).replace(/\s+\S*$/, '') + '…' : g0.text;
         return ok(R("📖 Voici ce que dit le guide (« " + g0.title + " ») :\n" + body0 + "\n\nPour tout lire, ouvrez Paramètre > Guide de l'entreprise.", "📖 Men sa gid la di (« " + g0.title + " ») :\n" + body0 + "\n\nPou li tout, louvri Paramètre > Guide de l'entreprise."));
       } }
@@ -1298,11 +1314,11 @@ async function samReply(raw){
     }
   }
 
-  // ----- recherche dans le guide (entreprises) -----
-  if(role === 'company'){
+  // ----- recherche dans le guide -----
+  {
     const g = samGuideSearch(raw);
     if(g){
-      let body = g.text.length > 520 ? g.text.slice(0, 520).replace(/\s+\S*$/, '') + '…' : g.text;
+      let body = g.text;
       return ok(R("📖 Voici ce que dit le guide (« " + g.title + " ») :\n" + body + "\n\nPour tout lire, ouvrez Paramètre > Guide de l'entreprise.", "📖 Men sa gid la di (« " + g.title + " ») :\n" + body + "\n\nPou li tout, louvri Paramètre > Guide de l'entreprise."));
     }
   }
@@ -1449,7 +1465,7 @@ function courierBlockHTML(av, kind){
 }
 function courierAvatarCardHTML(av){
   return `<div class="card">
-      <h2>Avatars de livraison <span style="font-size:11px;color:var(--muted);font-weight:400;">(v12 oct. N)</span></h2>
+      <h2>Avatars de livraison <span style="font-size:11px;color:var(--muted);font-weight:400;">(v12 oct. O)</span></h2>
       <p class="sub">Ces avatars sont utilisés par toutes les entreprises. Quand vous les changez ici, ils changent pour tout le monde, côté client aussi.</p>
       ${courierBlockHTML(av, 'moto')}
       ${courierBlockHTML(av, 'truck')}
@@ -1667,10 +1683,19 @@ async function saveCompanyLogo(code, dataUrl){
 // --- Paiement ---
 function paymentMethodsFor(settings){
   const act = (settings && settings.methodActive) || {};
-  const base = PAYMENT_METHODS.map(m => Object.assign({}, m, {active: act[m.key] !== false}));
+  const ov = (settings && settings.methodOverrides) || {};
+  const base = PAYMENT_METHODS.map(m => {
+    const o = ov[m.key] || {};
+    const merged = Object.assign({}, m);
+    ['beneficiary', 'number', 'email', 'tag'].forEach(f => { if(o[f] !== undefined) merged[f] = o[f]; });
+    const hasInfo = !!(merged.number || merged.email || merged.tag);
+    merged.active = (act[m.key] !== false) && hasInfo;
+    return merged;
+  });
   const extras = ((settings && settings.extraAccounts) || []).map(a => ({
-    key: 'x' + a.id, iconKey: a.kind, label: (a.kind === 'moncash' ? 'MonCash' : 'NatCash') + ' · ' + a.beneficiary,
-    currency: 'HTG', beneficiary: a.beneficiary, number: a.number, active: a.active !== false, extra: true
+    key: 'x' + a.id, iconKey: a.kind, icon: a.icon || null,
+    label: (a.title || (a.kind === 'moncash' ? 'MonCash' : 'NatCash')) + ' · ' + a.beneficiary,
+    currency: 'HTG', beneficiary: a.beneficiary, number: a.number, active: (a.active !== false) && !!a.number, extra: true
   }));
   return base.concat(extras);
 }
@@ -1756,8 +1781,8 @@ async function getPaymentSettings(){
   try{
     const doc = await db.collection('settings').doc('payment').get();
     const data = doc.exists ? doc.data() : {};
-    return {minHTG: data.minHTG || 1680, minUSD: data.minUSD || 12, trialDays: data.trialDays || 20, regFeeHTG: data.regFeeHTG || 1000, regFeeUSD: data.regFeeUSD || 8, extraAccounts: data.extraAccounts || [], methodActive: data.methodActive || {}, icons: data.icons || {}, supportAvatar: data.supportAvatar || null, supportAvatarPos: data.supportAvatarPos, samAvatar: data.samAvatar || null, samAvatarPos: data.samAvatarPos, samAiUrl: data.samAiUrl || null};
-  }catch(e){ return {minHTG:1680, minUSD:12, trialDays:20, regFeeHTG:1000, regFeeUSD:8, extraAccounts:[], methodActive:{}, icons:{}, supportAvatar:null, supportAvatarPos:50}; }
+    return {minHTG: data.minHTG || 1680, minUSD: data.minUSD || 12, trialDays: data.trialDays || 20, regFeeHTG: data.regFeeHTG || 1000, regFeeUSD: data.regFeeUSD || 8, extraAccounts: data.extraAccounts || [], methodActive: data.methodActive || {}, methodOverrides: data.methodOverrides || {}, icons: data.icons || {}, supportAvatar: data.supportAvatar || null, supportAvatarPos: data.supportAvatarPos, samAvatar: data.samAvatar || null, samAvatarPos: data.samAvatarPos, samAiUrl: data.samAiUrl || null};
+  }catch(e){ return {minHTG:1680, minUSD:12, trialDays:20, regFeeHTG:1000, regFeeUSD:8, extraAccounts:[], methodActive:{}, methodOverrides:{}, icons:{}, supportAvatar:null, supportAvatarPos:50}; }
 }
 
 async function updateMinAmount(field, amount){
@@ -4091,8 +4116,9 @@ async function renderOwnerPayments(){
     const settingsHtml = compactCardHtml('paymentSettings', '#3ECF8E,#FF7A1A', '⚙️', 'Paramètres du paiement manuel',
       `${settingsFields.length} paramètres — appuyez pour voir/modifier`, settingsListContent);
 
-    const methodsListContent = `<div class="card">` + PAYMENT_METHODS.map((m,i)=>{
+    const methodsListContent = `<div class="card">` + paymentMethodsFor(settings).filter(x => !x.extra).map((m,i)=>{
           const icon = settings.icons[`${m.key}_icon`];
+          const baseM = PAYMENT_METHODS.find(b => b.key === m.key) || {};
           const shortNumber = m.number || m.email || '';
           const accent = i % 2 === 0 ? '#3ECF8E' : '#FF7A1A';
           const bg = i % 2 === 0 ? 'rgba(62,207,142,0.10)' : 'rgba(255,122,26,0.10)';
@@ -4113,10 +4139,16 @@ async function renderOwnerPayments(){
               <input type="file" accept="image/*" id="icon-${m.key}" style="margin-bottom:8px;">
               <div id="preview-icon-${m.key}" style="margin-bottom:10px;">${icon ? `<img src="${icon}" style="width:44px;height:44px;border-radius:10px;object-fit:cover;">` : `<span class="sub" style="font-size:11px;">Aucune icône enregistrée pour l'instant</span>`}</div>
               <button type="button" data-meth-toggle="${m.key}" style="margin:2px 0 10px;padding:8px 14px;border-radius:12px;font-weight:800;cursor:pointer;border:1px solid ${((settings.methodActive || {})[m.key] === false) ? 'rgba(239,93,93,0.5)' : 'rgba(62,207,142,0.5)'};background:transparent;color:${((settings.methodActive || {})[m.key] === false) ? 'var(--danger)' : 'var(--ok)'};">${((settings.methodActive || {})[m.key] === false) ? '🔴 Non actif — toucher pour activer' : '🟢 Actif — toucher pour désactiver'}</button>
-              <p class="sub" style="margin:2px 0;">Bénéficiaire : ${m.beneficiary}</p>
-              ${m.number ? `<p class="sub" style="margin:2px 0;">Numéro : ${m.number}</p>` : ''}
-              ${m.email ? `<p class="sub" style="margin:2px 0;">Email : ${m.email}</p>` : ''}
-              ${m.tag ? `<p class="sub" style="margin:2px 0;">Tag : ${m.tag}</p>` : ''}
+              <label>Nom du bénéficiaire</label>
+              <input data-meth-ben="${m.key}" value="${escHtml(m.beneficiary || '')}">
+              <label>Numéro de compte</label>
+              <input data-meth-num="${m.key}" value="${escHtml(m.number || '')}" placeholder="Vide = numéro retiré (compte indisponible)">
+              ${(baseM.email !== undefined) ? `<label>Email</label><input data-meth-mail="${m.key}" value="${escHtml(m.email || '')}">` : ''}
+              ${(baseM.tag !== undefined) ? `<label>Tag</label><input data-meth-tag="${m.key}" value="${escHtml(m.tag || '')}">` : ''}
+              <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:6px;">
+                <button type="button" class="primary" data-meth-save="${m.key}" style="flex:2;">💾 Enregistrer ce compte</button>
+                <button type="button" class="ghost" data-meth-clear="${m.key}" style="flex:1;color:var(--danger);">🗑️ Retirer le numéro</button>
+              </div>
             </div>
           </div>`;
         }).join('') + `</div>`;
@@ -4124,23 +4156,33 @@ async function renderOwnerPayments(){
       `${PAYMENT_METHODS.length} méthodes — appuyez pour voir la liste`, methodsListContent);
 
     const extras = settings.extraAccounts || [];
+    const nextTitle = (kind) => (kind === 'moncash' ? 'MonCash' : 'NatCash') + ' ' + (extras.filter(a => a.kind === kind).length + 2);
     const extraAccountsHtml = `<div class="card">
         <h2>➕ Autres comptes NatCash / MonCash</h2>
-        <p class="sub">Ajoutez d'autres numéros (avec un autre nom) si les comptes principaux ne sont pas disponibles. Quand un compte est « Non actif », l'entreprise voit un message et ne peut pas envoyer d'argent dessus.</p>
-        ${extras.length ? extras.map(a => `<div style="padding:10px 12px;margin-bottom:8px;border:1px solid var(--border);border-left:4px solid ${a.active === false ? '#EF5D5D' : '#3ECF8E'};border-radius:10px;background:rgba(255,255,255,0.03);">
-            <div style="font-weight:800;">${a.kind === 'moncash' ? 'MonCash' : 'NatCash'} · ${escHtml(a.beneficiary)}</div>
-            <div class="sub" style="margin:2px 0 8px;">Numéro : ${escHtml(a.number)}</div>
-            <div style="display:flex;gap:8px;">
-              <button type="button" data-xacc-toggle="${a.id}" style="flex:1;padding:8px 10px;border-radius:12px;font-weight:800;cursor:pointer;background:transparent;border:1px solid ${a.active === false ? 'rgba(239,93,93,0.5)' : 'rgba(62,207,142,0.5)'};color:${a.active === false ? 'var(--danger)' : 'var(--ok)'};">${a.active === false ? '🔴 Non actif' : '🟢 Actif'}</button>
+        <p class="sub">Ajoutez NatCash 2, MonCash 2... (autre numéro, autre nom, avec logo) si les comptes principaux ne sont pas disponibles. Tout est modifiable. Quand un compte est « Non actif », l'entreprise voit un message et ne peut pas envoyer d'argent dessus.</p>
+        ${extras.length ? extras.map(a => `<div style="padding:12px;margin-bottom:10px;border:1px solid var(--border);border-left:4px solid ${a.active === false ? '#EF5D5D' : '#3ECF8E'};border-radius:10px;background:rgba(255,255,255,0.03);">
+            <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px;">
+              <div style="width:44px;height:44px;border-radius:10px;background:var(--panel2);overflow:hidden;display:flex;align-items:center;justify-content:center;flex:0 0 auto;">${(a.icon || settings.icons[a.kind + '_icon']) ? `<img src="${a.icon || settings.icons[a.kind + '_icon']}" style="width:100%;height:100%;object-fit:cover;">` : '💳'}</div>
+              <div style="font-weight:800;">${escHtml(a.title || (a.kind === 'moncash' ? 'MonCash' : 'NatCash'))}</div>
+            </div>
+            <label>Numéro</label><input data-xacc-num="${a.id}" value="${escHtml(a.number || '')}">
+            <label>Nom du bénéficiaire</label><input data-xacc-name="${a.id}" value="${escHtml(a.beneficiary || '')}">
+            <label>Logo (facultatif)</label><input type="file" accept="image/*" data-xacc-logo="${a.id}" style="margin-bottom:8px;">
+            <div style="display:flex;gap:8px;flex-wrap:wrap;">
+              <button type="button" class="primary" data-xacc-save="${a.id}" style="flex:2;">💾 Enregistrer</button>
+              <button type="button" data-xacc-toggle="${a.id}" style="flex:2;padding:8px 10px;border-radius:12px;font-weight:800;cursor:pointer;background:transparent;border:1px solid ${a.active === false ? 'rgba(239,93,93,0.5)' : 'rgba(62,207,142,0.5)'};color:${a.active === false ? 'var(--danger)' : 'var(--ok)'};">${a.active === false ? '🔴 Non actif' : '🟢 Actif'}</button>
               <button type="button" data-xacc-del="${a.id}" class="ghost" style="width:auto;padding:8px 14px;color:var(--danger);">🗑️</button>
             </div>
           </div>`).join('') : '<p class="sub" style="margin:0 0 10px;">Aucun compte supplémentaire pour le moment.</p>'}
+        <h3 style="margin:14px 0 6px;font-size:15px;">Ajouter un compte</h3>
         <label>Type de compte</label>
-        <select id="xaccKind"><option value="natcash">NatCash</option><option value="moncash">MonCash</option></select>
+        <select id="xaccKind"><option value="natcash">NatCash (suivant : ${nextTitle('natcash')})</option><option value="moncash">MonCash (suivant : ${nextTitle('moncash')})</option></select>
         <label>Numéro</label>
         <input id="xaccNumber" type="tel" placeholder="Ex : 40 12 34 56">
         <label>Nom du bénéficiaire</label>
         <input id="xaccName" placeholder="Ex : Marie Pierre">
+        <label>Logo (facultatif)</label>
+        <input id="xaccLogo" type="file" accept="image/*" style="margin-bottom:8px;">
         <button class="primary" id="btnAddXacc">➕ Ajouter ce compte</button>
       </div>`;
     content.innerHTML = emailCard + codeCard + backupCard + pendingRegHtml + pendingHtml + notifCardOwner + confirmedRegHtml + confirmedHtml + settingsHtml + methodsHtml + extraAccountsHtml + `
@@ -4169,23 +4211,61 @@ async function renderOwnerPayments(){
         catch(e){ toast('Erreur, réessayez'); }
       };
     });
+    content.querySelectorAll('[data-meth-save]').forEach(btn => {
+      btn.onclick = async ()=>{
+        const k = btn.dataset.methSave;
+        const val = (attr) => { const el = content.querySelector('[' + attr + '="' + k + '"]'); return el ? el.value.trim() : undefined; };
+        const o = {};
+        const ben = val('data-meth-ben'), num = val('data-meth-num'), mail = val('data-meth-mail'), tag = val('data-meth-tag');
+        if(ben !== undefined) o.beneficiary = ben;
+        if(num !== undefined) o.number = num;
+        if(mail !== undefined) o.email = mail;
+        if(tag !== undefined) o.tag = tag;
+        try{ await db.collection('settings').doc('payment').set({methodOverrides: {[k]: o}}, {merge: true}); toast('✅ Compte enregistré'); renderOwnerPayments(); }
+        catch(e){ toast('Erreur, réessayez'); }
+      };
+    });
+    content.querySelectorAll('[data-meth-clear]').forEach(btn => {
+      btn.onclick = async ()=>{
+        if(!confirm('Retirer le numéro de ce compte ? Les entreprises ne pourront plus l\'utiliser tant que vous ne remettez pas un numéro.')) return;
+        try{ await db.collection('settings').doc('payment').set({methodOverrides: {[btn.dataset.methClear]: {number: ''}}}, {merge: true}); toast('Numéro retiré'); renderOwnerPayments(); }
+        catch(e){ toast('Erreur, réessayez'); }
+      };
+    });
     const saveExtras = async (arr, okMsg)=>{
       try{ await db.collection('settings').doc('payment').set({extraAccounts: arr}, {merge: true}); toast(okMsg); renderOwnerPayments(); }
       catch(e){ toast('Erreur, réessayez'); }
     };
-    content.querySelectorAll('[data-xacc-toggle]').forEach(b => {
-      b.onclick = ()=>{ saveExtras(extras.map(a => a.id === b.dataset.xaccToggle ? Object.assign({}, a, {active: a.active === false}) : a), 'Compte mis à jour'); };
+    content.querySelectorAll('[data-xacc-toggle]').forEach(btn => {
+      btn.onclick = ()=>{ saveExtras(extras.map(a => a.id === btn.dataset.xaccToggle ? Object.assign({}, a, {active: a.active === false}) : a), 'Compte mis à jour'); };
     });
-    content.querySelectorAll('[data-xacc-del]').forEach(b => {
-      b.onclick = ()=>{ if(!confirm('Supprimer ce compte ?')) return; saveExtras(extras.filter(a => a.id !== b.dataset.xaccDel), 'Compte supprimé'); };
+    content.querySelectorAll('[data-xacc-del]').forEach(btn => {
+      btn.onclick = ()=>{ if(!confirm('Supprimer ce compte ?')) return; saveExtras(extras.filter(a => a.id !== btn.dataset.xaccDel), 'Compte supprimé'); };
+    });
+    content.querySelectorAll('[data-xacc-save]').forEach(btn => {
+      btn.onclick = async ()=>{
+        const id = btn.dataset.xaccSave;
+        const num = content.querySelector('[data-xacc-num="' + id + '"]').value.trim();
+        const name = content.querySelector('[data-xacc-name="' + id + '"]').value.trim();
+        const logoEl = content.querySelector('[data-xacc-logo="' + id + '"]');
+        if(!name){ toast('Écrivez le nom du bénéficiaire.'); return; }
+        let icon;
+        try{ if(logoEl && logoEl.files && logoEl.files[0]) icon = await compressImage(logoEl.files[0], 160); }catch(e){ toast('Logo illisible'); return; }
+        saveExtras(extras.map(a => a.id === id ? Object.assign({}, a, {number: num, beneficiary: name}, icon ? {icon: icon} : {}) : a), '✅ Compte enregistré');
+      };
     });
     const addX = document.getElementById('btnAddXacc');
-    if(addX) addX.onclick = ()=>{
+    if(addX) addX.onclick = async ()=>{
       const kind = document.getElementById('xaccKind').value;
       const number = document.getElementById('xaccNumber').value.trim();
       const beneficiary = document.getElementById('xaccName').value.trim();
       if(!number || !beneficiary){ toast('Écrivez le numéro et le nom du bénéficiaire.'); return; }
-      saveExtras(extras.concat([{id: Date.now().toString(36), kind, number, beneficiary, active: true}]), 'Compte ajouté');
+      let icon = null;
+      const lf = document.getElementById('xaccLogo');
+      try{ if(lf && lf.files && lf.files[0]) icon = await compressImage(lf.files[0], 160); }catch(e){ toast('Logo illisible'); return; }
+      const acc = {id: Date.now().toString(36), kind, title: nextTitle(kind), number, beneficiary, active: true};
+      if(icon) acc.icon = icon;
+      saveExtras(extras.concat([acc]), 'Compte ajouté');
     };
     document.getElementById('supportAvatarInput').onchange = async (e)=>{
       const file = e.target.files[0];
@@ -4632,7 +4712,18 @@ function regAccOpen(c){
         <button type="button" data-msg-open="${c.code}" data-name="${escHtml(c.companyName)}" style="padding:8px 14px;border-radius:12px;border:1px solid var(--accent);background:rgba(255,122,26,0.15);color:var(--accent2);font-weight:800;font-size:13px;cursor:pointer;">✉️ Message</button>
         ${coActiveBtnHTML(c)}
         <button type="button" data-pay-req="${c.code}" data-name="${escHtml(c.companyName)}" style="padding:8px 14px;border:none;border-radius:12px;background:linear-gradient(135deg,#8B5CF6,#F97316);color:#fff;font-weight:800;font-size:13px;cursor:pointer;">💳 Passer au paiement mensuel</button>
-      </div>`;
+      </div>
+      ${coMotifHTML(c)}`;
+}
+function coMotifHTML(c){
+  const activated = !!(c.isFree || c.paymentStatus === 'active');
+  if(activated) return '';
+  const end = c.trialEndsAt ? new Date(c.trialEndsAt) : null;
+  let txt;
+  if(c.regPaymentStatus && c.regPaymentStatus !== 'active' && !c.trialEndsAt) txt = "Motif 3 : Non actif. Les frais d'inscription ne sont pas encore payés.";
+  else if(end && end > new Date()) txt = "Motif 1 : Non actif. L'essai gratuit n'est pas encore terminé.";
+  else txt = "Motif 2 : Non actif. L'abonnement a pris fin.";
+  return `<div style="margin:2px 0 10px;padding:8px 12px;border-radius:10px;background:rgba(239,93,93,0.1);border:1px solid rgba(239,93,93,0.3);color:var(--danger);font-weight:700;font-size:13px;line-height:1.4;">⛔ ${txt}</div>`;
 }
 function coActiveBtnHTML(c){
   const activated = !!(c.isFree || c.paymentStatus === 'active');
@@ -5642,7 +5733,7 @@ async function renderPaymentGate(main, company, status){
 
   // status === 'none'
   const methodCards = paymentMethodsFor(settings).map(m=>{
-    const icon = settings.icons[`${m.iconKey || m.key}_icon`];
+    const icon = (m.icon || settings.icons[`${m.iconKey || m.key}_icon`]);
     const min = m.currency === 'HTG' ? settings.minHTG : settings.minUSD;
     const shortNumber = m.number || m.email || '';
     return `
@@ -5806,7 +5897,7 @@ async function renderRegistrationGate(main, company, status){
 
   // status === 'none'
   const methodCards = paymentMethodsFor(settings).map(m=>{
-    const icon = settings.icons[`${m.iconKey || m.key}_icon`];
+    const icon = (m.icon || settings.icons[`${m.iconKey || m.key}_icon`]);
     const min = m.currency === 'HTG' ? settings.regFeeHTG : settings.regFeeUSD;
     const shortNumber = m.number || m.email || '';
     return `
