@@ -1465,7 +1465,7 @@ function courierBlockHTML(av, kind){
 }
 function courierAvatarCardHTML(av){
   return `<div class="card">
-      <h2>Avatars de livraison <span style="font-size:11px;color:var(--muted);font-weight:400;">(v12 oct. O)</span></h2>
+      <h2>Avatars de livraison <span style="font-size:11px;color:var(--muted);font-weight:400;">(v12 oct. P)</span></h2>
       <p class="sub">Ces avatars sont utilisés par toutes les entreprises. Quand vous les changez ici, ils changent pour tout le monde, côté client aussi.</p>
       ${courierBlockHTML(av, 'moto')}
       ${courierBlockHTML(av, 'truck')}
@@ -1695,10 +1695,22 @@ function paymentMethodsFor(settings){
   const extras = ((settings && settings.extraAccounts) || []).map(a => ({
     key: 'x' + a.id, iconKey: a.kind, icon: a.icon || null,
     label: (a.title || (a.kind === 'moncash' ? 'MonCash' : 'NatCash')) + ' · ' + a.beneficiary,
+    badge: (String(a.title || '').match(/(\d+)\s*$/) || [])[1] || null,
     currency: 'HTG', beneficiary: a.beneficiary, number: a.number, active: (a.active !== false) && !!a.number, extra: true
   }));
   return base.concat(extras);
 }
+function copyBtnHTML(v){
+  return `<button type="button" data-copy="${escHtml(String(v || ''))}" aria-label="Copier" title="Copier" style="flex:0 0 auto;width:36px;height:36px;border-radius:8px;border:1px solid var(--accent);background:rgba(255,122,26,0.12);color:var(--accent);font-size:16px;cursor:pointer;line-height:1;">📋</button>`;
+}
+document.addEventListener('click', async (e)=>{
+  const b = e.target.closest('[data-copy]'); if(!b) return;
+  e.stopPropagation();
+  const v = b.dataset.copy || '';
+  try{ await navigator.clipboard.writeText(v); }
+  catch(err){ const t = document.createElement('textarea'); t.value = v; t.style.cssText = 'position:fixed;opacity:0;'; document.body.appendChild(t); t.select(); try{ document.execCommand('copy'); }catch(_){} t.remove(); }
+  toast('✅ Copié : ' + v);
+});
 function showAmountError(inputEl){
   if(!inputEl) return;
   let d = inputEl.nextElementSibling;
@@ -2440,8 +2452,8 @@ function printPackagesList(pkgs, nameOverride){
   const owner = !!(adminSession && adminSession.isOwner);
   const title = 'Liste des colis — ' + (nameOverride || (owner ? 'Sam Trace Store' : ((adminSession && adminSession.companyName) || '')));
   const list = pkgs.slice().sort((a, b) => String(a.name || '').localeCompare(String(b.name || '')));
-  const rows = list.map((p, i) => `<tr><td>${i + 1}</td><td>#${esc(p.trackingId)}</td><td>${esc(p.name || '')}</td><td>${esc(p.phone || '')}</td><td>${esc(STATUS_LABEL[p.status] || p.status)}</td><td>${esc([p.destCommune, p.destDepartment, p.destCountry].filter(Boolean).join(', '))}</td><td>${p.updatedAt ? esc(fmtDate(p.updatedAt)) : ''}</td></tr>`).join('');
-  const html = `<!doctype html><html><head><meta charset="utf-8"><title>${esc(title)}</title><style>body{font-family:Arial,sans-serif;padding:16px;color:#111}h1{font-size:18px;margin:0 0 4px}p{margin:0 0 12px;color:#555;font-size:12px}table{width:100%;border-collapse:collapse;font-size:11.5px}th,td{border:1px solid #ccc;padding:5px;text-align:left}th{background:#FF7A1A;color:#fff}tr:nth-child(even){background:#f7f7f7}</style></head><body><h1>${esc(title)}</h1><p>${list.length} colis · généré le ${new Date().toLocaleString('fr-FR')}</p><table><tr><th>#</th><th>N° de suivi</th><th>Client</th><th>Téléphone</th><th>Statut</th><th>Destination</th><th>Mise à jour</th></tr>${rows}</table></body></html>`;
+  const rows = list.map((p, i) => `<tr><td>${i + 1}</td><td>#${esc(p.trackingId)}</td><td>${esc(p.name || '')}</td><td>${esc(p.phone || '')}</td><td>${esc(STATUS_LABEL[p.status] || p.status)}</td><td>${esc(p.carrier || '')}</td><td>${esc([p.destCommune, p.destDepartment, p.destCountry].filter(Boolean).join(', '))}</td><td>${p.updatedAt ? esc(fmtDate(p.updatedAt)) : ''}</td></tr>`).join('');
+  const html = `<!doctype html><html><head><meta charset="utf-8"><title>${esc(title)}</title><style>body{font-family:Arial,sans-serif;padding:16px;color:#111}h1{font-size:18px;margin:0 0 4px}p{margin:0 0 12px;color:#555;font-size:12px}table{width:100%;border-collapse:collapse;font-size:11.5px}*{-webkit-print-color-adjust:exact;print-color-adjust:exact}@page{size:A4;margin:10mm}th,td{border:1px solid #ccc;padding:5px;text-align:left}th{background:#FF7A1A !important;color:#fff !important}tr:nth-child(even) td{background:#f7f7f7 !important}</style></head><body><h1>${esc(title)}</h1><p>${list.length} colis · généré le ${new Date().toLocaleString('fr-FR')}</p><table><tr><th>#</th><th>N° de suivi</th><th>Client</th><th>Téléphone</th><th>Statut</th><th>Transport</th><th>Destination</th><th>Mise à jour</th></tr>${rows}</table></body></html>`;
   const w = window.open('', '_blank');
   if(!w){ toast('Autorisez les fenêtres pour imprimer'); return; }
   w.document.write(html); w.document.close();
@@ -3320,6 +3332,7 @@ async function renderAdminPkgList(pkgs){
           <div style="margin:6px 0 3px;display:flex;flex-wrap:wrap;gap:6px;align-items:center;">${numBadge}<select class="statusSelect" data-status-for="${escHtml(p.trackingId)}" data-current="${escHtml(p.status)}" style="${(p.pickedUpAt && p.status === 'livre') ? 'background:#BE185D;border:1px solid #BE185D;color:#fff;' : 'background:rgba(255,122,26,0.12);border:1px solid var(--accent);color:var(--accent2);'}border-radius:20px;padding:4px 10px;font-size:12px;font-weight:700;width:auto;margin:0;">${STATUSES.map(st => `<option value="${st.key}" ${st.key === p.status ? 'selected' : ''}>${st.label}</option>`).join('')}</select></div>
           <div class="name">${escHtml(p.name)} · ${escHtml(p.phone)} <button type="button" class="waMini" data-send-wa="${escHtml(p.trackingId)}" style="margin-left:6px;background:rgba(37,211,102,0.12);border:1px solid rgba(37,211,102,0.5);color:#25D366;border-radius:8px;padding:3px 9px;font-size:11px;font-weight:700;cursor:pointer;">💬 WhatsApp</button> <button type="button" class="waMini" data-send-mail="${escHtml(p.trackingId)}" style="margin-left:4px;background:rgba(96,165,250,0.12);border:1px solid rgba(96,165,250,0.5);color:var(--info);border-radius:8px;padding:3px 9px;font-size:11px;font-weight:700;cursor:pointer;">📧 Email</button></div>
           ${p.carrier ? `<div class="sub" style="font-size:11.5px;">🚚 ${escHtml(p.carrier)}</div>` : ''}
+            ${(client && client.email) ? `<div class="sub" style="font-size:12px;">✉️ ${escHtml(client.email)}</div>` : ''}
           ${(p.destCommune || p.destDepartment) ? `<div class="sub" style="font-size:11px;">📍 ${[p.destCommune, p.destDepartment, p.destCountry].filter(Boolean).map(escHtml).join(', ')}</div>` : ''}
           ${deliveryLine(p) ? `<div class="sub" style="font-size:11.5px;color:var(--accent2);">📅 Livraison prévue : ${deliveryLine(p)}</div>` : ''}
         </div>
@@ -4080,6 +4093,7 @@ async function renderOwnerPayments(){
               <div class="name">Montant : ${c.depositAmount} ${c.depositCurrency} via ${c.depositMethod}</div>
             </div>
             ${c.depositProofUrl ? `<img src="${c.depositProofUrl}" data-zoom="${c.depositProofUrl}" style="width:100%;max-height:220px;object-fit:contain;background:var(--panel2);border-radius:10px;margin-top:8px;cursor:zoom-in;">` : ''}
+            <button class="miniBtn" style="margin-top:8px;color:var(--ok);border-color:rgba(62,207,142,0.5);" data-receipt-dep="${c.code}">🧾 Reçu de paiement</button>
             <button class="miniBtn" style="color:var(--danger);border-color:rgba(239,93,93,0.4);margin-top:8px;" data-delete-deposit="${c.code}">Supprimer ce dépôt</button>
           </div>`).join('');
     const confirmedHtml = compactCardHtml('confirmed', '#FDE047,#F59E0B', '💳', 'Dépôts confirmés',
@@ -4096,6 +4110,7 @@ async function renderOwnerPayments(){
               <div class="name">Montant : ${c.regDepositAmount} ${c.regDepositCurrency} via ${c.regDepositMethod}</div>
             </div>
             ${c.regDepositProofUrl ? `<img src="${c.regDepositProofUrl}" data-zoom="${c.regDepositProofUrl}" style="width:100%;max-height:220px;object-fit:contain;background:var(--panel2);border-radius:10px;margin-top:8px;cursor:zoom-in;">` : ''}
+            <button class="miniBtn" style="margin-top:8px;color:var(--ok);border-color:rgba(62,207,142,0.5);" data-receipt-reg="${c.code}">🧾 Reçu de paiement</button>
             <button class="miniBtn" style="color:var(--danger);border-color:rgba(239,93,93,0.4);margin-top:8px;" data-delete-reg-deposit="${c.code}">Supprimer cette inscription</button>
           </div>`).join('');
     const confirmedRegHtml = compactCardHtml('confirmedReg', '#DB2777,#831843', '✅', 'Inscriptions confirmées',
@@ -4156,34 +4171,34 @@ async function renderOwnerPayments(){
       `${PAYMENT_METHODS.length} méthodes — appuyez pour voir la liste`, methodsListContent);
 
     const extras = settings.extraAccounts || [];
-    const nextTitle = (kind) => (kind === 'moncash' ? 'MonCash' : 'NatCash') + ' ' + (extras.filter(a => a.kind === kind).length + 2);
+    const SLOTS = [{id: 'm2', kind: 'moncash', title: 'MonCash 2'}, {id: 'n2', kind: 'natcash', title: 'NatCash 2'}];
+    const slotHtml = (sl) => {
+      const a = extras.find(x => x.id === sl.id) || {};
+      const logo = a.icon || settings.icons[sl.kind + '_icon'];
+      const on = a.active !== false;
+      return `<div style="padding:12px;margin-bottom:12px;border:1px solid var(--border);border-left:4px solid ${(a.number && on) ? '#3ECF8E' : '#EF5D5D'};border-radius:12px;background:rgba(255,255,255,0.03);">
+          <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;">
+            <div style="width:48px;height:48px;border-radius:10px;background:var(--panel2);overflow:hidden;display:flex;align-items:center;justify-content:center;flex:0 0 auto;">${logo ? `<img src="${logo}" style="width:100%;height:100%;object-fit:cover;">` : '💳'}</div>
+            <span style="width:30px;height:30px;border-radius:50%;background:#FF7A1A;color:#fff;font-weight:900;font-size:17px;display:flex;align-items:center;justify-content:center;flex:0 0 auto;">2</span>
+            <div style="font-weight:800;font-size:17px;">${sl.title}</div>
+          </div>
+          <label>Numéro ${sl.kind === 'moncash' ? 'MonCash' : 'NatCash'} 2</label>
+          <input data-xacc-num="${sl.id}" type="tel" value="${escHtml(a.number || '')}" placeholder="Ex : 40 12 34 56">
+          <label>Nom du bénéficiaire</label>
+          <input data-xacc-name="${sl.id}" value="${escHtml(a.beneficiary || '')}" placeholder="Ex : Marie Pierre">
+          <label>Logo (facultatif — sinon le logo ${sl.kind === 'moncash' ? 'MonCash' : 'NatCash'} est utilisé)</label>
+          <input type="file" accept="image/*" data-xacc-logo="${sl.id}" style="margin-bottom:8px;">
+          <div style="display:flex;gap:8px;flex-wrap:wrap;">
+            <button type="button" class="primary" data-xacc-save="${sl.id}" style="flex:2;">💾 Enregistrer</button>
+            <button type="button" data-xacc-toggle="${sl.id}" style="flex:2;padding:8px 10px;border-radius:12px;font-weight:800;cursor:pointer;background:transparent;border:1px solid ${on ? 'rgba(62,207,142,0.5)' : 'rgba(239,93,93,0.5)'};color:${on ? 'var(--ok)' : 'var(--danger)'};">${on ? '🟢 Actif' : '🔴 Non actif'}</button>
+            <button type="button" data-xacc-del="${sl.id}" class="ghost" style="width:auto;padding:8px 14px;color:var(--danger);">🗑️</button>
+          </div>
+        </div>`;
+    };
     const extraAccountsHtml = `<div class="card">
-        <h2>➕ Autres comptes NatCash / MonCash</h2>
-        <p class="sub">Ajoutez NatCash 2, MonCash 2... (autre numéro, autre nom, avec logo) si les comptes principaux ne sont pas disponibles. Tout est modifiable. Quand un compte est « Non actif », l'entreprise voit un message et ne peut pas envoyer d'argent dessus.</p>
-        ${extras.length ? extras.map(a => `<div style="padding:12px;margin-bottom:10px;border:1px solid var(--border);border-left:4px solid ${a.active === false ? '#EF5D5D' : '#3ECF8E'};border-radius:10px;background:rgba(255,255,255,0.03);">
-            <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px;">
-              <div style="width:44px;height:44px;border-radius:10px;background:var(--panel2);overflow:hidden;display:flex;align-items:center;justify-content:center;flex:0 0 auto;">${(a.icon || settings.icons[a.kind + '_icon']) ? `<img src="${a.icon || settings.icons[a.kind + '_icon']}" style="width:100%;height:100%;object-fit:cover;">` : '💳'}</div>
-              <div style="font-weight:800;">${escHtml(a.title || (a.kind === 'moncash' ? 'MonCash' : 'NatCash'))}</div>
-            </div>
-            <label>Numéro</label><input data-xacc-num="${a.id}" value="${escHtml(a.number || '')}">
-            <label>Nom du bénéficiaire</label><input data-xacc-name="${a.id}" value="${escHtml(a.beneficiary || '')}">
-            <label>Logo (facultatif)</label><input type="file" accept="image/*" data-xacc-logo="${a.id}" style="margin-bottom:8px;">
-            <div style="display:flex;gap:8px;flex-wrap:wrap;">
-              <button type="button" class="primary" data-xacc-save="${a.id}" style="flex:2;">💾 Enregistrer</button>
-              <button type="button" data-xacc-toggle="${a.id}" style="flex:2;padding:8px 10px;border-radius:12px;font-weight:800;cursor:pointer;background:transparent;border:1px solid ${a.active === false ? 'rgba(239,93,93,0.5)' : 'rgba(62,207,142,0.5)'};color:${a.active === false ? 'var(--danger)' : 'var(--ok)'};">${a.active === false ? '🔴 Non actif' : '🟢 Actif'}</button>
-              <button type="button" data-xacc-del="${a.id}" class="ghost" style="width:auto;padding:8px 14px;color:var(--danger);">🗑️</button>
-            </div>
-          </div>`).join('') : '<p class="sub" style="margin:0 0 10px;">Aucun compte supplémentaire pour le moment.</p>'}
-        <h3 style="margin:14px 0 6px;font-size:15px;">Ajouter un compte</h3>
-        <label>Type de compte</label>
-        <select id="xaccKind"><option value="natcash">NatCash (suivant : ${nextTitle('natcash')})</option><option value="moncash">MonCash (suivant : ${nextTitle('moncash')})</option></select>
-        <label>Numéro</label>
-        <input id="xaccNumber" type="tel" placeholder="Ex : 40 12 34 56">
-        <label>Nom du bénéficiaire</label>
-        <input id="xaccName" placeholder="Ex : Marie Pierre">
-        <label>Logo (facultatif)</label>
-        <input id="xaccLogo" type="file" accept="image/*" style="margin-bottom:8px;">
-        <button class="primary" id="btnAddXacc">➕ Ajouter ce compte</button>
+        <h2>➕ Autres comptes : MonCash 2 et NatCash 2</h2>
+        <p class="sub">Remplissez le numéro et le nom du bénéficiaire. Le chiffre 2 apparaît à côté du logo chez les entreprises. Quand un compte est « Non actif », l'entreprise voit un message et ne peut pas envoyer d'argent dessus.</p>
+        ${SLOTS.map(slotHtml).join('')}
       </div>`;
     content.innerHTML = emailCard + codeCard + backupCard + pendingRegHtml + pendingHtml + notifCardOwner + confirmedRegHtml + confirmedHtml + settingsHtml + methodsHtml + extraAccountsHtml + `
       <div class="card">
@@ -4203,6 +4218,8 @@ async function renderOwnerPayments(){
       </div>
       ${courierAvatarCardHTML(courierAv)}`;
     bindCourierAvatars(()=>renderOwnerPayments());
+    content.querySelectorAll('[data-receipt-dep]').forEach(b => { b.onclick = ()=>{ const c = confirmed.find(x => x.code === b.dataset.receiptDep); if(c) openReceiptPreview({kind: 'deposit', code: c.code, companyName: c.companyName, amount: c.depositAmount, currency: c.depositCurrency, method: c.depositMethod, date: c.depositSubmittedAt}); }; });
+    content.querySelectorAll('[data-receipt-reg]').forEach(b => { b.onclick = ()=>{ const c = confirmedReg.find(x => x.code === b.dataset.receiptReg); if(c) openReceiptPreview({kind: 'registration', code: c.code, companyName: c.companyName, amount: c.regDepositAmount, currency: c.regDepositCurrency, method: c.regDepositMethod, date: c.regDepositSubmittedAt}); }; });
     content.querySelectorAll('[data-meth-toggle]').forEach(b => {
       b.onclick = async ()=>{
         const k = b.dataset.methToggle;
@@ -4236,11 +4253,17 @@ async function renderOwnerPayments(){
       try{ await db.collection('settings').doc('payment').set({extraAccounts: arr}, {merge: true}); toast(okMsg); renderOwnerPayments(); }
       catch(e){ toast('Erreur, réessayez'); }
     };
+    const slotById = {m2: {id: 'm2', kind: 'moncash', title: 'MonCash 2'}, n2: {id: 'n2', kind: 'natcash', title: 'NatCash 2'}};
+    const upsert = (id, patch) => {
+      const cur = extras.find(x => x.id === id);
+      const next = Object.assign({}, slotById[id], cur || {}, patch);
+      return cur ? extras.map(x => x.id === id ? next : x) : extras.concat([next]);
+    };
     content.querySelectorAll('[data-xacc-toggle]').forEach(btn => {
-      btn.onclick = ()=>{ saveExtras(extras.map(a => a.id === btn.dataset.xaccToggle ? Object.assign({}, a, {active: a.active === false}) : a), 'Compte mis à jour'); };
+      btn.onclick = ()=>{ const id = btn.dataset.xaccToggle; const cur = extras.find(x => x.id === id) || {}; saveExtras(upsert(id, {active: cur.active === false}), 'Compte mis à jour'); };
     });
     content.querySelectorAll('[data-xacc-del]').forEach(btn => {
-      btn.onclick = ()=>{ if(!confirm('Supprimer ce compte ?')) return; saveExtras(extras.filter(a => a.id !== btn.dataset.xaccDel), 'Compte supprimé'); };
+      btn.onclick = ()=>{ if(!confirm('Vider ce compte (numéro, nom, logo) ?')) return; saveExtras(extras.filter(a => a.id !== btn.dataset.xaccDel), 'Compte vidé'); };
     });
     content.querySelectorAll('[data-xacc-save]').forEach(btn => {
       btn.onclick = async ()=>{
@@ -4248,25 +4271,12 @@ async function renderOwnerPayments(){
         const num = content.querySelector('[data-xacc-num="' + id + '"]').value.trim();
         const name = content.querySelector('[data-xacc-name="' + id + '"]').value.trim();
         const logoEl = content.querySelector('[data-xacc-logo="' + id + '"]');
-        if(!name){ toast('Écrivez le nom du bénéficiaire.'); return; }
+        if(!num || !name){ toast('Écrivez le numéro et le nom du bénéficiaire.'); return; }
         let icon;
         try{ if(logoEl && logoEl.files && logoEl.files[0]) icon = await compressImage(logoEl.files[0], 160); }catch(e){ toast('Logo illisible'); return; }
-        saveExtras(extras.map(a => a.id === id ? Object.assign({}, a, {number: num, beneficiary: name}, icon ? {icon: icon} : {}) : a), '✅ Compte enregistré');
+        saveExtras(upsert(id, Object.assign({number: num, beneficiary: name}, icon ? {icon: icon} : {})), '✅ Compte enregistré');
       };
     });
-    const addX = document.getElementById('btnAddXacc');
-    if(addX) addX.onclick = async ()=>{
-      const kind = document.getElementById('xaccKind').value;
-      const number = document.getElementById('xaccNumber').value.trim();
-      const beneficiary = document.getElementById('xaccName').value.trim();
-      if(!number || !beneficiary){ toast('Écrivez le numéro et le nom du bénéficiaire.'); return; }
-      let icon = null;
-      const lf = document.getElementById('xaccLogo');
-      try{ if(lf && lf.files && lf.files[0]) icon = await compressImage(lf.files[0], 160); }catch(e){ toast('Logo illisible'); return; }
-      const acc = {id: Date.now().toString(36), kind, title: nextTitle(kind), number, beneficiary, active: true};
-      if(icon) acc.icon = icon;
-      saveExtras(extras.concat([acc]), 'Compte ajouté');
-    };
     document.getElementById('supportAvatarInput').onchange = async (e)=>{
       const file = e.target.files[0];
       if(!file) return;
@@ -4526,7 +4536,7 @@ async function openMessagesModal(code, name, side){
         const mine = (side === 'owner') ? m.from === 'owner' : m.from === 'company';
         const tag = m.kind === 'activation_request' ? '<span style="font-size:11px;font-weight:800;color:var(--ok);">🔔 Demande d\'activation</span>'
           : (m.kind === 'payment_request' ? '<span style="font-size:11px;font-weight:800;color:var(--accent2);">💳 Paiement mensuel</span>'
-          : (m.kind === 'payment_submitted' ? '<span style="font-size:11px;font-weight:800;color:var(--ok);">💳 Paiement envoyé</span>' : '<span></span>'));
+          : (m.kind === 'payment_submitted' ? '<span style="font-size:11px;font-weight:800;color:var(--ok);">💳 Paiement envoyé</span>' : (m.kind === 'receipt' ? '<span style="font-size:11px;font-weight:800;color:var(--ok);">🧾 Reçu de paiement</span>' : '<span></span>')));
         const head = `<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:3px;min-height:18px;">${tag}${(side === 'owner' || mine) ? `<button type="button" data-msg-del="${m.id}" style="flex:0 0 auto;background:none;border:none;color:var(--danger);font-size:11.5px;font-weight:800;cursor:pointer;padding:0 0 0 8px;">🗑️ Supprimer</button>` : ''}</div>`;
         const btn = (m.kind === 'payment_request' && side === 'company')
           ? '<button type="button" data-msg-pay style="display:block;width:100%;margin-top:8px;padding:10px;border:none;border-radius:10px;background:linear-gradient(135deg,#22C55E,#15803D);color:#fff;font-weight:800;cursor:pointer;">💳 Voir les comptes de paiement</button>'
@@ -4534,7 +4544,7 @@ async function openMessagesModal(code, name, side){
             ? '<button type="button" data-msg-owner-pay style="display:block;width:100%;margin-top:8px;padding:10px;border:none;border-radius:10px;background:linear-gradient(135deg,#22C55E,#15803D);color:#fff;font-weight:800;cursor:pointer;">💳 Ouvrir Paiements pour confirmer</button>' : '');
         return `<div style="display:flex;justify-content:${mine ? 'flex-end' : 'flex-start'};margin-bottom:10px;">
           <div style="max-width:86%;min-width:55%;padding:9px 12px;border-radius:14px;background:${mine ? 'rgba(255,122,26,0.22)' : 'var(--panel2)'};border:1px solid ${mine ? 'rgba(255,122,26,0.5)' : 'var(--border)'};">
-            ${head}<div style="white-space:pre-wrap;overflow-wrap:anywhere;font-size:14px;line-height:1.45;">${escHtml(m.text)}</div>${btn}
+            ${head}<div style="white-space:pre-wrap;overflow-wrap:anywhere;font-size:14px;line-height:1.45;">${escHtml(m.text)}</div>${m.image ? `<img src="${m.image}" data-zoom="${m.image}" style="width:100%;border-radius:10px;margin-top:8px;cursor:zoom-in;border:1px solid var(--border);">` : ''}${btn}
             <div class="sub" style="font-size:10.5px;margin-top:4px;text-align:right;">${fmtDate(m.createdAt)}</div>
           </div></div>`;
       }).join('') : '<div class="empty">Aucun message pour le moment.</div>';
@@ -4714,6 +4724,101 @@ function regAccOpen(c){
         <button type="button" data-pay-req="${c.code}" data-name="${escHtml(c.companyName)}" style="padding:8px 14px;border:none;border-radius:12px;background:linear-gradient(135deg,#8B5CF6,#F97316);color:#fff;font-weight:800;font-size:13px;cursor:pointer;">💳 Passer au paiement mensuel</button>
       </div>
       ${coMotifHTML(c)}`;
+}
+function receiptNumber(r){
+  const d = new Date(r.date || Date.now());
+  const p = n => String(n).padStart(2, '0');
+  return 'REC-' + d.getFullYear() + p(d.getMonth() + 1) + p(d.getDate()) + '-' + r.code;
+}
+function drawReceipt(r){
+  const c = document.createElement('canvas'); c.width = 900; c.height = 1180;
+  const x = c.getContext('2d');
+  const FONT = 'Arial, Helvetica, sans-serif';
+  const rr = (px, py, w, h, rad, fill) => { x.fillStyle = fill; x.beginPath(); x.moveTo(px + rad, py); x.arcTo(px + w, py, px + w, py + h, rad); x.arcTo(px + w, py + h, px, py + h, rad); x.arcTo(px, py + h, px, py, rad); x.arcTo(px, py, px + w, py, rad); x.closePath(); x.fill(); };
+  x.fillStyle = '#fff'; x.fillRect(0, 0, 900, 1180);
+  x.fillStyle = '#FF7A1A'; x.fillRect(0, 0, 900, 190);
+  rr(50, 45, 100, 100, 24, '#fff');
+  x.fillStyle = '#FF7A1A'; x.font = 'bold 38px ' + FONT; x.textAlign = 'center'; x.fillText('STS', 100, 108);
+  x.textAlign = 'left'; x.fillStyle = '#fff'; x.font = 'bold 44px ' + FONT; x.fillText('Sam Trace Store', 180, 100);
+  x.font = '26px ' + FONT; x.fillText('Suivi de colis', 180, 142);
+  x.fillStyle = '#111'; x.font = 'bold 56px ' + FONT; x.fillText('REÇU DE PAIEMENT', 50, 290);
+  x.fillStyle = '#666'; x.font = '27px ' + FONT;
+  x.fillText('N° ' + receiptNumber(r), 50, 340);
+  x.fillText('Émis le ' + new Date().toLocaleDateString('fr-FR', {day: '2-digit', month: 'long', year: 'numeric'}), 50, 380);
+  rr(50, 420, 800, 520, 24, '#F4F6FB');
+  const rows = [
+    ['Entreprise', r.companyName || ''],
+    ['Objet', r.kind === 'registration' ? "Frais d'inscription" : 'Abonnement mensuel'],
+    ['Moyen de paiement', r.method || ''],
+    ['Date du paiement', r.date ? new Date(r.date).toLocaleDateString('fr-FR', {day: '2-digit', month: 'long', year: 'numeric'}) : '']
+  ];
+  let y = 480;
+  rows.forEach(([k, v]) => {
+    x.fillStyle = '#7A8399'; x.font = '24px ' + FONT; x.fillText(k, 90, y);
+    x.fillStyle = '#111'; x.font = 'bold 32px ' + FONT;
+    let t = String(v); while(x.measureText(t).width > 720 && t.length > 4) t = t.slice(0, -2);
+    if(t !== String(v)) t += '…';
+    x.fillText(t, 90, y + 42); y += 105;
+  });
+  x.fillStyle = '#7A8399'; x.font = '24px ' + FONT; x.fillText('Montant payé', 90, 905 - 0);
+  x.fillStyle = '#15803D'; x.font = 'bold 46px ' + FONT; x.textAlign = 'right'; x.fillText(r.amount + ' ' + r.currency, 810, 912); x.textAlign = 'left';
+  rr(50, 985, 250, 80, 40, '#22C55E');
+  x.fillStyle = '#fff'; x.font = 'bold 40px ' + FONT; x.textAlign = 'center'; x.fillText('✓ PAYÉ', 175, 1040); x.textAlign = 'left';
+  x.fillStyle = '#666'; x.font = '26px ' + FONT; x.fillText('Merci pour votre confiance.', 340, 1038);
+  x.fillStyle = '#9AA3B8'; x.font = '22px ' + FONT; x.fillText('samtracestore.github.io', 50, 1135);
+  return c.toDataURL('image/png');
+}
+async function sendGenericEmail(to, name, message, companyName){
+  if(appsScriptReady){
+    try{
+      const res = await fetch(APPS_SCRIPT_URL, {method: 'POST', headers: {'Content-Type': 'text/plain'}, body: JSON.stringify({to_email: to, name: name || '', message: message, email: to, company_name: companyName || 'Sam Trace Store'})});
+      if(!res || res.ok !== false){ incrementGoogleScriptQuota(); return true; }
+    }catch(e){}
+  }
+  if(emailjsReady){
+    try{ await emailjs.send(EMAILJS_SERVICE_ID, EMAILJS_TEMPLATE_ID, {to_email: to, name: name || '', message: message, email: to, company_name: companyName || 'Sam Trace Store'}); incrementEmailQuota(); return true; }catch(e){}
+  }
+  return false;
+}
+function receiptText(r){
+  return '🧾 Reçu de paiement N° ' + receiptNumber(r) + '\nEntreprise : ' + (r.companyName || '') + '\nObjet : ' + (r.kind === 'registration' ? "Frais d'inscription" : 'Abonnement mensuel') + '\nMontant : ' + r.amount + ' ' + r.currency + '\nMoyen de paiement : ' + (r.method || '') + '\nStatut : PAYÉ\nMerci pour votre confiance.';
+}
+function openReceiptPreview(r){
+  const old = document.getElementById('receiptOv'); if(old) old.remove();
+  const img = drawReceipt(r);
+  const ov = document.createElement('div');
+  ov.id = 'receiptOv';
+  ov.style.cssText = 'position:fixed;inset:0;z-index:275;background:rgba(0,0,0,0.8);display:flex;align-items:center;justify-content:center;padding:12px;overflow-y:auto;';
+  ov.innerHTML = `<div style="width:100%;max-width:440px;background:var(--panel);border:1px solid var(--border);border-radius:18px;padding:14px;">
+      <div style="font-weight:800;font-size:16px;margin-bottom:8px;">🧾 Aperçu du reçu</div>
+      <img src="${img}" style="width:100%;border-radius:10px;border:1px solid var(--border);display:block;margin-bottom:12px;">
+      <button class="primary" id="rcSendMsg" style="width:100%;margin-bottom:8px;">💬 Envoyer dans la discussion</button>
+      <button class="ghost" id="rcSendMail" style="width:100%;margin-bottom:8px;color:#fff;border-color:var(--accent);">✉️ Envoyer par email</button>
+      <button class="ghost" id="rcDown" style="width:100%;margin-bottom:8px;">⬇️ Télécharger l'image</button>
+      <button class="ghost" id="rcClose" style="width:100%;">Fermer</button>
+      <div id="rcMsg" class="sub" style="margin-top:8px;font-weight:700;"></div>
+    </div>`;
+  document.body.appendChild(ov);
+  const msg = document.getElementById('rcMsg');
+  document.getElementById('rcClose').onclick = ()=> ov.remove();
+  document.getElementById('rcDown').onclick = ()=>{ const a = document.createElement('a'); a.href = img; a.download = receiptNumber(r) + '.png'; document.body.appendChild(a); a.click(); a.remove(); };
+  document.getElementById('rcSendMsg').onclick = async ()=>{
+    msg.style.color = ''; msg.textContent = '⏳ Envoi…';
+    try{
+      await db.collection('messages').add({companyCode: r.code, from: 'owner', text: receiptText(r), kind: 'receipt', image: img, createdAt: new Date().toISOString(), readByOwner: true, readByCompany: false});
+      msg.style.color = 'var(--ok)'; msg.textContent = '✅ Reçu envoyé dans la discussion de l\'entreprise.';
+    }catch(e){ msg.style.color = 'var(--danger)'; msg.textContent = '❌ Envoi impossible, réessayez.'; }
+  };
+  document.getElementById('rcSendMail').onclick = async ()=>{
+    msg.style.color = ''; msg.textContent = '⏳ Envoi de l\'email…';
+    try{
+      const co = await getCompanyByCode(r.code);
+      const to = co && co.adminEmail;
+      if(!to){ msg.style.color = 'var(--danger)'; msg.textContent = "❌ Cette entreprise n'a pas d'adresse email."; return; }
+      const ok = await sendGenericEmail(to, co.adminName || co.companyName, receiptText(r), co.companyName);
+      msg.style.color = ok ? 'var(--ok)' : 'var(--danger)'; msg.textContent = ok ? '✅ Email envoyé à ' + to : "❌ L'email n'a pas pu partir.";
+    }catch(e){ msg.style.color = 'var(--danger)'; msg.textContent = '❌ Erreur, réessayez.'; }
+  };
 }
 function coMotifHTML(c){
   const activated = !!(c.isFree || c.paymentStatus === 'active');
@@ -4939,6 +5044,55 @@ function bindDeletedByCompanies(root, rerender){
 }
 
 // ===== VITESSE : cache des lectures + invalidation à chaque écriture =====
+let deferredInstall = null;
+window.addEventListener('beforeinstallprompt', e => { e.preventDefault(); deferredInstall = e; });
+window.addEventListener('appinstalled', ()=>{ deferredInstall = null; const b = document.getElementById('installBanner'); if(b) b.remove(); try{ localStorage.setItem('sts_install_off', '1'); }catch(e){} });
+function isStandaloneApp(){ try{ return window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true; }catch(e){ return false; } }
+function showInstallHelp(){
+  const old = document.getElementById('installHelp'); if(old) old.remove();
+  const ov = document.createElement('div');
+  ov.id = 'installHelp';
+  ov.style.cssText = 'position:fixed;inset:0;z-index:290;background:#0A1020;color:#F4F6FC;overflow-y:auto;padding:18px;';
+  const step = (n, t) => `<div style="display:flex;gap:12px;align-items:flex-start;margin:10px 0;"><span style="flex:0 0 32px;height:32px;border-radius:50%;background:#FF7A1A;color:#fff;font-weight:800;display:flex;align-items:center;justify-content:center;">${n}</span><div style="font-size:15px;line-height:1.5;">${t}</div></div>`;
+  ov.innerHTML = `<div style="max-width:560px;margin:0 auto;">
+      <div style="display:flex;align-items:center;gap:12px;margin-bottom:14px;"><div style="width:56px;height:56px;border-radius:16px;background:#FF7A1A;color:#fff;font-weight:800;font-size:20px;display:flex;align-items:center;justify-content:center;">STS</div><div><div style="font-size:20px;font-weight:800;">STS Suivi de colis</div><div style="color:#98A2BC;">Sam Trace Store</div></div></div>
+      <div style="font-size:22px;font-weight:800;margin:14px 0;">Comment installer l'application</div>
+      <div style="background:#34D399;color:#062014;font-weight:800;padding:10px 14px;border-radius:12px;margin-top:10px;">ANDROID (Chrome)</div>
+      ${step(1, "Ouvrez le lien STS dans Chrome.")}${step(2, "Appuyez sur « Ajouter à l'écran d'accueil » quand la bannière apparaît en bas.")}${step(3, "Si elle n'apparaît pas : menu (3 points en haut à droite) > Ajouter à l'écran d'accueil > Installer.")}${step(4, "L'icône STS apparaît sur votre écran d'accueil.")}
+      <div style="background:#60A5FA;color:#07162E;font-weight:800;padding:10px 14px;border-radius:12px;margin-top:18px;">IPHONE (Safari)</div>
+      ${step(1, "Ouvrez le lien STS dans Safari (obligatoire, pas Chrome).")}${step(2, "Appuyez sur l'icône de partage (carré avec une flèche vers le haut), en bas de l'écran.")}${step(3, "Faites défiler et choisissez « Sur l'écran d'accueil ».")}${step(4, "Appuyez sur « Ajouter ».")}
+      <button id="installHelpClose" style="width:100%;margin:22px 0 40px;padding:14px;border:none;border-radius:12px;background:linear-gradient(135deg,#FF6A00,#FF5A1A);color:#fff;font-weight:800;font-size:16px;cursor:pointer;">✕ Fermer</button>
+    </div>`;
+  document.body.appendChild(ov);
+  document.getElementById('installHelpClose').onclick = ()=> ov.remove();
+}
+function injectInstallBanner(){
+  if(!(mode === 'client' || (mode === 'company' && companyScreen === 'client'))) return;
+  const main = document.getElementById('main'); if(!main || document.getElementById('installBanner')) return;
+  if(isStandaloneApp()) return;
+  try{ if(localStorage.getItem('sts_install_off')) return; }catch(e){}
+  main.insertAdjacentHTML('afterbegin', `<div id="installBanner" class="card" style="border:1px solid rgba(62,207,142,0.5);background:linear-gradient(135deg,rgba(62,207,142,0.14),rgba(96,165,250,0.12));">
+      <div style="font-weight:800;font-size:16px;margin-bottom:4px;">📲 Installez l'application sur votre téléphone</div>
+      <p class="sub" style="margin:0 0 10px;">Suivez vos colis en un clic depuis l'écran d'accueil, comme une vraie application.</p>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;">
+        <button type="button" class="primary" id="btnInstallApp" style="flex:2;">📲 Installer</button>
+        <button type="button" class="ghost" id="btnInstallHow" style="flex:1;">Comment faire ?</button>
+        <button type="button" class="ghost" id="btnInstallOff" style="width:auto;padding:8px 14px;" aria-label="Fermer">✕</button>
+      </div>
+    </div>`);
+  document.getElementById('btnInstallApp').onclick = async ()=>{
+    if(deferredInstall){ deferredInstall.prompt(); try{ await deferredInstall.userChoice; }catch(e){} deferredInstall = null; }
+    else showInstallHelp();
+  };
+  document.getElementById('btnInstallHow').onclick = showInstallHelp;
+  document.getElementById('btnInstallOff').onclick = ()=>{ try{ localStorage.setItem('sts_install_off', '1'); }catch(e){} const b = document.getElementById('installBanner'); if(b) b.remove(); };
+}
+function installInit(){
+  if(typeof renderClient !== 'function' || renderClient.__inst) return;
+  const orig = renderClient;
+  renderClient = async function(...a){ const r = await orig.apply(this, a); try{ injectInstallBanner(); }catch(e){} return r; };
+  renderClient.__inst = true;
+}
 function perfInstall(){
   if(typeof db === 'undefined' || !db || db.__perf) return;
   db.__perf = true;
@@ -5742,6 +5896,7 @@ async function renderPaymentGate(main, company, status){
         <div style="width:44px;height:44px;border-radius:10px;background:var(--panel2);display:flex;align-items:center;justify-content:center;flex-shrink:0;overflow:hidden;">
           ${icon ? `<img src="${icon}" style="width:100%;height:100%;object-fit:cover;">` : `<span style="font-size:20px;">💳</span>`}
         </div>
+        ${m.badge ? `<span style="width:26px;height:26px;border-radius:50%;background:#FF7A1A;color:#fff;font-weight:900;font-size:15px;display:flex;align-items:center;justify-content:center;flex-shrink:0;">${m.badge}</span>` : ''}
         <div style="flex:1;">
           <div style="font-weight:700;font-size:14.5px;">${m.label}${m.active ? '' : ' <span style="color:var(--danger);font-size:12px;font-weight:800;">⛔ Indisponible</span>'}</div>
           <div class="sub" style="margin:1px 0 0;">${shortNumber}</div>
@@ -5750,10 +5905,10 @@ async function renderPaymentGate(main, company, status){
       </div>
       <div id="detail-${m.key}" style="display:none;padding:0 18px 18px;border-top:1px solid var(--border);">
         ${m.active ? '' : '<div class="warnBox" style="margin:14px 0 6px;color:var(--danger);border-color:rgba(239,93,93,0.3);background:rgba(239,93,93,0.1);">' + ACCOUNT_OFF_MSG + '</div>'}
-        <p class="sub" style="margin:14px 0 2px;">Bénéficiaire : ${m.beneficiary}</p>
-        ${m.number ? `<p class="sub" style="margin:2px 0;">Numéro : ${m.number}</p>` : ''}
-        ${m.email ? `<p class="sub" style="margin:2px 0;">Email : ${m.email}</p>` : ''}
-        ${m.tag ? `<p class="sub" style="margin:2px 0;">Tag : ${m.tag}</p>` : ''}
+        <div style="display:flex;align-items:center;gap:8px;margin:14px 0 2px;"><p class="sub" style="margin:0;flex:1;">Bénéficiaire : ${m.beneficiary}</p>${copyBtnHTML(m.beneficiary)}</div>
+        ${m.number ? `<div style="display:flex;align-items:center;gap:8px;margin:4px 0;"><p class="sub" style="margin:0;flex:1;">Numéro : <b>${m.number}</b></p>${copyBtnHTML(m.number)}</div>` : ''}
+        ${m.email ? `<div style="display:flex;align-items:center;gap:8px;margin:4px 0;"><p class="sub" style="margin:0;flex:1;">Email : ${m.email}</p>${copyBtnHTML(m.email)}</div>` : ''}
+        ${m.tag ? `<div style="display:flex;align-items:center;gap:8px;margin:4px 0;"><p class="sub" style="margin:0;flex:1;">Tag : ${m.tag}</p>${copyBtnHTML(m.tag)}</div>` : ''}
         <p class="sub" style="margin:2px 0 10px;">Montant minimum : ${min} ${m.currency}</p>
         <button class="primary" data-method="${m.key}">Continuer avec ${m.label}</button>
         <div id="form-${m.key}" style="display:none;margin-top:14px;border-top:1px solid var(--border);padding-top:14px;">
@@ -5906,6 +6061,7 @@ async function renderRegistrationGate(main, company, status){
         <div style="width:44px;height:44px;border-radius:10px;background:var(--panel2);display:flex;align-items:center;justify-content:center;flex-shrink:0;overflow:hidden;">
           ${icon ? `<img src="${icon}" style="width:100%;height:100%;object-fit:cover;">` : `<span style="font-size:20px;">💳</span>`}
         </div>
+        ${m.badge ? `<span style="width:26px;height:26px;border-radius:50%;background:#FF7A1A;color:#fff;font-weight:900;font-size:15px;display:flex;align-items:center;justify-content:center;flex-shrink:0;">${m.badge}</span>` : ''}
         <div style="flex:1;">
           <div style="font-weight:700;font-size:14.5px;">${m.label}${m.active ? '' : ' <span style="color:var(--danger);font-size:12px;font-weight:800;">⛔ Indisponible</span>'}</div>
           <div class="sub" style="margin:1px 0 0;">${shortNumber}</div>
@@ -5914,10 +6070,10 @@ async function renderRegistrationGate(main, company, status){
       </div>
       <div id="detail-reg-${m.key}" style="display:none;padding:0 18px 18px;border-top:1px solid var(--border);">
         ${m.active ? '' : '<div class="warnBox" style="margin:14px 0 6px;color:var(--danger);border-color:rgba(239,93,93,0.3);background:rgba(239,93,93,0.1);">' + ACCOUNT_OFF_MSG + '</div>'}
-        <p class="sub" style="margin:14px 0 2px;">Bénéficiaire : ${m.beneficiary}</p>
-        ${m.number ? `<p class="sub" style="margin:2px 0;">Numéro : ${m.number}</p>` : ''}
-        ${m.email ? `<p class="sub" style="margin:2px 0;">Email : ${m.email}</p>` : ''}
-        ${m.tag ? `<p class="sub" style="margin:2px 0;">Tag : ${m.tag}</p>` : ''}
+        <div style="display:flex;align-items:center;gap:8px;margin:14px 0 2px;"><p class="sub" style="margin:0;flex:1;">Bénéficiaire : ${m.beneficiary}</p>${copyBtnHTML(m.beneficiary)}</div>
+        ${m.number ? `<div style="display:flex;align-items:center;gap:8px;margin:4px 0;"><p class="sub" style="margin:0;flex:1;">Numéro : <b>${m.number}</b></p>${copyBtnHTML(m.number)}</div>` : ''}
+        ${m.email ? `<div style="display:flex;align-items:center;gap:8px;margin:4px 0;"><p class="sub" style="margin:0;flex:1;">Email : ${m.email}</p>${copyBtnHTML(m.email)}</div>` : ''}
+        ${m.tag ? `<div style="display:flex;align-items:center;gap:8px;margin:4px 0;"><p class="sub" style="margin:0;flex:1;">Tag : ${m.tag}</p>${copyBtnHTML(m.tag)}</div>` : ''}
         <p class="sub" style="margin:2px 0 10px;">Montant des frais d'inscription : ${min} ${m.currency}</p>
         <button class="primary" data-regmethod="${m.key}">Continuer avec ${m.label}</button>
         <div id="form-reg-${m.key}" style="display:none;margin-top:14px;border-top:1px solid var(--border);padding-top:14px;">
@@ -7163,6 +7319,7 @@ document.getElementById('btnAdminMode').onclick = ()=>{ setMode('admin'); };
 document.getElementById('btnCompanyMode').onclick = ()=>{ setMode('company'); };
 
 perfInstall();
+installInit();
 render();
 loadSupportAvatar().then(()=>{ if(supportAvatarUrl || waHidden){ waHidden = false; render(); } samAvatarsLoaded(); });
 
