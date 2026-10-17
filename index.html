@@ -623,6 +623,7 @@ let samBusy = false;
 let samAvatarUrl = null;
 let samAvatarPos = 50;
 let samAiUrl = null;
+let receiptMailUrl = null;
 let samAnswered = 0;
 const samPhotoCache = {};
 try{ const sc = JSON.parse(localStorage.getItem('sts_sam_av') || 'null'); if(sc && sc.url){ samAvatarUrl = sc.url; samAvatarPos = sc.pos || 50; } }catch(e){}
@@ -1350,12 +1351,14 @@ async function loadSupportAvatarCore(){
       if(v.avatar){ samAvatarUrl = v.avatar; }
       if(v.pos !== null && v.pos !== undefined){ samAvatarPos = v.pos; }
       if(v.aiUrl){ samAiUrl = v.aiUrl; }
+      if(v.receiptUrl){ receiptMailUrl = v.receiptUrl; }
     }
   }catch(e){}
   try{
     const ps = await getPaymentSettings();
     if(!samAvatarUrl && ps.samAvatar){ samAvatarUrl = ps.samAvatar; if(ps.samAvatarPos !== null && ps.samAvatarPos !== undefined) samAvatarPos = ps.samAvatarPos; }
     if(!samAiUrl && ps.samAiUrl){ samAiUrl = ps.samAiUrl; }
+    if(!receiptMailUrl && ps.receiptMailUrl){ receiptMailUrl = ps.receiptMailUrl; }
   }catch(e){}
 }
 async function loadSupportAvatar(){
@@ -1465,7 +1468,7 @@ function courierBlockHTML(av, kind){
 }
 function courierAvatarCardHTML(av){
   return `<div class="card">
-      <h2>Avatars de livraison <span style="font-size:11px;color:var(--muted);font-weight:400;">(v12 oct. P)</span></h2>
+      <h2>Avatars de livraison <span style="font-size:11px;color:var(--muted);font-weight:400;">(v12 oct. Q)</span></h2>
       <p class="sub">Ces avatars sont utilisés par toutes les entreprises. Quand vous les changez ici, ils changent pour tout le monde, côté client aussi.</p>
       ${courierBlockHTML(av, 'moto')}
       ${courierBlockHTML(av, 'truck')}
@@ -1700,13 +1703,28 @@ function paymentMethodsFor(settings){
   }));
   return base.concat(extras);
 }
+function copyIconSVG(){
+  return '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#FF7A1A" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="11" height="11" rx="2.5"/><path d="M5 15V6.5A2.5 2.5 0 0 1 7.5 4H16"/></svg>';
+}
+function payFieldHTML(label, value){
+  return `<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;background:rgba(255,255,255,0.04);border:1px solid var(--border);border-radius:14px;padding:12px 14px;margin:8px 0;">
+    <div style="min-width:0;"><div style="font-size:11px;letter-spacing:1.2px;color:var(--muted);font-weight:700;text-transform:uppercase;">${label}</div><div style="font-size:19px;font-weight:700;overflow-wrap:anywhere;">${escHtml(String(value || ''))}</div></div>
+    <button type="button" data-copy="${escHtml(String(value || ''))}" aria-label="Copier" title="Copier" style="flex:0 0 auto;width:40px;height:40px;border:none;background:transparent;cursor:pointer;display:flex;align-items:center;justify-content:center;">${copyIconSVG()}</button>
+  </div>`;
+}
+function copyField(inputHtml, sel){
+  return `<div style="display:flex;gap:8px;align-items:center;margin-bottom:10px;">${inputHtml}<button type="button" data-copy-sel='${sel}' aria-label="Copier" title="Copier" style="flex:0 0 auto;width:40px;height:40px;border:none;background:transparent;cursor:pointer;display:flex;align-items:center;justify-content:center;">${copyIconSVG()}</button></div>`;
+}
 function copyBtnHTML(v){
   return `<button type="button" data-copy="${escHtml(String(v || ''))}" aria-label="Copier" title="Copier" style="flex:0 0 auto;width:36px;height:36px;border-radius:8px;border:1px solid var(--accent);background:rgba(255,122,26,0.12);color:var(--accent);font-size:16px;cursor:pointer;line-height:1;">📋</button>`;
 }
 document.addEventListener('click', async (e)=>{
-  const b = e.target.closest('[data-copy]'); if(!b) return;
+  const b = e.target.closest('[data-copy],[data-copy-sel]'); if(!b) return;
   e.stopPropagation();
-  const v = b.dataset.copy || '';
+  let v = '';
+  if(b.dataset.copy !== undefined) v = b.dataset.copy || '';
+  else { const el = document.querySelector(b.dataset.copySel); v = el ? String(el.value || '').trim() : ''; }
+  if(!v){ toast('Rien à copier'); return; }
   try{ await navigator.clipboard.writeText(v); }
   catch(err){ const t = document.createElement('textarea'); t.value = v; t.style.cssText = 'position:fixed;opacity:0;'; document.body.appendChild(t); t.select(); try{ document.execCommand('copy'); }catch(_){} t.remove(); }
   toast('✅ Copié : ' + v);
@@ -1793,7 +1811,7 @@ async function getPaymentSettings(){
   try{
     const doc = await db.collection('settings').doc('payment').get();
     const data = doc.exists ? doc.data() : {};
-    return {minHTG: data.minHTG || 1680, minUSD: data.minUSD || 12, trialDays: data.trialDays || 20, regFeeHTG: data.regFeeHTG || 1000, regFeeUSD: data.regFeeUSD || 8, extraAccounts: data.extraAccounts || [], methodActive: data.methodActive || {}, methodOverrides: data.methodOverrides || {}, icons: data.icons || {}, supportAvatar: data.supportAvatar || null, supportAvatarPos: data.supportAvatarPos, samAvatar: data.samAvatar || null, samAvatarPos: data.samAvatarPos, samAiUrl: data.samAiUrl || null};
+    return {minHTG: data.minHTG || 1680, minUSD: data.minUSD || 12, trialDays: data.trialDays || 20, regFeeHTG: data.regFeeHTG || 1000, regFeeUSD: data.regFeeUSD || 8, extraAccounts: data.extraAccounts || [], methodActive: data.methodActive || {}, methodOverrides: data.methodOverrides || {}, icons: data.icons || {}, supportAvatar: data.supportAvatar || null, supportAvatarPos: data.supportAvatarPos, samAvatar: data.samAvatar || null, samAvatarPos: data.samAvatarPos, samAiUrl: data.samAiUrl || null, receiptMailUrl: data.receiptMailUrl || null};
   }catch(e){ return {minHTG:1680, minUSD:12, trialDays:20, regFeeHTG:1000, regFeeUSD:8, extraAccounts:[], methodActive:{}, methodOverrides:{}, icons:{}, supportAvatar:null, supportAvatarPos:50}; }
 }
 
@@ -3921,9 +3939,42 @@ async function renderOwnerSettings(){
         <button class="ghost" id="btnTestSamAi" style="flex:1;">🧪 Tester</button>
       </div>
       <div id="samAiMsg" class="sub" style="margin-top:10px;font-weight:700;overflow-wrap:anywhere;"></div>
+    </div>
+    <div class="card">
+      <h2>🧾 Envoi des reçus par email (avec image jointe)</h2>
+      <p class="sub">Sans cette adresse, l'email du reçu contient seulement le texte. Avec le Google Script « Reçus » (fichier recu-email.gs), l'email contient le reçu <b>en couleur, en pièce jointe</b> (image et PDF). Collez l'adresse du script (finissant par /exec).</p>
+      <input type="url" id="rcUrlInput" placeholder="https://script.google.com/macros/s/…/exec" value="${receiptMailUrl ? escHtml(receiptMailUrl) : ''}" style="margin-bottom:10px;">
+      <div style="display:flex;gap:8px;flex-wrap:wrap;">
+        <button class="primary" id="btnSaveRcUrl" style="flex:1;">💾 Enregistrer</button>
+        <button class="ghost" id="btnTestRcUrl" style="flex:1;">🧪 Tester</button>
+      </div>
+      <div id="rcUrlMsg" class="sub" style="margin-top:10px;font-weight:700;overflow-wrap:anywhere;"></div>
     </div>`;
   document.getElementById('btnAdminGuide').onclick = ()=> openGuide('admin');
   document.getElementById('btnCompanyGuide').onclick = ()=> openGuide('company');
+  document.getElementById('btnSaveRcUrl').onclick = async ()=>{
+    const url = document.getElementById('rcUrlInput').value.trim();
+    const msg = document.getElementById('rcUrlMsg'); msg.style.color = ''; msg.textContent = '⏳ Enregistrement…';
+    try{
+      if(url && !/^https:\/\/script\.google\.com\//.test(url)) throw new Error("L'adresse doit commencer par https://script.google.com/");
+      try{ await db.collection('settings').doc('sam').set({receiptUrl: url}, {merge: true}); }
+      catch(e1){ await db.collection('settings').doc('payment').set({receiptMailUrl: url}, {merge: true}); }
+      receiptMailUrl = url || null;
+      msg.style.color = 'var(--ok)'; msg.textContent = url ? '✅ Les reçus partiront avec image jointe' : '✅ Désactivé : email texte seulement';
+    }catch(err){ msg.style.color = 'var(--danger)'; msg.textContent = '❌ ' + ((err && (err.code || err.message)) || 'erreur'); }
+  };
+  document.getElementById('btnTestRcUrl').onclick = async ()=>{
+    const url = document.getElementById('rcUrlInput').value.trim();
+    const msg = document.getElementById('rcUrlMsg'); msg.style.color = '';
+    if(!url){ msg.textContent = "Collez d'abord l'adresse."; return; }
+    msg.textContent = '⏳ Test en cours…';
+    try{
+      const res = await fetch(url, {method: 'POST', headers: {'Content-Type': 'text/plain'}, body: JSON.stringify({test: true})});
+      const d = await res.json();
+      if(d && d.ok){ msg.style.color = 'var(--ok)'; msg.textContent = '✅ Le script répond. Vous pouvez enregistrer.'; }
+      else { msg.style.color = 'var(--danger)'; msg.textContent = '❌ Réponse inattendue : ' + JSON.stringify(d).slice(0, 160); }
+    }catch(err){ msg.style.color = 'var(--danger)'; msg.textContent = '❌ Impossible de joindre le script : ' + ((err && err.message) || 'erreur'); }
+  };
   document.getElementById('btnSaveSamAi').onclick = async ()=>{
     const url = document.getElementById('samAiUrlInput').value.trim();
     const msg = document.getElementById('samAiMsg'); msg.style.color = ''; msg.textContent = '⏳ Enregistrement…';
@@ -3983,8 +4034,8 @@ async function renderOwnerPayments(){
   const content = document.getElementById('ownerContent');
   if(!ownerViewCache.payments) content.innerHTML = `<div class="card"><div class="empty">Chargement...</div></div>`;
   try{
-    const [settings, courierAv, pending, pendingReg, quota, gsQuota, currentOwnerCode] = await Promise.all([
-      getPaymentSettings(), getCourierAvatar(), getPendingDeposits(), getPendingRegistrations(), getEmailQuota(), getGoogleScriptQuota(), getOwnerCode()
+    const [settings, courierAv, pending, pendingReg, quota, gsQuota, currentOwnerCode, receiptHistory] = await Promise.all([
+      getPaymentSettings(), getCourierAvatar(), getPendingDeposits(), getPendingRegistrations(), getEmailQuota(), getGoogleScriptQuota(), getOwnerCode(), loadReceiptHistory()
     ]);
     const quotaPct = quota.total ? Math.max(0, Math.min(100, Math.round((quota.used/quota.total)*100))) : 0;
     const gsPct = gsQuota.total ? Math.max(0, Math.min(100, Math.round((gsQuota.used/gsQuota.total)*100))) : 0;
@@ -4155,11 +4206,11 @@ async function renderOwnerPayments(){
               <div id="preview-icon-${m.key}" style="margin-bottom:10px;">${icon ? `<img src="${icon}" style="width:44px;height:44px;border-radius:10px;object-fit:cover;">` : `<span class="sub" style="font-size:11px;">Aucune icône enregistrée pour l'instant</span>`}</div>
               <button type="button" data-meth-toggle="${m.key}" style="margin:2px 0 10px;padding:8px 14px;border-radius:12px;font-weight:800;cursor:pointer;border:1px solid ${((settings.methodActive || {})[m.key] === false) ? 'rgba(239,93,93,0.5)' : 'rgba(62,207,142,0.5)'};background:transparent;color:${((settings.methodActive || {})[m.key] === false) ? 'var(--danger)' : 'var(--ok)'};">${((settings.methodActive || {})[m.key] === false) ? '🔴 Non actif — toucher pour activer' : '🟢 Actif — toucher pour désactiver'}</button>
               <label>Nom du bénéficiaire</label>
-              <input data-meth-ben="${m.key}" value="${escHtml(m.beneficiary || '')}">
+              ${copyField(`<input data-meth-ben="${m.key}" value="${escHtml(m.beneficiary || '')}" style="flex:1;margin:0;">`, `[data-meth-ben="${m.key}"]`)}
               <label>Numéro de compte</label>
-              <input data-meth-num="${m.key}" value="${escHtml(m.number || '')}" placeholder="Vide = numéro retiré (compte indisponible)">
-              ${(baseM.email !== undefined) ? `<label>Email</label><input data-meth-mail="${m.key}" value="${escHtml(m.email || '')}">` : ''}
-              ${(baseM.tag !== undefined) ? `<label>Tag</label><input data-meth-tag="${m.key}" value="${escHtml(m.tag || '')}">` : ''}
+              ${copyField(`<input data-meth-num="${m.key}" value="${escHtml(m.number || '')}" placeholder="Vide = numéro retiré (compte indisponible)" style="flex:1;margin:0;">`, `[data-meth-num="${m.key}"]`)}
+              ${(baseM.email !== undefined) ? `<label>Email</label>${copyField(`<input data-meth-mail="${m.key}" value="${escHtml(m.email || '')}" style="flex:1;margin:0;">`, `[data-meth-mail="${m.key}"]`)}` : ''}
+              ${(baseM.tag !== undefined) ? `<label>Tag</label>${copyField(`<input data-meth-tag="${m.key}" value="${escHtml(m.tag || '')}" style="flex:1;margin:0;">`, `[data-meth-tag="${m.key}"]`)}` : ''}
               <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:6px;">
                 <button type="button" class="primary" data-meth-save="${m.key}" style="flex:2;">💾 Enregistrer ce compte</button>
                 <button type="button" class="ghost" data-meth-clear="${m.key}" style="flex:1;color:var(--danger);">🗑️ Retirer le numéro</button>
@@ -4183,9 +4234,9 @@ async function renderOwnerPayments(){
             <div style="font-weight:800;font-size:17px;">${sl.title}</div>
           </div>
           <label>Numéro ${sl.kind === 'moncash' ? 'MonCash' : 'NatCash'} 2</label>
-          <input data-xacc-num="${sl.id}" type="tel" value="${escHtml(a.number || '')}" placeholder="Ex : 40 12 34 56">
+          ${copyField(`<input data-xacc-num="${sl.id}" type="tel" value="${escHtml(a.number || '')}" placeholder="Ex : 40 12 34 56" style="flex:1;margin:0;">`, `[data-xacc-num="${sl.id}"]`)}
           <label>Nom du bénéficiaire</label>
-          <input data-xacc-name="${sl.id}" value="${escHtml(a.beneficiary || '')}" placeholder="Ex : Marie Pierre">
+          ${copyField(`<input data-xacc-name="${sl.id}" value="${escHtml(a.beneficiary || '')}" placeholder="Ex : Marie Pierre" style="flex:1;margin:0;">`, `[data-xacc-name="${sl.id}"]`)}
           <label>Logo (facultatif — sinon le logo ${sl.kind === 'moncash' ? 'MonCash' : 'NatCash'} est utilisé)</label>
           <input type="file" accept="image/*" data-xacc-logo="${sl.id}" style="margin-bottom:8px;">
           <div style="display:flex;gap:8px;flex-wrap:wrap;">
@@ -4195,12 +4246,11 @@ async function renderOwnerPayments(){
           </div>
         </div>`;
     };
-    const extraAccountsHtml = `<div class="card">
-        <h2>➕ Autres comptes : MonCash 2 et NatCash 2</h2>
-        <p class="sub">Remplissez le numéro et le nom du bénéficiaire. Le chiffre 2 apparaît à côté du logo chez les entreprises. Quand un compte est « Non actif », l'entreprise voit un message et ne peut pas envoyer d'argent dessus.</p>
+    const extraAccountsHtml = compactCardHtml('pay2', '#0EA5E9,#6366F1', '💳', 'Compte paiement 2', 'MonCash 2 et NatCash 2 — appuyez pour voir', `<div class="card">
+        <p class="sub" style="margin-top:0;">Remplissez le numéro et le nom du bénéficiaire. Le chiffre 2 apparaît à côté du logo chez les entreprises. Quand un compte est « Non actif », l'entreprise voit un message et ne peut pas envoyer d'argent dessus.</p>
         ${SLOTS.map(slotHtml).join('')}
-      </div>`;
-    content.innerHTML = emailCard + codeCard + backupCard + pendingRegHtml + pendingHtml + notifCardOwner + confirmedRegHtml + confirmedHtml + settingsHtml + methodsHtml + extraAccountsHtml + `
+      </div>`);
+    content.innerHTML = emailCard + codeCard + backupCard + pendingRegHtml + pendingHtml + notifCardOwner + confirmedRegHtml + confirmedHtml + receiptsHistoryHTML(receiptHistory) + settingsHtml + methodsHtml + extraAccountsHtml + `
       <div class="card">
         <h2>Avatar du service client</h2>
         <p class="sub">Choisissez une photo depuis votre galerie pour la bulle WhatsApp affichée aux entreprises.</p>
@@ -4218,6 +4268,7 @@ async function renderOwnerPayments(){
       </div>
       ${courierAvatarCardHTML(courierAv)}`;
     bindCourierAvatars(()=>renderOwnerPayments());
+    content.querySelectorAll('[data-receipt-open]').forEach(b => { b.onclick = ()=>{ const x = receiptHistory.find(y => y.id === b.dataset.receiptOpen); if(x) openReceiptPreview({kind: x.kind, code: x.code, companyName: x.companyName, amount: x.amount, currency: x.currency, method: x.method, date: x.date}); }; });
     content.querySelectorAll('[data-receipt-dep]').forEach(b => { b.onclick = ()=>{ const c = confirmed.find(x => x.code === b.dataset.receiptDep); if(c) openReceiptPreview({kind: 'deposit', code: c.code, companyName: c.companyName, amount: c.depositAmount, currency: c.depositCurrency, method: c.depositMethod, date: c.depositSubmittedAt}); }; });
     content.querySelectorAll('[data-receipt-reg]').forEach(b => { b.onclick = ()=>{ const c = confirmedReg.find(x => x.code === b.dataset.receiptReg); if(c) openReceiptPreview({kind: 'registration', code: c.code, companyName: c.companyName, amount: c.regDepositAmount, currency: c.regDepositCurrency, method: c.regDepositMethod, date: c.regDepositSubmittedAt}); }; });
     content.querySelectorAll('[data-meth-toggle]').forEach(b => {
@@ -4332,12 +4383,15 @@ async function renderOwnerPayments(){
         renderAdmin();
       };
     });
-    ['pendingReg','pending','confirmed','confirmedReg','paymentSettings','paymentMethods'].forEach(id=>{
+    ['pendingReg','pending','confirmed','confirmedReg','paymentSettings','paymentMethods','pay2','receipts'].forEach(id=>{
       const toggleEl = document.getElementById(`toggle-${id}`);
       if(!toggleEl) return;
+      const list0 = document.getElementById(`list-${id}`);
+      if(list0 && ownerCompactOpen[id]) list0.style.display = 'block';
       toggleEl.onclick = ()=>{
         const list = document.getElementById(`list-${id}`);
         list.style.display = list.style.display === 'block' ? 'none' : 'block';
+        ownerCompactOpen[id] = list.style.display === 'block';
       };
     });
     content.querySelectorAll('[data-delete-deposit]').forEach(b=>{
@@ -4783,6 +4837,48 @@ async function sendGenericEmail(to, name, message, companyName){
 function receiptText(r){
   return '🧾 Reçu de paiement N° ' + receiptNumber(r) + '\nEntreprise : ' + (r.companyName || '') + '\nObjet : ' + (r.kind === 'registration' ? "Frais d'inscription" : 'Abonnement mensuel') + '\nMontant : ' + r.amount + ' ' + r.currency + '\nMoyen de paiement : ' + (r.method || '') + '\nStatut : PAYÉ\nMerci pour votre confiance.';
 }
+async function loadReceiptHistory(){
+  let items = {};
+  try{ const d = await db.collection('settings').doc('receipts').get(); if(d.exists && d.data().items) items = d.data().items; }catch(e){}
+  try{ const loc = JSON.parse(localStorage.getItem('sts_receipts_local') || '{}'); Object.keys(loc).forEach(k => { if(!items[k]) items[k] = loc[k]; }); }catch(e){}
+  return Object.values(items).sort((a, b) => String(b.issuedAt).localeCompare(String(a.issuedAt)));
+}
+async function saveReceiptRecord(r, channel){
+  const id = receiptNumber(r);
+  const base = {id: id, number: id, code: r.code, companyName: r.companyName || '', amount: r.amount, currency: r.currency, method: r.method || '', kind: r.kind, date: r.date || null, issuedAt: new Date().toISOString()};
+  try{
+    await db.collection('settings').doc('receipts').set({items: {[id]: Object.assign({}, base, {channels: firebase.firestore.FieldValue.arrayUnion(channel)})}}, {merge: true});
+  }catch(e){
+    try{
+      const loc = JSON.parse(localStorage.getItem('sts_receipts_local') || '{}');
+      const cur = loc[id] || Object.assign({}, base, {channels: []});
+      if(cur.channels.indexOf(channel) < 0) cur.channels.push(channel);
+      loc[id] = cur; localStorage.setItem('sts_receipts_local', JSON.stringify(loc));
+    }catch(_){}
+  }
+}
+function receiptsHistoryHTML(list){
+  const chan = {message: '💬 discussion', email: '✉️ email', download: '⬇️ téléchargé'};
+  const rows = list.length ? list.map(x => `<div style="padding:10px 12px;margin-bottom:8px;border:1px solid var(--border);border-left:4px solid #22C55E;border-radius:10px;background:rgba(255,255,255,0.03);">
+      <div style="font-weight:800;">🧾 ${escHtml(x.number)}</div>
+      <div style="font-size:14px;margin-top:2px;">${escHtml(x.companyName || '')} · <b>${escHtml(String(x.amount))} ${escHtml(x.currency || '')}</b></div>
+      <div class="sub" style="font-size:12px;margin:2px 0;">${x.kind === 'registration' ? "Frais d'inscription" : 'Abonnement mensuel'} · ${escHtml(x.method || '')} · payé le ${x.date ? fmtDate(x.date) : '—'}</div>
+      <div class="sub" style="font-size:12px;margin:2px 0;">Envoyé : ${(x.channels || []).map(c => chan[c] || c).join(' · ') || 'pas encore'}</div>
+      <button type="button" class="miniBtn" data-receipt-open="${escHtml(x.id)}" style="margin-top:6px;">👁️ Voir / renvoyer</button>
+    </div>`).join('') : '<p class="sub" style="margin:0;">Aucun reçu pour le moment. Ils apparaissent ici dès que vous envoyez ou téléchargez un reçu.</p>';
+  return compactCardHtml('receipts', '#22C55E,#0EA5E9', '🧾', 'Historique des reçus', list.length + ' reçu(s) — appuyez pour voir', `<div class="card">${rows}</div>`);
+}
+async function sendReceiptEmail(r, img, to, name){
+  if(receiptMailUrl){
+    try{
+      const res = await fetch(receiptMailUrl, {method: 'POST', headers: {'Content-Type': 'text/plain'}, body: JSON.stringify({to_email: to, name: name || '', subject: 'Reçu de paiement ' + receiptNumber(r), message: receiptText(r), company_name: r.companyName || '', filename: receiptNumber(r) + '.png', image_base64: img.split(',')[1]})});
+      const d = await res.json();
+      if(d && d.ok) return {ok: true, attached: true};
+    }catch(e){}
+  }
+  const ok = await sendGenericEmail(to, name, receiptText(r) + "\n\n(Le reçu en image est dans votre discussion avec STS, dans l'application.)", r.companyName);
+  return {ok: ok, attached: false};
+}
 function openReceiptPreview(r){
   const old = document.getElementById('receiptOv'); if(old) old.remove();
   const img = drawReceipt(r);
@@ -4801,11 +4897,12 @@ function openReceiptPreview(r){
   document.body.appendChild(ov);
   const msg = document.getElementById('rcMsg');
   document.getElementById('rcClose').onclick = ()=> ov.remove();
-  document.getElementById('rcDown').onclick = ()=>{ const a = document.createElement('a'); a.href = img; a.download = receiptNumber(r) + '.png'; document.body.appendChild(a); a.click(); a.remove(); };
+  document.getElementById('rcDown').onclick = ()=>{ saveReceiptRecord(r, 'download'); const a = document.createElement('a'); a.href = img; a.download = receiptNumber(r) + '.png'; document.body.appendChild(a); a.click(); a.remove(); };
   document.getElementById('rcSendMsg').onclick = async ()=>{
     msg.style.color = ''; msg.textContent = '⏳ Envoi…';
     try{
       await db.collection('messages').add({companyCode: r.code, from: 'owner', text: receiptText(r), kind: 'receipt', image: img, createdAt: new Date().toISOString(), readByOwner: true, readByCompany: false});
+      saveReceiptRecord(r, 'message');
       msg.style.color = 'var(--ok)'; msg.textContent = '✅ Reçu envoyé dans la discussion de l\'entreprise.';
     }catch(e){ msg.style.color = 'var(--danger)'; msg.textContent = '❌ Envoi impossible, réessayez.'; }
   };
@@ -4815,8 +4912,10 @@ function openReceiptPreview(r){
       const co = await getCompanyByCode(r.code);
       const to = co && co.adminEmail;
       if(!to){ msg.style.color = 'var(--danger)'; msg.textContent = "❌ Cette entreprise n'a pas d'adresse email."; return; }
-      const ok = await sendGenericEmail(to, co.adminName || co.companyName, receiptText(r), co.companyName);
-      msg.style.color = ok ? 'var(--ok)' : 'var(--danger)'; msg.textContent = ok ? '✅ Email envoyé à ' + to : "❌ L'email n'a pas pu partir.";
+      const res = await sendReceiptEmail(r, img, to, co.adminName || co.companyName);
+      if(res.ok) saveReceiptRecord(r, 'email');
+      msg.style.color = res.ok ? 'var(--ok)' : 'var(--danger)';
+      msg.textContent = res.ok ? ('✅ Email envoyé à ' + to + (res.attached ? ' avec le reçu en pièce jointe (image + PDF).' : ' (texte seulement : pour joindre l\'image et le PDF, configurez le script des reçus dans Paramètres).')) : "❌ L'email n'a pas pu partir.";
     }catch(e){ msg.style.color = 'var(--danger)'; msg.textContent = '❌ Erreur, réessayez.'; }
   };
 }
@@ -5905,10 +6004,10 @@ async function renderPaymentGate(main, company, status){
       </div>
       <div id="detail-${m.key}" style="display:none;padding:0 18px 18px;border-top:1px solid var(--border);">
         ${m.active ? '' : '<div class="warnBox" style="margin:14px 0 6px;color:var(--danger);border-color:rgba(239,93,93,0.3);background:rgba(239,93,93,0.1);">' + ACCOUNT_OFF_MSG + '</div>'}
-        <div style="display:flex;align-items:center;gap:8px;margin:14px 0 2px;"><p class="sub" style="margin:0;flex:1;">Bénéficiaire : ${m.beneficiary}</p>${copyBtnHTML(m.beneficiary)}</div>
-        ${m.number ? `<div style="display:flex;align-items:center;gap:8px;margin:4px 0;"><p class="sub" style="margin:0;flex:1;">Numéro : <b>${m.number}</b></p>${copyBtnHTML(m.number)}</div>` : ''}
-        ${m.email ? `<div style="display:flex;align-items:center;gap:8px;margin:4px 0;"><p class="sub" style="margin:0;flex:1;">Email : ${m.email}</p>${copyBtnHTML(m.email)}</div>` : ''}
-        ${m.tag ? `<div style="display:flex;align-items:center;gap:8px;margin:4px 0;"><p class="sub" style="margin:0;flex:1;">Tag : ${m.tag}</p>${copyBtnHTML(m.tag)}</div>` : ''}
+        ${payFieldHTML('Nom du bénéficiaire', m.beneficiary)}
+        ${m.number ? payFieldHTML('Numéro', m.number) : ''}
+        ${m.email ? payFieldHTML('Email', m.email) : ''}
+        ${m.tag ? payFieldHTML('Tag', m.tag) : ''}
         <p class="sub" style="margin:2px 0 10px;">Montant minimum : ${min} ${m.currency}</p>
         <button class="primary" data-method="${m.key}">Continuer avec ${m.label}</button>
         <div id="form-${m.key}" style="display:none;margin-top:14px;border-top:1px solid var(--border);padding-top:14px;">
@@ -6070,10 +6169,10 @@ async function renderRegistrationGate(main, company, status){
       </div>
       <div id="detail-reg-${m.key}" style="display:none;padding:0 18px 18px;border-top:1px solid var(--border);">
         ${m.active ? '' : '<div class="warnBox" style="margin:14px 0 6px;color:var(--danger);border-color:rgba(239,93,93,0.3);background:rgba(239,93,93,0.1);">' + ACCOUNT_OFF_MSG + '</div>'}
-        <div style="display:flex;align-items:center;gap:8px;margin:14px 0 2px;"><p class="sub" style="margin:0;flex:1;">Bénéficiaire : ${m.beneficiary}</p>${copyBtnHTML(m.beneficiary)}</div>
-        ${m.number ? `<div style="display:flex;align-items:center;gap:8px;margin:4px 0;"><p class="sub" style="margin:0;flex:1;">Numéro : <b>${m.number}</b></p>${copyBtnHTML(m.number)}</div>` : ''}
-        ${m.email ? `<div style="display:flex;align-items:center;gap:8px;margin:4px 0;"><p class="sub" style="margin:0;flex:1;">Email : ${m.email}</p>${copyBtnHTML(m.email)}</div>` : ''}
-        ${m.tag ? `<div style="display:flex;align-items:center;gap:8px;margin:4px 0;"><p class="sub" style="margin:0;flex:1;">Tag : ${m.tag}</p>${copyBtnHTML(m.tag)}</div>` : ''}
+        ${payFieldHTML('Nom du bénéficiaire', m.beneficiary)}
+        ${m.number ? payFieldHTML('Numéro', m.number) : ''}
+        ${m.email ? payFieldHTML('Email', m.email) : ''}
+        ${m.tag ? payFieldHTML('Tag', m.tag) : ''}
         <p class="sub" style="margin:2px 0 10px;">Montant des frais d'inscription : ${min} ${m.currency}</p>
         <button class="primary" data-regmethod="${m.key}">Continuer avec ${m.label}</button>
         <div id="form-reg-${m.key}" style="display:none;margin-top:14px;border-top:1px solid var(--border);padding-top:14px;">
@@ -7145,6 +7244,7 @@ async function renderCompanySettings(main){
 
 const companyHomeCache = {};
 const ownerViewCache = {};
+const ownerCompactOpen = {};
 const coScreenCache = {};
 async function getCompanyFast(code, onChange){
   const c = companyHomeCache[code];
