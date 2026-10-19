@@ -2496,14 +2496,235 @@ function pkgCreatedAt(p){
   const h = (p.history || [])[0];
   return new Date((h && h.date) || p.updatedAt || 0).getTime();
 }
+// ===== FICHIERS : vrai PDF, vrai Excel (.xlsx), remise du fichier =====
+function ftCrcTable(){
+  if(ftCrcTable.t) return ftCrcTable.t;
+  const t = new Uint32Array(256);
+  for(let n = 0; n < 256; n++){ let c = n; for(let k = 0; k < 8; k++) c = (c & 1) ? (0xEDB88320 ^ (c >>> 1)) : (c >>> 1); t[n] = c >>> 0; }
+  ftCrcTable.t = t; return t;
+}
+function ftCrc32(bytes){
+  const t = ftCrcTable(); let c = 0xFFFFFFFF;
+  for(let i = 0; i < bytes.length; i++) c = t[(c ^ bytes[i]) & 255] ^ (c >>> 8);
+  return (c ^ 0xFFFFFFFF) >>> 0;
+}
+function ftZipStore(files){
+  const enc = new TextEncoder();
+  const u16 = n => [n & 255, (n >> 8) & 255];
+  const u32 = n => [n & 255, (n >>> 8) & 255, (n >>> 16) & 255, (n >>> 24) & 255];
+  const parts = [], central = [];
+  let offset = 0;
+  files.forEach(f => {
+    const name = enc.encode(f.name), data = f.data, crc = ftCrc32(data), size = data.length;
+    const local = new Uint8Array([0x50, 0x4b, 3, 4, ...u16(20), ...u16(0x0800), ...u16(0), ...u16(0), ...u16(0x21), ...u32(crc), ...u32(size), ...u32(size), ...u16(name.length), ...u16(0)]);
+    parts.push(local, name, data);
+    central.push(new Uint8Array([0x50, 0x4b, 1, 2, ...u16(20), ...u16(20), ...u16(0x0800), ...u16(0), ...u16(0), ...u16(0x21), ...u32(crc), ...u32(size), ...u32(size), ...u16(name.length), ...u16(0), ...u16(0), ...u16(0), ...u16(0), ...u32(0), ...u32(offset)]), name);
+    offset += local.length + name.length + size;
+  });
+  let cSize = 0; central.forEach(c => { cSize += c.length; });
+  const end = new Uint8Array([0x50, 0x4b, 5, 6, ...u16(0), ...u16(0), ...u16(files.length), ...u16(files.length), ...u32(cSize), ...u32(offset), ...u16(0)]);
+  return new Blob(parts.concat(central, [end]), {type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
+}
+function ftXml(s){
+  return String(s == null ? '' : s).replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/g, '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+function ftColName(i){ let s = ''; i++; while(i > 0){ const m = (i - 1) % 26; s = String.fromCharCode(65 + m) + s; i = Math.floor((i - 1) / 26); } return s; }
+// rows[0] = en-têtes. Chaque information va dans sa propre colonne.
+function makeXlsx(sheetName, rows, headColorHex){
+  const enc = new TextEncoder();
+  const head = (headColorHex || 'BE185D').replace('#', '');
+  const nCols = rows.reduce((m, r) => Math.max(m, r.length), 1);
+  const widths = [];
+  for(let c = 0; c < nCols; c++){
+    let mx = 8;
+    rows.forEach(r => { const v = String(r[c] == null ? '' : r[c]); const longest = v.split('\n').reduce((a, b) => Math.max(a, b.length), 0); mx = Math.max(mx, longest); });
+    widths.push(Math.min(46, Math.max(12, Math.round(mx * 1.15 + 2))));
+  }
+  const sheetRows = rows.map((r, ri) => {
+    let cells = '';
+    for(let c = 0; c < nCols; c++){
+      const v = r[c] == null ? '' : r[c];
+      cells += '<c r="' + ftColName(c) + (ri + 1) + '" t="inlineStr" s="' + (ri === 0 ? 1 : 2) + '"><is><t xml:space="preserve">' + ftXml(v) + '</t></is></c>';
+    }
+    return '<row r="' + (ri + 1) + '"' + (ri === 0 ? ' ht="24" customHeight="1"' : '') + '>' + cells + '</row>';
+  }).join('');
+  const sheet = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">'
+    + '<sheetViews><sheetView workbookViewId="0"><pane ySplit="1" topLeftCell="A2" activePane="bottomLeft" state="frozen"/></sheetView></sheetViews>'
+    + '<sheetFormatPr defaultRowHeight="15"/><cols>' + widths.map((w, i) => '<col min="' + (i + 1) + '" max="' + (i + 1) + '" width="' + w + '" customWidth="1"/>').join('') + '</cols>'
+    + '<sheetData>' + sheetRows + '</sheetData></worksheet>';
+  const styles = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">'
+    + '<fonts count="2"><font><sz val="11"/><name val="Calibri"/></font><font><b/><sz val="11"/><color rgb="FFFFFFFF"/><name val="Calibri"/></font></fonts>'
+    + '<fills count="3"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill><fill><patternFill patternType="solid"><fgColor rgb="FF' + head + '"/><bgColor indexed="64"/></patternFill></fill></fills>'
+    + '<borders count="2"><border><left/><right/><top/><bottom/><diagonal/></border><border><left style="thin"><color rgb="FFBBBBBB"/></left><right style="thin"><color rgb="FFBBBBBB"/></right><top style="thin"><color rgb="FFBBBBBB"/></top><bottom style="thin"><color rgb="FFBBBBBB"/></bottom><diagonal/></border></borders>'
+    + '<cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs>'
+    + '<cellXfs count="3"><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/>'
+    + '<xf numFmtId="0" fontId="1" fillId="2" borderId="1" xfId="0" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment vertical="center" wrapText="1"/></xf>'
+    + '<xf numFmtId="49" fontId="0" fillId="0" borderId="1" xfId="0" applyNumberFormat="1" applyBorder="1" applyAlignment="1"><alignment vertical="top" wrapText="1"/></xf></cellXfs><cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles></styleSheet>';
+  const safeName = String(sheetName || 'Feuille1').replace(/[\\\/\?\*\[\]:]/g, ' ').slice(0, 31);
+  const files = [
+    {name: '[Content_Types].xml', data: enc.encode('<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/><Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/></Types>')},
+    {name: '_rels/.rels', data: enc.encode('<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>')},
+    {name: 'xl/workbook.xml', data: enc.encode('<?xml version="1.0" encoding="UTF-8" standalone="yes"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="' + ftXml(safeName) + '" sheetId="1" r:id="rId1"/></sheets></workbook>')},
+    {name: 'xl/_rels/workbook.xml.rels', data: enc.encode('<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/><Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/></Relationships>')},
+    {name: 'xl/styles.xml', data: enc.encode(styles)},
+    {name: 'xl/worksheets/sheet1.xml', data: enc.encode(sheet)}
+  ];
+  return ftZipStore(files);
+}
+
+function ftPdfClean(s){
+  const map = {'\u2014': '-', '\u2013': '-', '\u2019': "'", '\u2018': "'", '\u201C': '"', '\u201D': '"', '\u2026': '...', '\u2022': '-', '\u20AC': 'EUR', '\u00A0': ' '};
+  let out = '';
+  for(const ch of String(s == null ? '' : s)){
+    const c = ch.codePointAt(0);
+    if(map[ch] !== undefined) out += map[ch];
+    else if(c === 9 || c === 10 || c === 13) out += ' ';
+    else if((c >= 32 && c <= 126) || (c >= 161 && c <= 255)) out += ch;
+  }
+  return out.replace(/\s+/g, ' ').trim();
+}
+function ftPdfEsc(s){ return s.replace(/\\/g, '\\\\').replace(/\(/g, '\\(').replace(/\)/g, '\\)'); }
+// opt: {title, subtitle, headers[], widths[], rows[][], headColor:[r,g,b] (0-255)}
+function buildTablePdf(opt){
+  const PW = 842, PH = 595, M = 28, FS = 8.5, LEAD = 10.5, PADX = 4, PADY = 4;
+  let ctx = null;
+  try{ ctx = document.createElement('canvas').getContext('2d'); }catch(e){ ctx = null; }
+  const wd = (t, bold) => {
+    if(ctx){ ctx.font = (bold ? 'bold ' : '') + '100px Helvetica, Arial, sans-serif'; return ctx.measureText(t).width * FS / 100 * 1.05; }
+    return t.length * FS * 0.54;
+  };
+  const sum = opt.widths.reduce((a, b) => a + b, 0);
+  const cw = opt.widths.map(w => w / sum * (PW - 2 * M));
+  const wrap = (text, maxW, bold) => {
+    text = ftPdfClean(text);
+    if(!text) return [''];
+    const lines = []; let cur = '';
+    text.split(' ').forEach(word => {
+      let piece = word;
+      while(wd(piece, bold) > maxW && piece.length > 1){
+        let k = piece.length; while(k > 1 && wd(piece.slice(0, k), bold) > maxW) k--;
+        if(cur){ lines.push(cur); cur = ''; }
+        lines.push(piece.slice(0, k)); piece = piece.slice(k);
+      }
+      const test = cur ? cur + ' ' + piece : piece;
+      if(wd(test, bold) <= maxW) cur = test; else { if(cur) lines.push(cur); cur = piece; }
+    });
+    if(cur) lines.push(cur);
+    return lines;
+  };
+  const n2 = v => (Math.round(v * 100) / 100).toString();
+  const hc = (opt.headColor || [190, 24, 93]).map(v => n2(v / 255));
+  const pages = []; let ops = [], y = PH - M;
+  const newPage = () => { if(ops.length) pages.push(ops); ops = []; y = PH - M; };
+  const text = (str, x, ty, bold, gray) => { ops.push((gray === 1 ? '1 g' : '0 g') + ' BT /' + (bold ? 'F2' : 'F1') + ' ' + FS + ' Tf ' + n2(x) + ' ' + n2(ty) + ' Td (' + ftPdfEsc(str) + ') Tj ET'); };
+  const drawRow = (cells, isHead, zebra) => {
+    const wrapped = cells.map((c, i) => wrap(c, cw[i] - 2 * PADX, isHead));
+    const maxL = wrapped.reduce((m, l) => Math.max(m, l.length), 1);
+    const h = maxL * LEAD + 2 * PADY;
+    if(y - h < M + 14){ newPage(); if(!isHead) drawRow(opt.headers, true, false); }
+    let x = M;
+    wrapped.forEach((lines, i) => {
+      if(isHead) ops.push(hc.join(' ') + ' rg ' + n2(x) + ' ' + n2(y - h) + ' ' + n2(cw[i]) + ' ' + n2(h) + ' re f');
+      else if(zebra) ops.push('0.965 0.965 0.97 rg ' + n2(x) + ' ' + n2(y - h) + ' ' + n2(cw[i]) + ' ' + n2(h) + ' re f');
+      ops.push('0.72 G 0.5 w ' + n2(x) + ' ' + n2(y - h) + ' ' + n2(cw[i]) + ' ' + n2(h) + ' re S');
+      lines.forEach((ln, li) => text(ln, x + PADX, y - PADY - FS * 0.92 - li * LEAD, isHead, isHead ? 1 : 0));
+      x += cw[i];
+    });
+    y -= h;
+  };
+  ops.push('0 g BT /F2 15 Tf ' + n2(M) + ' ' + n2(PH - M - 14) + ' Td (' + ftPdfEsc(ftPdfClean(opt.title)) + ') Tj ET');
+  ops.push('0.35 g BT /F1 9 Tf ' + n2(M) + ' ' + n2(PH - M - 29) + ' Td (' + ftPdfEsc(ftPdfClean(opt.subtitle || '')) + ') Tj ET');
+  y = PH - M - 40;
+  drawRow(opt.headers, true, false);
+  opt.rows.forEach((r, i) => drawRow(r, false, i % 2 === 1));
+  if(ops.length) pages.push(ops);
+  const total = pages.length;
+  const contents = pages.map((p, i) => {
+    const lab = 'Page ' + (i + 1) + '/' + total;
+    return p.join('\n') + '\n0.4 g BT /F1 7.5 Tf ' + n2(PW - M - wd(lab, false) * 7.5 / FS) + ' 14 Td (' + lab + ') Tj ET';
+  });
+  const objs = [];
+  objs[1] = '<< /Type /Catalog /Pages 2 0 R >>';
+  objs[2] = '<< /Type /Pages /Kids [' + pages.map((_, i) => (5 + 2 * i) + ' 0 R').join(' ') + '] /Count ' + total + ' >>';
+  objs[3] = '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>';
+  objs[4] = '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold /Encoding /WinAnsiEncoding >>';
+  contents.forEach((c, i) => {
+    objs[5 + 2 * i] = '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ' + PW + ' ' + PH + '] /Resources << /Font << /F1 3 0 R /F2 4 0 R >> >> /Contents ' + (6 + 2 * i) + ' 0 R >>';
+    objs[6 + 2 * i] = '<< /Length ' + c.length + ' >>\nstream\n' + c + '\nendstream';
+  });
+  let out = '%PDF-1.4\n'; const offs = [];
+  for(let i = 1; i < objs.length; i++){ offs[i] = out.length; out += i + ' 0 obj\n' + objs[i] + '\nendobj\n'; }
+  const xr = out.length;
+  out += 'xref\n0 ' + objs.length + '\n0000000000 65535 f \n';
+  for(let i = 1; i < objs.length; i++) out += String(offs[i]).padStart(10, '0') + ' 00000 n \n';
+  out += 'trailer\n<< /Size ' + objs.length + ' /Root 1 0 R >>\nstartxref\n' + xr + '\n%%EOF';
+  const bytes = new Uint8Array(out.length);
+  for(let i = 0; i < out.length; i++) bytes[i] = out.charCodeAt(i) & 255;
+  return new Blob([bytes], {type: 'application/pdf'});
+}
+
+// Remise du fichier : partager / ouvrir avec une application, ou télécharger
+function deliverFile(blob, filename, label){
+  const old = document.getElementById('fileOv'); if(old) old.remove();
+  const url = URL.createObjectURL(blob);
+  const kb = Math.max(1, Math.round(blob.size / 1024));
+  let file = null;
+  try{ file = new File([blob], filename, {type: blob.type}); }catch(e){}
+  let canShare = false;
+  try{ canShare = !!(file && navigator.share && navigator.canShare && navigator.canShare({files: [file]})); }catch(e){}
+  const ov = document.createElement('div');
+  ov.id = 'fileOv';
+  ov.style.cssText = 'position:fixed;inset:0;z-index:300;background:rgba(0,0,0,0.8);display:flex;align-items:center;justify-content:center;padding:14px;overflow-y:auto;';
+  ov.innerHTML = `<div style="width:100%;max-width:440px;background:var(--panel);border:1px solid var(--border);border-radius:18px;padding:16px;">
+      <div style="font-weight:800;font-size:17px;margin-bottom:4px;">✅ Fichier prêt</div>
+      <div style="font-size:14px;overflow-wrap:anywhere;">${escHtml(label || '')}</div>
+      <div class="sub" style="font-size:12.5px;margin:2px 0 12px;overflow-wrap:anywhere;">${escHtml(filename)} · ${kb} Ko</div>
+      ${canShare ? '<button class="primary" id="fileShare" style="width:100%;margin-bottom:8px;">📤 Ouvrir avec… / Enregistrer (conseillé)</button>' : ''}
+      <button class="${canShare ? 'ghost' : 'primary'}" id="fileDown" style="width:100%;margin-bottom:8px;">⬇️ Télécharger sur le téléphone</button>
+      <p class="sub" style="font-size:12px;margin:0 0 10px;">« Ouvrir avec… » vous laisse choisir l'application (PDF, Excel, Drive, WhatsApp…). Avec « Télécharger », le fichier est dans l'application « Fichiers », dossier « Téléchargements » (Download).</p>
+      <button class="ghost" id="fileClose" style="width:100%;">Fermer</button>
+      <div id="fileMsg" class="sub" style="margin-top:8px;font-weight:700;"></div>
+    </div>`;
+  document.body.appendChild(ov);
+  const msg = document.getElementById('fileMsg');
+  const sh = document.getElementById('fileShare');
+  if(sh) sh.onclick = async ()=>{
+    try{ await navigator.share({files: [file], title: filename}); msg.style.color = 'var(--ok)'; msg.textContent = '✅ Envoyé vers l\'application choisie'; }
+    catch(e){ if(e && e.name === 'AbortError') return; msg.style.color = 'var(--danger)'; msg.textContent = 'Partage impossible, utilisez « Télécharger ».'; }
+  };
+  document.getElementById('fileDown').onclick = ()=>{
+    const a = document.createElement('a'); a.href = url; a.download = filename; document.body.appendChild(a); a.click(); a.remove();
+    msg.style.color = 'var(--ok)'; msg.textContent = '✅ Téléchargement lancé : cherchez-le dans Fichiers > Téléchargements';
+  };
+  document.getElementById('fileClose').onclick = ()=>{ ov.remove(); setTimeout(()=> URL.revokeObjectURL(url), 300000); };
+}
+
 function printPackagesList(pkgs, nameOverride){
+  if(!pkgs || !pkgs.length){ toast('Aucun colis à imprimer'); return; }
+  const owner = !!(adminSession && adminSession.isOwner);
+  const who = nameOverride || (owner ? 'Sam Trace Store' : ((adminSession && adminSession.companyName) || ''));
+  const list = pkgs.slice().sort((a, b) => String(a.name || '').localeCompare(String(b.name || '')));
+  try{
+    const blob = buildTablePdf({
+      title: 'Liste des colis — ' + who,
+      subtitle: list.length + ' colis · généré le ' + new Date().toLocaleString('fr-FR'),
+      headers: ['#', 'N° de suivi', 'Client', 'Téléphone', 'Statut', 'Transport', 'Destination', 'Mise à jour'],
+      widths: [3, 13, 15, 9, 12, 13, 19, 11],
+      rows: list.map((p, i) => [String(i + 1), '#' + p.trackingId, p.name || '', p.phone || '', STATUS_LABEL[p.status] || p.status || '', p.carrier || '', [p.destCommune, p.destDepartment, p.destCountry].filter(Boolean).join(', '), p.updatedAt ? fmtDate(p.updatedAt) : '']),
+      headColor: [190, 24, 93]
+    });
+    const slug = String(who).toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'colis';
+    deliverFile(blob, 'liste-colis-' + slug + '-' + new Date().toISOString().slice(0, 10) + '.pdf', '📄 Liste des colis — ' + who + ' (PDF)');
+  }catch(e){ printPackagesListHtml(pkgs, nameOverride); }
+}
+function printPackagesListHtml(pkgs, nameOverride){
   if(!pkgs || !pkgs.length){ toast('Aucun colis à imprimer'); return; }
   const esc = escHtml;
   const owner = !!(adminSession && adminSession.isOwner);
   const title = 'Liste des colis — ' + (nameOverride || (owner ? 'Sam Trace Store' : ((adminSession && adminSession.companyName) || '')));
   const list = pkgs.slice().sort((a, b) => String(a.name || '').localeCompare(String(b.name || '')));
   const rows = list.map((p, i) => `<tr><td>${i + 1}</td><td>#${esc(p.trackingId)}</td><td>${esc(p.name || '')}</td><td>${esc(p.phone || '')}</td><td>${esc(STATUS_LABEL[p.status] || p.status)}</td><td>${esc(p.carrier || '')}</td><td>${esc([p.destCommune, p.destDepartment, p.destCountry].filter(Boolean).join(', '))}</td><td>${p.updatedAt ? esc(fmtDate(p.updatedAt)) : ''}</td></tr>`).join('');
-  const html = `<!doctype html><html><head><meta charset="utf-8"><title>${esc(title)}</title><style>body{font-family:Arial,sans-serif;padding:16px;color:#111}h1{font-size:18px;margin:0 0 4px}p{margin:0 0 12px;color:#555;font-size:12px}table{width:100%;border-collapse:collapse;font-size:11.5px}*{-webkit-print-color-adjust:exact;print-color-adjust:exact}@page{size:A4;margin:10mm}th,td{border:1px solid #ccc;padding:5px;text-align:left}th{background:#FF7A1A !important;color:#fff !important}tr:nth-child(even) td{background:#f7f7f7 !important}</style></head><body><h1>${esc(title)}</h1><p>${list.length} colis · généré le ${new Date().toLocaleString('fr-FR')}</p><table><tr><th>#</th><th>N° de suivi</th><th>Client</th><th>Téléphone</th><th>Statut</th><th>Transport</th><th>Destination</th><th>Mise à jour</th></tr>${rows}</table></body></html>`;
+  const html = `<!doctype html><html><head><meta charset="utf-8"><title>${esc(title)}</title><style>body{font-family:Arial,sans-serif;padding:16px;color:#111}h1{font-size:18px;margin:0 0 4px}p{margin:0 0 12px;color:#555;font-size:12px}table{width:100%;border-collapse:collapse;font-size:11.5px}*{-webkit-print-color-adjust:exact;print-color-adjust:exact}@page{size:A4;margin:10mm}th,td{border:1px solid #ccc;padding:5px;text-align:left}th{background:#BE185D !important;color:#fff !important}tr:nth-child(even) td{background:#f7f7f7 !important}</style></head><body><h1>${esc(title)}</h1><p>${list.length} colis · généré le ${new Date().toLocaleString('fr-FR')}</p><table><tr><th>#</th><th>N° de suivi</th><th>Client</th><th>Téléphone</th><th>Statut</th><th>Transport</th><th>Destination</th><th>Mise à jour</th></tr>${rows}</table></body></html>`;
   const w = window.open('', '_blank');
   if(!w){ toast('Autorisez les fenêtres pour imprimer'); return; }
   w.document.write(html); w.document.close();
@@ -4007,8 +4228,8 @@ async function renderOwnerSettings(){
       }
       try{ out.agentChats = (await db.collection('agentChats').where('kind', 'in', ['agent', 'report']).get()).docs.map(d => lite(Object.assign({_id: d.id}, d.data()))); }catch(e){ out.agentChats = []; }
       try{ out.receipts = await loadReceiptHistory(); }catch(e){ out.receipts = []; }
-      dl('sauvegarde-sts-' + stamp + '.json', 'application/json', JSON.stringify(out, null, 1));
-      bmsg('✅ Sauvegarde téléchargée', true);
+      deliverFile(new Blob([JSON.stringify(out, null, 1)], {type: 'application/json'}), 'sauvegarde-sts-' + stamp + '.json', '💾 Sauvegarde complète (JSON)');
+      bmsg('✅ Sauvegarde prête', true);
     }catch(e){ bmsg('❌ Impossible de préparer la sauvegarde', false); }
   };
   document.getElementById('btnExportPkgs').onclick = async ()=>{
@@ -4019,17 +4240,18 @@ async function renderOwnerSettings(){
       const nameBy = {}; co.forEach(c => { nameBy[c.code || c._id] = c.companyName || ''; });
       const rows = [['N° de suivi', 'Client', 'Téléphone', 'Email', 'Entreprise', 'Statut', 'Compagnie de transport', 'Destination', 'Mise à jour']];
       pk.forEach(p => rows.push([p.trackingId, p.name, p.phone, emailBy[p.phone] || '', nameBy[p.companyCode] || '', STATUS_LABEL[p.status] || p.status, p.carrier || '', [p.destCommune, p.destDepartment, p.destCountry].filter(Boolean).join(', '), p.updatedAt ? new Date(p.updatedAt).toLocaleString('fr-FR') : '']));
-      dl('colis-sts-' + stamp + '.csv', 'text/csv;charset=utf-8', csv(rows));
-      bmsg('✅ ' + pk.length + ' colis exportés (ouvrez le fichier avec Excel)', true);
+      deliverFile(makeXlsx('Colis', rows), 'colis-sts-' + stamp + '.xlsx', '📊 Liste des colis (Excel)');
+      bmsg('✅ ' + pk.length + ' colis exportés', true);
     }catch(e){ bmsg('❌ Export impossible', false); }
   };
   document.getElementById('btnExportCos').onclick = async ()=>{
     bmsg('⏳ Préparation…');
     try{
       const co = await getAll('companies');
-      const rows = [['Entreprise', 'Téléphone', 'Responsable', 'Email', 'Statut', 'Fin de l\'essai gratuit', 'Inscription']];
-      co.forEach(c => rows.push([c.companyName, c.companyPhone || '', c.adminName || '', c.adminEmail || '', (c.isFree || c.paymentStatus === 'active') ? 'Actif' : 'Non actif', c.trialEndsAt ? new Date(c.trialEndsAt).toLocaleDateString('fr-FR') : '', c.regPaymentStatus === undefined ? '' : (c.regPaymentStatus === 'active' ? 'Payée' : 'Non payée')]));
-      dl('entreprises-sts-' + stamp + '.csv', 'text/csv;charset=utf-8', csv(rows));
+      const dd = v => v ? new Date(v).toLocaleDateString('fr-FR') : '';
+      const rows = [['Entreprise', 'Téléphone entreprise', 'Adresse', 'Responsable', 'Email', 'Téléphone responsable', 'Statut', 'Bloquée', 'Inscrite le', 'Fin de l\'essai gratuit', 'Frais d\'inscription', 'Abonnement payé le', 'Abonnement fini le']];
+      co.forEach(c => rows.push([c.companyName || '', c.companyPhone || '', c.companyAddress || '', c.adminName || '', c.adminEmail || '', c.adminPhone || '', (c.isFree || c.paymentStatus === 'active') ? 'Actif' : 'Non actif', c.blocked ? 'Oui' : 'Non', dd(c.registeredAt), dd(c.trialEndsAt), c.regPaymentStatus === undefined ? '' : (c.regPaymentStatus === 'active' ? 'Payés' : 'Non payés'), dd(c.subPaidAt), dd(c.subEndsAt)]));
+      deliverFile(makeXlsx('Entreprises', rows), 'entreprises-sts-' + stamp + '.xlsx', '📊 Liste des entreprises (Excel)');
       bmsg('✅ ' + co.length + ' entreprises exportées', true);
     }catch(e){ bmsg('❌ Export impossible', false); }
   };
@@ -4508,16 +4730,7 @@ async function renderOwnerPayments(){
         const companies = await getAllCompanies();
         const packages = await getAllPackages();
         const backup = {exportedAt: new Date().toISOString(), companies, packages};
-        const blob = new Blob([JSON.stringify(backup, null, 2)], {type:'application/json'});
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = `sts-sauvegarde-${new Date().toISOString().slice(0,10)}.json`;
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-        URL.revokeObjectURL(url);
-        toast("✅ Export téléchargé");
+        deliverFile(new Blob([JSON.stringify(backup, null, 2)], {type:'application/json'}), `sts-sauvegarde-${new Date().toISOString().slice(0,10)}.json`, '💾 Sauvegarde des entreprises et des colis (JSON)');
       }catch(e){ toast("Erreur lors de l'export"); }
     };
     document.getElementById('btnCleanOrphans').onclick = async ()=>{
@@ -7333,8 +7546,8 @@ function subscriptionBannerHTML(co){
 }
 function coEmailCardHTML(gs, companyName){
   const pct = gs.total ? Math.max(0, Math.min(100, Math.round((gs.used / gs.total) * 100))) : 0;
-  return `<div class="card" id="coEmailCard" style="padding:0;overflow:hidden;">
-      <div style="background:linear-gradient(135deg,#0EA5E9,#6366F1);padding:14px 16px;display:flex;align-items:center;gap:10px;">
+  return `<div class="card" id="coEmailCard" style="padding:0;overflow:hidden;border:1px solid rgba(14,165,233,0.7);">
+      <div style="background:linear-gradient(135deg,#0EA5E9,#2563EB);padding:14px 16px;display:flex;align-items:center;gap:10px;">
         <span style="font-size:22px;">📧</span>
         <div style="color:#fff;font-weight:700;font-size:16px;">Service Email</div>
       </div>
@@ -7349,11 +7562,11 @@ function coEmailCardHTML(gs, companyName){
 }
 function applyCoCardColors(root){
   const PAL = [
-    ['Notifications', '139,92,246', '#C4B5FD'],
+    ['Notifications', '249,115,22', '#FDBA74'],
     ['Lien pour mes clients', '34,197,94', '#86EFAC'],
-    ['Support STS', '236,72,153', '#F9A8D4'],
+    ['Support STS', '239,68,68', '#FCA5A5'],
     ["Guide de l'entreprise", '20,184,166', '#5EEAD4'],
-    ["Logo de l'entreprise", '59,130,246', '#93C5FD']
+    ["Logo de l'entreprise", '236,72,153', '#F9A8D4']
   ];
   root.querySelectorAll('.card').forEach(card => {
     const h = card.querySelector('h2'); if(!h) return;
