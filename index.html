@@ -514,7 +514,7 @@ async function getClient(phone){
   }catch(e){ return null; }
 }
 
-async function registerCompany(companyName, companyPhone, adminName, adminEmail, adminPhone, customCode){
+async function registerCompany(companyName, companyPhone, adminName, adminEmail, adminPhone, customCode, companyAddress){
   const code = customCode || first4(companyPhone);
   const existing = await db.collection('companies').doc(code).get();
   if(existing.exists){
@@ -524,7 +524,7 @@ async function registerCompany(companyName, companyPhone, adminName, adminEmail,
     throw err;
   }
   await db.collection('companies').doc(code).set({
-    code, companyName, companyPhone: normalizePhone(companyPhone),
+    code, companyName, companyPhone: normalizePhone(companyPhone), companyAddress: String(companyAddress || '').trim(),
     adminName, adminEmail, adminPhone: normalizePhone(adminPhone),
     blocked:false, seenByOwner:false, justUnblocked:false,
     paymentStatus:'none', notifiedForPayment:true,
@@ -4717,7 +4717,7 @@ async function openMessagesModal(code, name, side){
   await paint(true);
   msgPoll = setInterval(()=>{ if(document.getElementById('msgModal')) paint(false); else closeMessagesModal(false); }, 8000);
 }
-let msgCardOpen = true;
+let msgCardOpen = false;
 async function messagesAdminHTML(companies){
   try{
     const names = {}; (companies || []).forEach(c => { names[c.code] = c.companyName; });
@@ -4818,7 +4818,7 @@ document.addEventListener('click', async (e)=>{
     }catch(err){ toast('Erreur, réessayez'); }
   }
 });
-const regCoOpen = new Set(); let regRootOpen = true; let regInit = false;
+const regCoOpen = new Set(); let regRootOpen = false; let regInit = true;
 function regRootOpenHTML(companies){
   if(!regInit && companies.length){ regCoOpen.add(companies[0].code); regInit = true; }
   return `<div class="card" style="padding:0;overflow:hidden;">
@@ -5007,6 +5007,31 @@ function coActiveBtnHTML(c){
     : '<button type="button" ' + base + 'border:1px solid rgba(239,93,93,0.6);background:rgba(239,93,93,0.14);color:var(--danger);">⛔ Non actif' + (days ? ' · essai ' + days + ' j' : '') + '</button>';
 }
 function regAccClose(){ return '</div></div>'; }
+function blockedCompaniesHTML(list){
+  const body = list.length ? list.map(c => `<div style="margin-bottom:10px;border:1px solid rgba(239,93,93,0.45);border-left:4px solid #EF5D5D;border-radius:14px;padding:12px;background:rgba(239,93,93,0.06);">
+      <div style="display:flex;align-items:center;gap:12px;margin-bottom:8px;">
+        ${c.logoUrl ? `<div data-zoom="${c.logoUrl}" style="cursor:zoom-in;flex:0 0 auto;">${logoBoxHTML(c, 64, '14px', 'border:2px solid #EF5D5D;')}</div>` : ''}
+        <div style="min-width:0;flex:1;overflow-wrap:anywhere;">
+          <div style="display:flex;align-items:center;flex-wrap:wrap;gap:8px;"><b>${escHtml(c.companyName)}</b> ${waChatBtn(c.companyPhone, 'Bonjour ' + (c.companyName || '') + ', c\'est Sam Trace Store. ')}</div>
+          <div class="name">Code : ${escHtml(c.code)} · ${escHtml(c.companyPhone || '')}</div>
+          ${coAddrHTML(c)}
+          <div class="name">${escHtml(c.adminName || '')} · ${escHtml(c.adminEmail || '')}${c.adminPhone ? ' · ' + escHtml(c.adminPhone) : ''}</div>
+          <div class="name">${c.isFree ? '🎁 Gratuit' : '💰 Payant'}${c.registeredAt ? ' · inscrite le ' + new Date(c.registeredAt).toLocaleDateString('fr-FR', {day: '2-digit', month: 'short', year: 'numeric'}) : ''}</div>
+        </div>
+      </div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;">
+        <button class="primary" style="flex:1;width:auto;padding:8px 14px;font-size:12px;" data-toggle="${escHtml(c.code)}" data-blocked="true">🔓 Débloquer</button>
+        <button type="button" data-msg-open="${escHtml(c.code)}" data-name="${escHtml(c.companyName)}" class="miniBtn" style="flex:1;">✉️ Message</button>
+        <button class="miniBtn" style="flex:1;color:var(--danger);border-color:rgba(239,93,93,0.4);" data-delete="${escHtml(c.code)}" data-name="${escHtml(c.companyName)}">Supprimer</button>
+      </div>
+    </div>`).join('') : '<p class="sub" style="margin:0;">Aucune entreprise bloquée pour le moment.</p>';
+  return foldCardHTML('blocked', '#EF4444,#7F1D1D', '🚫', 'Accès aux entreprises bloqué pour non-paiement', list.length, body);
+}
+function coAddrHTML(c){
+  return c.companyAddress
+    ? `<div class="name" style="overflow-wrap:anywhere;">📍 ${escHtml(c.companyAddress)}</div>`
+    : `<div class="name" style="color:var(--muted);">📍 Adresse non renseignée</div>`;
+}
 function bindRegCompanies(root){
   const rh = root.querySelector('[data-reg-root]');
   if(rh){
@@ -5273,7 +5298,7 @@ function injectInstallBanner(){
   if(!(mode === 'client' || (mode === 'company' && companyScreen === 'client'))) return;
   const main = document.getElementById('main'); if(!main || document.getElementById('installBanner')) return;
   if(isStandaloneApp()) return;
-  try{ if(localStorage.getItem('sts_install_off')) return; }catch(e){}
+  try{ if(localStorage.getItem('sts_install_done')) return; }catch(e){}
   const ios = isIOSDevice();
   main.insertAdjacentHTML('afterbegin', `<div id="installBanner" class="card" style="border:1px solid rgba(62,207,142,0.5);background:linear-gradient(135deg,rgba(62,207,142,0.14),rgba(96,165,250,0.12));">
       <div style="font-weight:800;font-size:16px;margin-bottom:4px;">📲 Installez l'application sur votre téléphone</div>
@@ -5281,12 +5306,12 @@ function injectInstallBanner(){
       <div style="display:flex;gap:8px;flex-wrap:wrap;">
         <button type="button" class="primary" id="btnInstallApp" style="flex:2;">📲 Installer</button>
         ${ios ? '<button type="button" class="ghost" id="btnInstallHow" style="flex:1;">Comment faire ?</button>' : ''}
-        <button type="button" class="ghost" id="btnInstallOff" style="width:auto;padding:8px 14px;" aria-label="Fermer">✕</button>
       </div>
+      <button type="button" class="ghost" id="btnInstallOff" style="width:100%;margin-top:8px;padding:10px;font-size:13.5px;">✅ J'ai déjà téléchargé l'application</button>
     </div>`);
   document.getElementById('btnInstallApp').onclick = doInstallApp;
   const how = document.getElementById('btnInstallHow'); if(how) how.onclick = ()=> showInstallHelp('ios');
-  document.getElementById('btnInstallOff').onclick = ()=>{ try{ localStorage.setItem('sts_install_off', '1'); }catch(e){} const bn = document.getElementById('installBanner'); if(bn) bn.remove(); };
+  document.getElementById('btnInstallOff').onclick = ()=>{ try{ localStorage.setItem('sts_install_done', '1'); }catch(e){} const bn = document.getElementById('installBanner'); if(bn) bn.remove(); };
 }
 function installInit(){
   if(typeof renderClient !== 'function' || renderClient.__inst) return;
@@ -5358,7 +5383,7 @@ function carrierOptionsHTML(){
     + '<option value="__other__">Autre (écrire le nom)</option>';
 }
 function carrierFieldHTML(){
-  return `<label>Compagnie de transport <span style="color:var(--muted);font-weight:400;">(qui fait la livraison)</span></label>
+  return `<label>Compagnie de transport <span style="color:var(--danger);">* obligatoire</span> <span style="color:var(--muted);font-weight:400;">(qui fait la livraison)</span></label>
       <select id="pCarrier">${carrierOptionsHTML()}</select>
       <input id="pCarrierOther" placeholder="Nom de la compagnie de transport" style="display:none;">`;
 }
@@ -5789,7 +5814,9 @@ async function renderOwnerCompanies(){
     if(companies.length===0){
       content.innerHTML = `<div class="card"><div class="empty">Aucune entreprise inscrite pour le moment.</div></div>` + dashHtml + remHtml + msgHtml + annHtml + cpkHtml + delHtml + srHtml + actHtml;
     } else {
-      content.innerHTML = regRootOpenHTML(companies) + companies.map(c=>`
+      const blockedCos = companies.filter(c => c.blocked);
+      const activeCos = companies.filter(c => !c.blocked);
+      content.innerHTML = regRootOpenHTML(activeCos) + activeCos.map(c=>`
         ${regAccOpen(c)}<div class="pkgAdmin" style="flex-direction:column;align-items:stretch;">
           <div style="display:flex;flex-direction:column;align-items:stretch;gap:10px;">
             <div class="info" data-view="${c.code}" data-name="${c.companyName}" style="flex:1;display:flex;align-items:center;gap:10px;">
@@ -5805,6 +5832,7 @@ async function renderOwnerCompanies(){
                   </select>
                 </div>
                 <div class="name">Code : ${c.code} · ${c.companyPhone}</div>
+                ${coAddrHTML(c)}
                 ${c.codeChangedAt ? `<div class="name" style="color:var(--accent2);">🔑 Code modifié le ${new Date(c.codeChangedAt).toLocaleDateString('fr-FR',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'})}</div>` : ''}
                 <div class="name">${c.adminName} · ${c.adminEmail}</div>
               </div>
@@ -5818,7 +5846,7 @@ async function renderOwnerCompanies(){
               </button>
             </div>
           </div>
-        </div>${regAccClose()}`).join('') + `</div></div><div id="companyPkgView"></div>` + dashHtml + remHtml + msgHtml + annHtml + cpkHtml + delHtml + srHtml + actHtml;
+        </div>${regAccClose()}`).join('') + `</div></div><div id="companyPkgView"></div>` + blockedCompaniesHTML(blockedCos) + dashHtml + remHtml + msgHtml + annHtml + cpkHtml + delHtml + srHtml + actHtml;
       bindRegCompanies(content);
       content.querySelectorAll('[data-payarrow]').forEach(b=>{
         b.onclick = (e)=>{
@@ -6003,6 +6031,7 @@ async function renderOwnerPackages(){
     const destDepartment = document.getElementById('pDept') ? document.getElementById('pDept').value : '';
     const destCommune = document.getElementById('pCommune') ? document.getElementById('pCommune').value : '';
     if(!trackingId || !phone || !name){ toast("Nom, numéro de suivi et téléphone requis"); return; }
+    if(!carrier){ toast("⚠️ Choisissez la compagnie de transport avant d'enregistrer ce colis"); const _cs = document.getElementById('pCarrier'); if(_cs){ _cs.focus(); _cs.style.borderColor = 'var(--danger)'; } return; }
     const colisNumRaw = parseInt((document.getElementById('pColisNum') || {}).value);
     let colisNum = colisNumRaw >= 1 ? colisNumRaw : null;
     let derivedId = false;
@@ -6492,6 +6521,8 @@ async function renderAdminCore(){
           <input id="cName" placeholder="Ex : Boutique Aurore">
           <label>Téléphone de l'entreprise</label>
           <input id="cPhone" type="tel" placeholder="Ex : 509 4012 3456">
+          <label>Adresse de l'entreprise <span style="color:var(--danger);">* obligatoire</span></label>
+          <input id="cAddress" placeholder="Ex : 12 rue Capois, Delmas 33, Port-au-Prince">
           <label>Nom du compte admin</label>
           <input id="cAdminName" placeholder="Votre nom">
           <label>Adresse email</label>
@@ -6514,18 +6545,20 @@ async function renderAdminCore(){
         if(!firebaseReady){ toast("Firebase non configuré"); return; }
         const companyName = document.getElementById('cName').value.trim();
         const companyPhone = document.getElementById('cPhone').value.trim();
+        const companyAddress = document.getElementById('cAddress').value.trim();
         const adminName = document.getElementById('cAdminName').value.trim();
         const adminEmail = document.getElementById('cEmail').value.trim();
         const adminPhone = document.getElementById('cAdminPhone').value.trim();
         const customCodeEl = document.getElementById('cCustomCode');
         const customCode = customCodeEl ? customCodeEl.value.trim() : '';
         if(!companyName || !companyPhone || !adminName || !adminEmail || !adminPhone){ toast("Merci de remplir tous les champs"); return; }
+        if(companyAddress.length < 5){ toast("L'adresse de l'entreprise est obligatoire"); document.getElementById('cAddress').focus(); return; }
         if(document.getElementById('customCodeBlock').style.display === 'block' && customCode.length !== 4){
           toast("Merci d'entrer un code personnalisé à 4 chiffres");
           return;
         }
         try{
-          const code = await registerCompany(companyName, companyPhone, adminName, adminEmail, adminPhone, customCode || null);
+          const code = await registerCompany(companyName, companyPhone, adminName, adminEmail, adminPhone, customCode || null, companyAddress);
           toast("Entreprise inscrite ! Votre code : "+code);
           showCompanyRegister = false;
           adminSession = {code, isOwner:false, companyName};
@@ -6758,6 +6791,7 @@ async function renderAdminCore(){
     const destDepartment = document.getElementById('pDept') ? document.getElementById('pDept').value : '';
     const destCommune = document.getElementById('pCommune') ? document.getElementById('pCommune').value : '';
     if(!trackingId || !phone || !name){ toast("Nom, numéro de suivi et téléphone requis"); return; }
+    if(!carrier){ toast("⚠️ Choisissez la compagnie de transport avant d'enregistrer ce colis"); const _cs = document.getElementById('pCarrier'); if(_cs){ _cs.focus(); _cs.style.borderColor = 'var(--danger)'; } return; }
     const colisNumRaw = parseInt((document.getElementById('pColisNum') || {}).value);
     let colisNum = colisNumRaw >= 1 ? colisNumRaw : null;
     let derivedId = false;
