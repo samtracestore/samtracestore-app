@@ -1469,7 +1469,7 @@ function courierBlockHTML(av, kind){
 }
 function courierAvatarCardHTML(av){
   return `<div class="card">
-      <h2>Avatars de livraison <span style="font-size:11px;color:var(--muted);font-weight:400;">(v12 oct. R)</span></h2>
+      <h2>Avatars de livraison <span style="font-size:11px;color:var(--muted);font-weight:400;">(v12 oct. S)</span></h2>
       <p class="sub">Ces avatars sont utilisés par toutes les entreprises. Quand vous les changez ici, ils changent pour tout le monde, côté client aussi.</p>
       ${courierBlockHTML(av, 'moto')}
       ${courierBlockHTML(av, 'truck')}
@@ -5040,6 +5040,15 @@ async function companyPackagesCardHTML(companies){
     list.forEach(p => { (byCo[p.companyCode] = byCo[p.companyCode] || []).push(p); });
     const cos = (companies || []).slice().sort((x, y) => ((byCo[y.code] || []).length - (byCo[x.code] || []).length) || String(x.companyName).localeCompare(String(y.companyName)));
     cpkByCo = byCo;
+    const emailMap = {};
+    await Promise.all(list.map(async p => {
+      const out = [];
+      try{ const cl = await getClient(p.phone); if(cl && cl.email) out.push(cl.email); }catch(e){}
+      try{ const al = await getTrackingAlert(p.trackingId); if(al && al.email && !out.some(x => x.toLowerCase() === al.email.toLowerCase())) out.push(al.email); }catch(e){}
+      emailMap[p.trackingId] = out;
+    }));
+    const nameCount = {};
+    cos.forEach(c => { const k = String(c.companyName || '').trim().toLowerCase(); nameCount[k] = (nameCount[k] || 0) + 1; });
     const rootOpen = cpkOpen.has('root');
     const rows = cos.map(c => {
       const arr = (byCo[c.code] || []).slice().sort((a, b) => new Date(b.updatedAt || 0) - new Date(a.updatedAt || 0));
@@ -5047,6 +5056,7 @@ async function companyPackagesCardHTML(companies){
       const inner = arr.length ? arr.map(p => `
           <div style="padding:10px 12px;margin-top:8px;border:1px solid var(--border);border-radius:12px;background:rgba(255,255,255,0.03);">
             <div style="font-weight:700;">👤 ${escHtml(p.name || '—')} <span class="sub" style="font-weight:400;">· ${escHtml(p.phone || '')}</span></div>
+            ${(emailMap[p.trackingId] || []).length ? emailMap[p.trackingId].map(em => `<div class="sub" style="font-size:12px;margin-top:2px;overflow-wrap:anywhere;">✉️ ${escHtml(em)}</div>`).join('') : '<div class="sub" style="font-size:12px;margin-top:2px;">✉️ Pas d\'email</div>'}
             <div style="font-size:13px;margin-top:2px;">#${escHtml(p.trackingId)} — ${STATUS_LABEL[p.status] || p.status}</div>
             ${(p.destCommune || p.destDepartment) ? `<div class="sub" style="font-size:11px;margin-top:2px;">📍 ${escHtml([p.destCommune, p.destDepartment, p.destCountry].filter(Boolean).join(', '))}</div>` : ''}
             ${p.carrier ? `<div class="sub" style="font-size:12px;margin-top:3px;">🚚 Transport : <b>${escHtml(p.carrier)}</b></div>` : ''}
@@ -5057,11 +5067,17 @@ async function companyPackagesCardHTML(companies){
           </div>`).join('') : `<div class="sub" style="margin-top:8px;font-size:12.5px;">Aucun colis pour cette entreprise.</div>`;
       return `
         <div style="margin-bottom:10px;border:1px solid var(--border);border-radius:14px;padding:10px 12px;background:rgba(255,255,255,0.02);">
-          <div data-cpk-head="${escHtml(c.code)}" style="display:flex;align-items:center;gap:10px;cursor:pointer;">
-            <span data-cpk-arrow style="color:var(--accent);font-size:18px;font-weight:900;width:16px;text-align:center;">${open ? '▼' : '▶'}</span>
-            <span style="flex:1;min-width:0;font-weight:800;overflow-wrap:anywhere;">🏢 ${coLogoMini(c)}${escHtml(c.companyName)}</span>
-            <button type="button" data-cpk-print="${escHtml(c.code)}" data-name="${escHtml(c.companyName)}" style="flex:0 0 auto;padding:3px 10px;border-radius:10px;border:1px solid var(--accent);background:rgba(255,122,26,0.15);color:var(--accent2);font-weight:800;font-size:11px;cursor:pointer;">🖨️ PDF</button>
-            <span style="padding:2px 10px;border-radius:12px;font-size:11.5px;font-weight:800;background:rgba(250,204,21,0.18);color:#FACC15;">${arr.length} colis</span>
+          <div data-cpk-head="${escHtml(c.code)}" style="cursor:pointer;">
+            <div style="display:flex;align-items:center;gap:10px;">
+              <span data-cpk-arrow style="color:var(--accent);font-size:18px;font-weight:900;width:16px;text-align:center;">${open ? '▼' : '▶'}</span>
+              <span style="flex:1;min-width:0;font-weight:800;font-size:15px;overflow-wrap:anywhere;">🏢 ${coLogoMini(c)}${escHtml(c.companyName || 'Entreprise sans nom')}</span>
+            </div>
+            <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:6px 0 0 26px;">
+              <button type="button" data-cpk-print="${escHtml(c.code)}" data-name="${escHtml(c.companyName)}" style="flex:0 0 auto;padding:3px 10px;border-radius:10px;border:1px solid var(--accent);background:rgba(255,122,26,0.15);color:var(--accent2);font-weight:800;font-size:11px;cursor:pointer;">🖨️ PDF</button>
+              <span style="padding:2px 10px;border-radius:12px;font-size:11.5px;font-weight:800;background:rgba(250,204,21,0.18);color:#FACC15;">${arr.length} colis</span>
+              ${c.companyPhone ? `<span class="sub" style="font-size:11px;">📞 ${escHtml(c.companyPhone)}</span>` : ''}
+              ${nameCount[String(c.companyName || '').trim().toLowerCase()] > 1 ? '<span style="padding:2px 8px;border-radius:10px;font-size:10.5px;font-weight:800;background:rgba(239,93,93,0.18);color:var(--danger);">⚠️ Même nom qu’une autre entreprise</span>' : ''}
+            </div>
           </div>
           <div data-cpk-box="${escHtml(c.code)}" style="display:${open ? 'block' : 'none'};"><div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:8px;">${waChatBtn(c.companyPhone, "Bonjour " + (c.companyName || '') + ", c'est Sam Trace Store.")}<button type="button" data-msg-open="${escHtml(c.code)}" data-name="${escHtml(c.companyName)}" style="padding:5px 11px;border-radius:16px;border:1px solid var(--accent);background:rgba(255,122,26,0.15);color:var(--accent2);font-weight:800;font-size:12px;cursor:pointer;">✉️ Message</button></div>${inner}</div>
         </div>`;
@@ -5408,7 +5424,7 @@ async function announcementsAdminHTML(){
     const snap = await db.collection('announcements').get();
     const list = snap.docs.map(d => Object.assign({id: d.id}, d.data())).sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt))).slice(0, 10);
     return foldCardHTML('annonce', '#FBCFE8,#FB923C', '📢', 'Annonce aux entreprises', list.length, `<p class="sub" style="margin-top:0;">Écrivez un message : toutes les entreprises le verront en haut de leur menu.</p>
-      <textarea id="annText" rows="3" placeholder="Ex : Maintenance ce soir à 22h..." style="width:100%;margin-bottom:8px;"></textarea>
+      <textarea id="annText" rows="4" placeholder="Ex : Maintenance ce soir à 22h..." style="width:100%;background:#fff;color:#111;border:1px solid var(--border);border-radius:10px;padding:12px 13px;font-size:14.5px;margin-bottom:14px;outline:none;font-family:inherit;resize:vertical;"></textarea>
       <button type="button" class="primary" id="btnAnnPublish">📢 Publier l'annonce</button>` +
       list.map(a => `<div style="margin-top:12px;padding:10px 12px;border:1px solid var(--border);border-radius:12px;background:rgba(255,255,255,0.03);">
           <div style="font-size:13.5px;overflow-wrap:anywhere;white-space:pre-wrap;">${escHtml(a.text)}</div>
