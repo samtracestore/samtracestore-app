@@ -1896,8 +1896,15 @@ async function submitDeposit(code, data){
   }catch(e){}
 }
 
+function subDatesFor(c){
+  const now = new Date();
+  const prev = c && c.subEndsAt ? new Date(c.subEndsAt) : null;
+  const base = (prev && prev > now) ? prev : now;
+  return {subPaidAt: now.toISOString(), subEndsAt: new Date(base.getTime() + 30*24*60*60*1000).toISOString()};
+}
 async function validateDeposit(code){
-  await db.collection('companies').doc(code).set({paymentStatus:'active', notifiedForPayment:false, rejectionReason:null}, {merge:true});
+  let cur = null; try{ cur = await getCompanyByCode(code); }catch(e){}
+  await db.collection('companies').doc(code).set(Object.assign({paymentStatus:'active', notifiedForPayment:false, rejectionReason:null}, subDatesFor(cur)), {merge:true});
   sendMessage(code, 'owner', '✅ Votre paiement a été confirmé. Merci ! Votre abonnement est actif.', 'payment_ok').catch(()=>{});
 }
 
@@ -4799,7 +4806,8 @@ document.addEventListener('click', async (e)=>{
         toast('Compte désactivé');
       } else {
         if(!confirm('Activer le compte de « ' + name + ' » ?')) return;
-        await db.collection('companies').doc(code).set({paymentStatus: 'active', notifiedForPayment: false}, {merge: true});
+        let _cur = null; try{ _cur = await getCompanyByCode(code); }catch(e){}
+        await db.collection('companies').doc(code).set(Object.assign({paymentStatus: 'active', notifiedForPayment: false}, subDatesFor(_cur)), {merge: true});
         sendMessage(code, 'owner', '✅ Votre compte entreprise a été activé. Merci !', 'account_activated').catch(()=>{});
         toast('Compte activé ✅');
       }
@@ -4836,7 +4844,7 @@ function regAccOpen(c){
     <div data-reg-head="${c.code}" style="display:flex;align-items:center;gap:10px;padding:10px 12px;cursor:pointer;background:rgba(255,255,255,0.03);">
       <span data-reg-arrow style="flex:0 0 auto;color:var(--accent);font-size:18px;font-weight:900;width:18px;text-align:center;">${open ? '▼' : '▶'}</span>
       <span style="flex:1;min-width:0;font-weight:800;overflow-wrap:anywhere;">🏢 ${coLogoMini(c)}${c.companyName}</span>
-      <span style="flex:0 0 auto;padding:2px 9px;border-radius:12px;font-size:11px;font-weight:800;${c.isFree ? 'background:rgba(62,207,142,0.18);color:var(--ok);' : 'background:rgba(255,106,0,0.18);color:var(--accent);'}">${c.isFree ? '🎁 Gratuit' : '💰 Payant'}</span>
+      ${c.blocked ? '<span style="flex:0 0 auto;padding:2px 9px;border-radius:12px;font-size:11px;font-weight:800;background:rgba(239,93,93,0.2);color:#FF8A8A;">🚫 Bloquée</span>' : ''}<span style="flex:0 0 auto;padding:2px 9px;border-radius:12px;font-size:11px;font-weight:800;${c.isFree ? 'background:rgba(62,207,142,0.18);color:var(--ok);' : 'background:rgba(255,106,0,0.18);color:var(--accent);'}">${c.isFree ? '🎁 Gratuit' : '💰 Payant'}</span>
     </div>
     <div data-reg-co="${c.code}" style="display:${open ? 'block' : 'none'};padding:8px;">
       <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px;">
@@ -5007,25 +5015,69 @@ function coActiveBtnHTML(c){
     : '<button type="button" ' + base + 'border:1px solid rgba(239,93,93,0.6);background:rgba(239,93,93,0.14);color:var(--danger);">⛔ Non actif' + (days ? ' · essai ' + days + ' j' : '') + '</button>';
 }
 function regAccClose(){ return '</div></div>'; }
+function fmtD(d){ try{ return new Date(d).toLocaleDateString('fr-FR', {day:'2-digit', month:'short', year:'numeric'}); }catch(e){ return '—'; } }
+function coDatesHTML(c){
+  const now = new Date();
+  const row = (t, extra) => `<div class="name"${extra ? ' style="' + extra + '"' : ''}>${t}</div>`;
+  const out = [];
+  out.push(row('📅 Inscrite le : <b>' + (c.registeredAt ? fmtD(c.registeredAt) : '—') + '</b>'));
+  if(c.regPaymentStatus === 'active' && c.trialEndsAt){
+    const te = new Date(c.trialEndsAt);
+    out.push(row('🎁 Essai gratuit jusqu\'au : <b>' + fmtD(te) + '</b>' + (te > now ? ' (' + Math.ceil((te - now) / 86400000) + ' j restants)' : ' (terminé)')));
+  }
+  if(c.isFree){
+    out.push(row('🎁 Compte gratuit, pas d\'abonnement'));
+  } else if(c.subPaidAt || (c.paymentStatus === 'active' && c.depositSubmittedAt)){
+    const paid = c.subPaidAt || c.depositSubmittedAt;
+    out.push(row('💳 Abonnement payé le : <b>' + fmtD(paid) + '</b>' + (c.subPaidAt ? '' : ' (preuve envoyée)')));
+    if(c.subEndsAt){
+      const se = new Date(c.subEndsAt), left = Math.ceil((se - now) / 86400000);
+      out.push(row('⏳ Abonnement fini le : <b>' + fmtD(se) + '</b> ' + (left > 0 ? '(' + left + ' j restants)' : '⛔ (terminé)'), left > 0 ? '' : 'color:var(--danger);'));
+    } else {
+      out.push(row('⏳ Fin d\'abonnement : non enregistrée', 'color:var(--muted);'));
+    }
+  } else {
+    out.push(row('💳 Abonnement payé : pas encore', 'color:var(--muted);'));
+  }
+  return out.join('');
+}
+function companyRowHTML(c){
+  return `
+        ${regAccOpen(c)}<div class="pkgAdmin" style="flex-direction:column;align-items:stretch;">
+          <div style="display:flex;flex-direction:column;align-items:stretch;gap:10px;">
+            <div class="info" data-view="${c.code}" data-name="${c.companyName}" style="flex:1;display:flex;align-items:center;gap:10px;">
+              ${c.logoUrl ? `<div data-zoom="${c.logoUrl}" title="Voir le logo en grand" style="cursor:zoom-in;flex:0 0 auto;">${logoBoxHTML(c, 72, '16px', 'border:2px solid var(--accent);box-shadow:0 6px 18px rgba(255,106,0,0.3);')}</div>` : ''}
+              <div style="min-width:0;flex:1;overflow-wrap:anywhere;">
+                <div style="display:flex;align-items:center;flex-wrap:wrap;gap:8px;"><b>${c.companyName}</b> ${waChatBtn(c.companyPhone, 'Bonjour ' + (c.companyName||'') + ', c\'est Sam Trace Store. ')} ${!c.seenByOwner ? '<span class="badge disponible" style="margin-left:6px;">🆕 Nouveau</span>' : ''}</div>
+                <div style="display:flex;align-items:center;gap:6px;margin:4px 0;" onclick="event.stopPropagation();">
+                  <span style="padding:3px 10px;border-radius:12px;font-size:11.5px;font-weight:800;${c.isFree ? 'background:rgba(62,207,142,0.18);color:var(--ok);' : 'background:rgba(255,106,0,0.18);color:var(--accent);'}">${c.isFree ? '🎁 Gratuit' : '💰 Payant'}</span>
+                  <button type="button" data-payarrow="${c.code}" title="Changer Payant / Gratuit" style="width:40px;height:32px;border:none;border-radius:10px;background:var(--accent);color:#fff;font-size:20px;font-weight:900;line-height:1;cursor:pointer;box-shadow:0 3px 10px rgba(255,106,0,0.45);">▼</button>
+                  <select data-paysel="${c.code}" data-name="${c.companyName}" style="display:none;padding:5px 8px;border-radius:10px;font-size:12.5px;">
+                    <option value="paid" ${c.isFree ? '' : 'selected'}>Payant</option>
+                    <option value="free" ${c.isFree ? 'selected' : ''}>Gratuit</option>
+                  </select>
+                </div>
+                <div class="name">Code : ${c.code} · ${c.companyPhone}</div>
+                ${coAddrHTML(c)}
+                ${coDatesHTML(c)}
+                ${c.codeChangedAt ? `<div class="name" style="color:var(--accent2);">🔑 Code modifié le ${new Date(c.codeChangedAt).toLocaleDateString('fr-FR',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'})}</div>` : ''}
+                <div class="name">${c.adminName} · ${c.adminEmail}</div>
+              </div>
+            </div>
+            <div style="display:flex;gap:8px;">
+              <button class="${c.blocked ? 'primary' : 'miniBtn'}" style="flex:1;${c.blocked ? 'width:auto;padding:8px 14px;font-size:11px;' : ''}" data-toggle="${c.code}" data-blocked="${c.blocked}">
+                ${c.blocked ? 'Débloquer' : 'Bloquer'}
+              </button>
+              <button class="miniBtn" style="flex:1;color:var(--danger);border-color:rgba(239,93,93,0.4);" data-delete="${c.code}" data-name="${c.companyName}">
+                Supprimer
+              </button>
+            </div>
+          </div>
+        </div>${regAccClose()}`;
+}
 function blockedCompaniesHTML(list){
-  const body = list.length ? list.map(c => `<div style="margin-bottom:10px;border:1px solid rgba(239,93,93,0.45);border-left:4px solid #EF5D5D;border-radius:14px;padding:12px;background:rgba(239,93,93,0.06);">
-      <div style="display:flex;align-items:center;gap:12px;margin-bottom:8px;">
-        ${c.logoUrl ? `<div data-zoom="${c.logoUrl}" style="cursor:zoom-in;flex:0 0 auto;">${logoBoxHTML(c, 64, '14px', 'border:2px solid #EF5D5D;')}</div>` : ''}
-        <div style="min-width:0;flex:1;overflow-wrap:anywhere;">
-          <div style="display:flex;align-items:center;flex-wrap:wrap;gap:8px;"><b>${escHtml(c.companyName)}</b> ${waChatBtn(c.companyPhone, 'Bonjour ' + (c.companyName || '') + ', c\'est Sam Trace Store. ')}</div>
-          <div class="name">Code : ${escHtml(c.code)} · ${escHtml(c.companyPhone || '')}</div>
-          ${coAddrHTML(c)}
-          <div class="name">${escHtml(c.adminName || '')} · ${escHtml(c.adminEmail || '')}${c.adminPhone ? ' · ' + escHtml(c.adminPhone) : ''}</div>
-          <div class="name">${c.isFree ? '🎁 Gratuit' : '💰 Payant'}${c.registeredAt ? ' · inscrite le ' + new Date(c.registeredAt).toLocaleDateString('fr-FR', {day: '2-digit', month: 'short', year: 'numeric'}) : ''}</div>
-        </div>
-      </div>
-      <div style="display:flex;gap:8px;flex-wrap:wrap;">
-        <button class="primary" style="flex:1;width:auto;padding:8px 14px;font-size:12px;" data-toggle="${escHtml(c.code)}" data-blocked="true">🔓 Débloquer</button>
-        <button type="button" data-msg-open="${escHtml(c.code)}" data-name="${escHtml(c.companyName)}" class="miniBtn" style="flex:1;">✉️ Message</button>
-        <button class="miniBtn" style="flex:1;color:var(--danger);border-color:rgba(239,93,93,0.4);" data-delete="${escHtml(c.code)}" data-name="${escHtml(c.companyName)}">Supprimer</button>
-      </div>
-    </div>`).join('') : '<p class="sub" style="margin:0;">Aucune entreprise bloquée pour le moment.</p>';
-  return foldCardHTML('blocked', '#EF4444,#7F1D1D', '🚫', 'Accès aux entreprises bloqué pour non-paiement', list.length, body);
+  const body = list.length ? list.map(c => companyRowHTML(c)).join('') : '<p class="sub" style="margin:0;">Aucune entreprise bloquée pour le moment.</p>';
+  return foldCardHTML('blocked', '#DC2626,#EC4899', '🚫', 'Accès aux entreprises bloqué pour non-paiement', list.length, body);
 }
 function coAddrHTML(c){
   return c.companyAddress
@@ -5816,37 +5868,7 @@ async function renderOwnerCompanies(){
     } else {
       const blockedCos = companies.filter(c => c.blocked);
       const activeCos = companies.filter(c => !c.blocked);
-      content.innerHTML = regRootOpenHTML(activeCos) + activeCos.map(c=>`
-        ${regAccOpen(c)}<div class="pkgAdmin" style="flex-direction:column;align-items:stretch;">
-          <div style="display:flex;flex-direction:column;align-items:stretch;gap:10px;">
-            <div class="info" data-view="${c.code}" data-name="${c.companyName}" style="flex:1;display:flex;align-items:center;gap:10px;">
-              ${c.logoUrl ? `<div data-zoom="${c.logoUrl}" title="Voir le logo en grand" style="cursor:zoom-in;flex:0 0 auto;">${logoBoxHTML(c, 72, '16px', 'border:2px solid var(--accent);box-shadow:0 6px 18px rgba(255,106,0,0.3);')}</div>` : ''}
-              <div style="min-width:0;flex:1;overflow-wrap:anywhere;">
-                <div style="display:flex;align-items:center;flex-wrap:wrap;gap:8px;"><b>${c.companyName}</b> ${waChatBtn(c.companyPhone, 'Bonjour ' + (c.companyName||'') + ', c\'est Sam Trace Store. ')} ${!c.seenByOwner ? '<span class="badge disponible" style="margin-left:6px;">🆕 Nouveau</span>' : ''}</div>
-                <div style="display:flex;align-items:center;gap:6px;margin:4px 0;" onclick="event.stopPropagation();">
-                  <span style="padding:3px 10px;border-radius:12px;font-size:11.5px;font-weight:800;${c.isFree ? 'background:rgba(62,207,142,0.18);color:var(--ok);' : 'background:rgba(255,106,0,0.18);color:var(--accent);'}">${c.isFree ? '🎁 Gratuit' : '💰 Payant'}</span>
-                  <button type="button" data-payarrow="${c.code}" title="Changer Payant / Gratuit" style="width:40px;height:32px;border:none;border-radius:10px;background:var(--accent);color:#fff;font-size:20px;font-weight:900;line-height:1;cursor:pointer;box-shadow:0 3px 10px rgba(255,106,0,0.45);">▼</button>
-                  <select data-paysel="${c.code}" data-name="${c.companyName}" style="display:none;padding:5px 8px;border-radius:10px;font-size:12.5px;">
-                    <option value="paid" ${c.isFree ? '' : 'selected'}>Payant</option>
-                    <option value="free" ${c.isFree ? 'selected' : ''}>Gratuit</option>
-                  </select>
-                </div>
-                <div class="name">Code : ${c.code} · ${c.companyPhone}</div>
-                ${coAddrHTML(c)}
-                ${c.codeChangedAt ? `<div class="name" style="color:var(--accent2);">🔑 Code modifié le ${new Date(c.codeChangedAt).toLocaleDateString('fr-FR',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'})}</div>` : ''}
-                <div class="name">${c.adminName} · ${c.adminEmail}</div>
-              </div>
-            </div>
-            <div style="display:flex;gap:8px;">
-              <button class="${c.blocked ? 'primary' : 'miniBtn'}" style="flex:1;${c.blocked ? 'width:auto;padding:8px 14px;font-size:11px;' : ''}" data-toggle="${c.code}" data-blocked="${c.blocked}">
-                ${c.blocked ? 'Débloquer' : 'Bloquer'}
-              </button>
-              <button class="miniBtn" style="flex:1;color:var(--danger);border-color:rgba(239,93,93,0.4);" data-delete="${c.code}" data-name="${c.companyName}">
-                Supprimer
-              </button>
-            </div>
-          </div>
-        </div>${regAccClose()}`).join('') + `</div></div><div id="companyPkgView"></div>` + blockedCompaniesHTML(blockedCos) + dashHtml + remHtml + msgHtml + annHtml + cpkHtml + delHtml + srHtml + actHtml;
+      content.innerHTML = regRootOpenHTML(activeCos) + activeCos.map(c => companyRowHTML(c)).join('') + `</div></div><div id="companyPkgView"></div>` + blockedCompaniesHTML(blockedCos) + dashHtml + remHtml + msgHtml + annHtml + cpkHtml + delHtml + srHtml + actHtml;
       bindRegCompanies(content);
       content.querySelectorAll('[data-payarrow]').forEach(b=>{
         b.onclick = (e)=>{
