@@ -389,6 +389,7 @@ async function firestoreGetWithRetry(ref){
 
 let mode = "client";
 let clientPhone = null;
+let clientName = '';
 let adminSession = null; // {code, isOwner, companyName}
 let editingTrackingId = null;
 let showCompanyRegister = false;
@@ -1248,7 +1249,7 @@ async function samReply(raw){
                     "Estati yo :\n• En préparation : konpayi a ap prepare kolis ou\n• Expédié : kolis la sou wout\n• En cours de livraison : yon livrè ap vini\n• En attente : kolis la ap tann yon etap\n• Disponible au bureau : ou ka vin pran l\n• Livré : ou resevwa l"));
       }
       if(typeof clientPhone !== 'undefined' && clientPhone){
-        const list = await getPackagesForPhone(clientPhone);
+        const list = await getPackagesForPhone(clientPhone, clientName);
         if(list && list.length){
           const lines = list.slice(0, 4).map(p => '• ' + p.trackingId + ' — ' + (STATUS_LABEL[p.status] || p.status)).join('\n');
           return ok(R("Voici vos colis :\n" + lines + (list.length > 4 ? "\n… et " + (list.length - 4) + " autre(s) dans l'écran Client." : ""), "Men kolis ou yo :\n" + lines + (list.length > 4 ? "\n… ak " + (list.length - 4) + " lòt nan ekran Client lan." : "")));
@@ -1532,12 +1533,24 @@ async function resolveClientLinkCompany(){
     snap.forEach(d => { const c = d.data(); clientLinkCompany = {code: c.code, companyName: c.companyName, logoUrl: c.logoUrl || null}; });
   }catch(e){}
 }
-async function getPackagesForPhone(phone){
+function normNameTokens(str){
+  return String(str || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9\s]/g, ' ').split(/\s+/).filter(Boolean);
+}
+function pkgMatchesName(p, typed){
+  const a = normNameTokens(typed), b = normNameTokens(p && p.name);
+  if(!a.length || !b.length) return true;
+  const A = new Set(a), B = new Set(b);
+  const aInB = a.every(t => B.has(t)), bInA = b.every(t => A.has(t));
+  if(aInB && bInA) return true;
+  return a[0] === b[0] && (aInB || bInA);
+}
+async function getPackagesForPhone(phone, typedName){
   phone = normalizePhone(phone);
   const snap = await db.collection('packages').where('phone','==',phone).get();
   let pkgs = [];
   snap.forEach(doc=>pkgs.push(doc.data()));
   pkgs.sort((a,b)=> new Date(b.updatedAt) - new Date(a.updatedAt));
+  if(typedName) pkgs = pkgs.filter(p => pkgMatchesName(p, typedName));
   const scope = clientScopeCode();
   if(scope){
     const oc = await getOwnerCode();
@@ -2318,6 +2331,7 @@ async function renderClient(){
         }
         await saveClient(phone, name, email);
         clientPhone = normalizePhone(phone);
+        clientName = name;
         renderClient();
       }catch(e){ toast("Erreur d'enregistrement, réessayez"); }
     };
@@ -2329,11 +2343,11 @@ async function renderClient(){
       <button class="ghost" id="btnLogout">Changer</button>
     </div>
     <div id="pkgList"><div class="empty">Chargement...</div></div>`;
-  document.getElementById('btnLogout').onclick = ()=>{ clientPhone=null; renderClient(); };
+  document.getElementById('btnLogout').onclick = ()=>{ clientPhone=null; clientName=''; renderClient(); };
   markClientSeen(clientPhone);
 
   try{
-    const allPkgs = await getPackagesForPhone(clientPhone);
+    const allPkgs = await getPackagesForPhone(clientPhone, clientName);
     courierOwnerCode = await preloadCourierAvatars(allPkgs);
     await getCompanyNamesFor(allPkgs);
     const multiCompanies = new Set(allPkgs.filter(p => !p.hiddenByClient).map(p => p.companyCode || '')).size >= 2;
@@ -2341,7 +2355,7 @@ async function renderClient(){
     const pkgs = allPkgs.filter(p => !p.hiddenByClient).sort((a, b) => pkgCreatedAt(a) - pkgCreatedAt(b));
     const list = document.getElementById('pkgList');
     if(pkgs.length===0){
-      list.innerHTML = `<div class="card"><div class="empty"><div class="big">📦</div>Aucun colis trouvé pour ce numéro pour le moment.</div></div>`;
+      list.innerHTML = `<div class="card"><div class="empty"><div class="big">📦</div>Vous n'avez pas de colis chez ${escHtml(clientLinkCompany ? clientLinkCompany.companyName : 'Sam Trace Store')} pour le moment.<br><span class="sub" style="font-size:12.5px;">Vérifiez que le nom et le numéro sont exactement ceux de votre colis.</span></div></div>`;
     } else {
       list.innerHTML = pkgs.map(p => {
         const n = nums[p.trackingId];
@@ -4335,6 +4349,7 @@ async function renderOwnerPayments(){
       </div>
       ${courierAvatarCardHTML(courierAv)}`;
     bindCourierAvatars(()=>renderOwnerPayments());
+    content.querySelectorAll('[data-receipt-sample]').forEach(b => { b.onclick = ()=> openReceiptSample(); });
     content.querySelectorAll('[data-receipt-open]').forEach(b => { b.onclick = ()=>{ const x = receiptHistory.find(y => y.id === b.dataset.receiptOpen); if(x) openReceiptPreview({kind: x.kind, code: x.code, companyName: x.companyName, amount: x.amount, currency: x.currency, method: x.method, date: x.date}); }; });
     content.querySelectorAll('[data-receipt-dep]').forEach(b => { b.onclick = ()=>{ const c = confirmed.find(x => x.code === b.dataset.receiptDep); if(c) openReceiptPreview({kind: 'deposit', code: c.code, companyName: c.companyName, amount: c.depositAmount, currency: c.depositCurrency, method: c.depositMethod, date: c.depositSubmittedAt}); }; });
     content.querySelectorAll('[data-receipt-reg]').forEach(b => { b.onclick = ()=>{ const c = confirmedReg.find(x => x.code === b.dataset.receiptReg); if(c) openReceiptPreview({kind: 'registration', code: c.code, companyName: c.companyName, amount: c.regDepositAmount, currency: c.regDepositCurrency, method: c.regDepositMethod, date: c.regDepositSubmittedAt}); }; });
@@ -4942,7 +4957,8 @@ function receiptsHistoryHTML(list){
       <div class="sub" style="font-size:12px;margin:2px 0;">Envoyé : ${(x.channels || []).map(c => chan[c] || c).join(' · ') || 'pas encore'}</div>
       <button type="button" class="miniBtn" data-receipt-open="${escHtml(x.id)}" style="margin-top:6px;">👁️ Voir / renvoyer</button>
     </div>`).join('') : '<p class="sub" style="margin:0;">Aucun reçu pour le moment. Ils apparaissent ici dès que vous envoyez ou téléchargez un reçu.</p>';
-  return compactCardHtml('receipts', '#22C55E,#0EA5E9', '🧾', 'Historique des reçus', list.length + ' reçu(s) — appuyez pour voir', `<div class="card">${rows}</div>`);
+  const sampleBtn = '<button type="button" class="miniBtn" data-receipt-sample style="width:100%;margin-bottom:10px;padding:12px;border-color:#22C55E;color:#86EFAC;font-weight:800;">👁️ Voir un exemple de reçu (aperçu)</button>';
+  return compactCardHtml('receipts', '#22C55E,#0EA5E9', '🧾', 'Historique des reçus', list.length + ' reçu(s) — appuyez pour voir', `<div class="card">${sampleBtn}${rows}</div>`);
 }
 async function sendReceiptEmail(r, img, to, name){
   if(receiptMailUrl){
@@ -4954,6 +4970,22 @@ async function sendReceiptEmail(r, img, to, name){
   }
   const ok = await sendGenericEmail(to, name, receiptText(r) + "\n\n(Le reçu en image est dans votre discussion avec STS, dans l'application.)", r.companyName);
   return {ok: ok, attached: false};
+}
+function openReceiptSample(){
+  const r = {kind: 'deposit', code: '0000', companyName: 'Nom de votre entreprise', amount: 1680, currency: 'HTG', method: 'MonCash', date: new Date().toISOString()};
+  const old = document.getElementById('receiptOv'); if(old) old.remove();
+  const img = drawReceipt(r);
+  const ov = document.createElement('div');
+  ov.id = 'receiptOv';
+  ov.style.cssText = 'position:fixed;inset:0;z-index:275;background:rgba(0,0,0,0.8);display:flex;align-items:center;justify-content:center;padding:12px;overflow-y:auto;';
+  ov.innerHTML = `<div style="width:100%;max-width:440px;background:var(--panel);border:1px solid var(--border);border-radius:18px;padding:14px;">
+      <div style="font-weight:800;font-size:16px;margin-bottom:4px;">🧾 Aperçu du reçu (exemple)</div>
+      <p class="sub" style="margin:0 0 8px;font-size:12.5px;">Exemple avec des données fictives. Rien n'est envoyé ni enregistré.</p>
+      <img src="${img}" style="width:100%;border-radius:10px;border:1px solid var(--border);display:block;margin-bottom:12px;">
+      <button class="ghost" id="rcSampleClose" style="width:100%;">Fermer</button>
+    </div>`;
+  document.body.appendChild(ov);
+  document.getElementById('rcSampleClose').onclick = ()=> ov.remove();
 }
 function openReceiptPreview(r){
   const old = document.getElementById('receiptOv'); if(old) old.remove();
@@ -7315,10 +7347,27 @@ function coEmailCardHTML(gs, companyName){
       </div>
     </div>`;
 }
+function applyCoCardColors(root){
+  const PAL = [
+    ['Notifications', '139,92,246', '#C4B5FD'],
+    ['Lien pour mes clients', '34,197,94', '#86EFAC'],
+    ['Support STS', '236,72,153', '#F9A8D4'],
+    ["Guide de l'entreprise", '20,184,166', '#5EEAD4'],
+    ["Logo de l'entreprise", '59,130,246', '#93C5FD']
+  ];
+  root.querySelectorAll('.card').forEach(card => {
+    const h = card.querySelector('h2'); if(!h) return;
+    const hit = PAL.find(x => h.textContent.indexOf(x[0]) >= 0); if(!hit) return;
+    card.style.background = 'linear-gradient(135deg, rgba(' + hit[1] + ',0.26), rgba(' + hit[1] + ',0.08))';
+    card.style.border = '1px solid rgba(' + hit[1] + ',0.6)';
+    h.style.color = hit[2];
+    card.querySelectorAll('p.sub, label').forEach(el => { el.style.color = hit[2]; });
+  });
+}
 async function renderCompanySettings(main){
   const company = await getCompanyFast(companySession.code);
   const gsQuota = {total: APPS_SCRIPT_DAILY_QUOTA, used: 0, remaining: APPS_SCRIPT_DAILY_QUOTA};
-  getGoogleScriptQuota().then(q => { const el = document.getElementById('coEmailCard'); if(el) el.outerHTML = coEmailCardHTML(q, company && company.companyName); }).catch(()=>{});
+  getGoogleScriptQuota().then(q => { const el = document.getElementById('coEmailCard'); if(el) el.outerHTML = coEmailCardHTML(q, company && company.companyName); applyCoCardColors(document.getElementById('main')); }).catch(()=>{});
   const hasLogo = !!(company && company.logoUrl);
   const lz = (company && company.logoZoom) || 100, lx = (company && company.logoPosX) ?? 50, ly = (company && company.logoPosY) ?? 50;
   setTimeout(fillCoAnnouncements, 0);
@@ -7386,6 +7435,7 @@ async function renderCompanySettings(main){
         <button class="primary" id="btnSaveLogo">💾 Enregistrer le logo</button>
       </div>
     </div>`;
+  applyCoCardColors(main);
   async function loadNotifs(){
     const box = document.getElementById('notifBox');
     box.innerHTML = '<div class="empty">Chargement...</div>';
