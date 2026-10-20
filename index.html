@@ -4208,7 +4208,7 @@ async function renderOwnerSettings(){
     <div class="card">
       <h2>🗄️ Sauvegarde et export</h2>
       <p class="sub">Téléchargez une copie de vos données. Gardez ces fichiers en lieu sûr : la sauvegarde complète contient les codes d'accès des entreprises. Les images (logos, preuves) ne sont pas incluses.</p>
-      <button class="primary" id="btnBackupJson" style="margin-bottom:8px;">⬇️ Sauvegarde complète (JSON)</button>
+      ${backupReminderHTML()}<button class="primary" id="btnBackupJson" style="margin-bottom:8px;">⬇️ Sauvegarde complète (JSON)</button>
       <button class="ghost" id="btnExportPkgs" style="width:100%;margin-bottom:8px;color:#fff;border-color:var(--accent);">📊 Exporter les colis (Excel)</button>
       <button class="ghost" id="btnExportCos" style="width:100%;color:#fff;border-color:var(--accent);">📊 Exporter les entreprises (Excel)</button>
       <div id="backupMsg" class="sub" style="margin-top:10px;font-weight:700;"></div>
@@ -4241,6 +4241,7 @@ async function renderOwnerSettings(){
       try{ out.agentChats = (await db.collection('agentChats').where('kind', 'in', ['agent', 'report']).get()).docs.map(d => lite(Object.assign({_id: d.id}, d.data()))); }catch(e){ out.agentChats = []; }
       try{ out.receipts = await loadReceiptHistory(); }catch(e){ out.receipts = []; }
       deliverFile(new Blob([JSON.stringify(out, null, 1)], {type: 'application/json'}), 'sauvegarde-sts-' + stamp + '.json', '💾 Sauvegarde complète (JSON)');
+      markBackupDone();
       bmsg('✅ Sauvegarde prête', true);
     }catch(e){ bmsg('❌ Impossible de préparer la sauvegarde', false); }
   };
@@ -4390,6 +4391,7 @@ async function renderOwnerPayments(){
           <div style="color:#fff;font-weight:700;font-size:16px;">Sauvegarde des données</div>
         </div>
         <div style="padding:14px 16px;">
+          ${backupReminderHTML()}
           <p class="sub">Télécharge une copie de toutes tes entreprises et de tous tes colis, au cas où.</p>
           <button class="primary" id="btnExportBackup" style="margin-top:6px;">📥 Exporter mes données</button>
           <button class="primary" id="btnCleanOrphans" style="margin-top:10px;background:linear-gradient(135deg,#F59E0B,#EA580C);">🧹 Nettoyer les colis orphelins</button>
@@ -4744,6 +4746,7 @@ async function renderOwnerPayments(){
         const noImg = o => JSON.parse(JSON.stringify(o, (k, v) => (typeof v === 'string' && (v.length > 20000 || v.indexOf('data:image') === 0)) ? '[image non incluse]' : v));
         const backup = {exportedAt: new Date().toISOString(), companies: noImg(companies), packages: noImg(packages)};
         deliverFile(new Blob([JSON.stringify(backup, null, 2)], {type:'application/json'}), `sts-sauvegarde-${new Date().toISOString().slice(0,10)}.json`, '💾 Sauvegarde des entreprises et des colis (JSON)');
+        markBackupDone();
       }catch(e){ toast("Erreur lors de l'export"); }
     };
     document.getElementById('btnCleanOrphans').onclick = async ()=>{
@@ -5263,6 +5266,26 @@ function openReceiptPreview(r){
     }catch(e){ msg.style.color = 'var(--danger)'; msg.textContent = '❌ Erreur, réessayez.'; }
   };
 }
+function subExpired(c){
+  return !!(c && !c.isFree && c.paymentStatus === 'active' && c.subEndsAt && new Date(c.subEndsAt) < new Date());
+}
+async function expireSubscriptionIfNeeded(c){
+  if(!subExpired(c) || !c.code) return c;
+  try{
+    await db.collection('companies').doc(c.code).set({paymentStatus: 'none', notifiedForPayment: false, subExpiredAt: new Date().toISOString()}, {merge: true});
+    c.paymentStatus = 'none';
+  }catch(e){}
+  return c;
+}
+function backupReminderHTML(){
+  let t = 0; try{ t = parseInt(localStorage.getItem('sts_last_backup') || '0', 10) || 0; }catch(e){}
+  const days = t ? Math.floor((Date.now() - t) / 86400000) : null;
+  const old = days === null || days >= 7;
+  const txt = days === null ? '⏰ Aucune sauvegarde faite sur cet appareil. Faites-en une maintenant.'
+    : (days >= 7 ? '⏰ Dernière sauvegarde il y a ' + days + ' jours. Pensez à en refaire une.' : '✅ Dernière sauvegarde : ' + (days === 0 ? "aujourd'hui" : 'il y a ' + days + ' j'));
+  return '<div style="margin:0 0 10px;padding:9px 12px;border-radius:10px;font-weight:700;font-size:13px;line-height:1.4;' + (old ? 'background:rgba(245,158,11,0.15);border:1px solid rgba(245,158,11,0.5);color:#FBBF24;' : 'background:rgba(62,207,142,0.12);border:1px solid rgba(62,207,142,0.4);color:var(--ok);') + '">' + txt + '</div>';
+}
+function markBackupDone(){ try{ localStorage.setItem('sts_last_backup', String(Date.now())); }catch(e){} }
 function coMotifHTML(c){
   const activated = !!(c.isFree || c.paymentStatus === 'active');
   if(activated) return '';
@@ -6125,6 +6148,7 @@ async function renderOwnerCompanies(){
   if(!ownerViewCache.companies) content.innerHTML = `<div class="card"><div class="empty">Chargement...</div></div>`;
   try{
     const companies = await getAllCompanies();
+    await Promise.all(companies.map(expireSubscriptionIfNeeded));
     const [srHtml, actHtml, delHtml, cpkHtml, annHtml, msgHtml0, agHtml, dashHtml] = await Promise.all([
       supportRequestsHTML(companies), activityLogHTML(companies), deletedByCompaniesHTML(companies),
       companyPackagesCardHTML(companies), announcementsAdminHTML(), messagesAdminHTML(companies), agentChatsAdminHTML(companies), dashboardHTML(companies)
@@ -6928,6 +6952,7 @@ async function renderAdminCore(){
           return;
         }
         clearLoginLockout('admin');
+        company = await expireSubscriptionIfNeeded(company);
         if(company.blocked){
           main.innerHTML = `<div class="card"><div class="warnBox" style="color:var(--danger);border-color:rgba(239,93,93,0.3);background:rgba(239,93,93,0.1);">
             🚫 Vous avez été temporairement bloqué par SamTraceStore. Veuillez contacter le support.</div></div>${whatsappBubbleHTML()}`;
@@ -7847,6 +7872,7 @@ async function renderCompany(){
           return;
         }
         clearLoginLockout('company');
+        company = await expireSubscriptionIfNeeded(company);
         if(company.blocked){
           main.innerHTML = `<div class="card"><div class="warnBox" style="color:var(--danger);border-color:rgba(239,93,93,0.3);background:rgba(239,93,93,0.1);">
             🚫 Vous avez été temporairement bloqué par SamTraceStore. Veuillez contacter le support.</div></div>${whatsappBubbleHTML()}`;
