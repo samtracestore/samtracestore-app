@@ -4776,8 +4776,7 @@ async function renderOwnerPayments(){
         return;
       }
       if(/^(\d)\1{3}$/.test(newCode) || /^(19|20)\d\d$/.test(newCode) || ['0123', '1234', '2345', '3456', '4567', '5678', '6789', '4321', '3210'].indexOf(newCode) >= 0){
-        toast("⚠️ Ce code est trop facile à deviner (année, suite ou chiffres répétés). Choisissez-en un autre.");
-        return;
+        if(!confirm("⚠️ Ce code est facile à deviner (année, suite ou chiffres répétés).\n\nVoulez-vous quand même l'utiliser ?")) return;
       }
       await db.collection('settings').doc('ownerAuth').set({code:newCode},{merge:true});
       toast("✅ Code propriétaire mis à jour");
