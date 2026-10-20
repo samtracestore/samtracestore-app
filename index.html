@@ -5366,8 +5366,46 @@ function companyRowHTML(c){
           </div>
         </div>${regAccClose()}`;
 }
+function normFilter(s){ return String(s || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, ''); }
+function coRowWrap(c){
+  const activated = !!(c.isFree || c.paymentStatus === 'active');
+  const trial = !activated && c.trialEndsAt && new Date(c.trialEndsAt) > new Date();
+  const st = [c.isFree ? 'free' : '', activated ? 'active' : (trial ? 'trial' : 'inactive'), c.blocked ? 'blocked' : ''].filter(Boolean).join(' ');
+  const q = [c.companyName, c.companyPhone, c.adminName, c.adminEmail, c.adminPhone, c.companyAddress].filter(Boolean).join(' ');
+  return '<div data-co-row data-st="' + st + '" data-q="' + escHtml(normFilter(q)) + '">' + companyRowHTML(c) + '</div>';
+}
+function coFilterHTML(){
+  const chips = [['all', 'Toutes'], ['active', 'Actives'], ['inactive', 'Non actives'], ['trial', 'Essai'], ['free', 'Gratuites'], ['blocked', 'Bloquées']];
+  return `<div class="card" style="padding:12px;flex-direction:column;align-items:stretch;">
+      <input id="coSearch" type="search" placeholder="🔍 Chercher une entreprise, un téléphone, un email…" style="width:100%;margin-bottom:10px;">
+      <div style="display:flex;gap:6px;flex-wrap:wrap;">${chips.map(x => `<button type="button" class="miniBtn" data-chip="${x[0]}">${x[1]}</button>`).join('')}</div>
+      <div id="coFilterCount" class="sub" style="margin-top:8px;font-size:12.5px;"></div>
+    </div>`;
+}
+function bindCoFilter(root){
+  const input = root.querySelector('#coSearch'); if(!input) return;
+  let chip = 'all';
+  const apply = ()=>{
+    const q = normFilter(input.value.trim());
+    let shown = 0; const rows = root.querySelectorAll('[data-co-row]');
+    rows.forEach(r => {
+      const okQ = !q || (r.dataset.q || '').indexOf(q) >= 0;
+      const okC = chip === 'all' || (' ' + r.dataset.st + ' ').indexOf(' ' + chip + ' ') >= 0;
+      r.style.display = (okQ && okC) ? '' : 'none';
+      if(okQ && okC) shown++;
+    });
+    const cnt = root.querySelector('#coFilterCount'); if(cnt) cnt.textContent = shown + ' sur ' + rows.length + ' entreprise(s)';
+    root.querySelectorAll('[data-chip]').forEach(b => {
+      const on = b.dataset.chip === chip;
+      b.style.background = on ? 'var(--accent)' : ''; b.style.color = on ? '#fff' : ''; b.style.borderColor = on ? 'var(--accent)' : '';
+    });
+  };
+  input.oninput = apply;
+  root.querySelectorAll('[data-chip]').forEach(b => { b.onclick = ()=>{ chip = b.dataset.chip; apply(); }; });
+  apply();
+}
 function blockedCompaniesHTML(list){
-  const body = list.length ? list.map(c => companyRowHTML(c)).join('') : '<p class="sub" style="margin:0;">Aucune entreprise bloquée pour le moment.</p>';
+  const body = list.length ? list.map(c => coRowWrap(c)).join('') : '<p class="sub" style="margin:0;">Aucune entreprise bloquée pour le moment.</p>';
   return foldCardHTML('blocked', '#DC2626,#EC4899', '🚫', 'Accès aux entreprises bloqué pour non-paiement', list.length, body);
 }
 function coAddrHTML(c){
@@ -6160,7 +6198,7 @@ async function renderOwnerCompanies(){
     } else {
       const blockedCos = companies.filter(c => c.blocked);
       const activeCos = companies.filter(c => !c.blocked);
-      content.innerHTML = regRootOpenHTML(activeCos) + activeCos.map(c => companyRowHTML(c)).join('') + `</div></div><div id="companyPkgView"></div>` + blockedCompaniesHTML(blockedCos) + dashHtml + remHtml + msgHtml + annHtml + cpkHtml + delHtml + srHtml + actHtml;
+      content.innerHTML = coFilterHTML() + regRootOpenHTML(activeCos) + activeCos.map(c => coRowWrap(c)).join('') + `</div></div><div id="companyPkgView"></div>` + blockedCompaniesHTML(blockedCos) + dashHtml + remHtml + msgHtml + annHtml + cpkHtml + delHtml + srHtml + actHtml;
       bindRegCompanies(content);
       content.querySelectorAll('[data-payarrow]').forEach(b=>{
         b.onclick = (e)=>{
@@ -6211,6 +6249,7 @@ async function renderOwnerCompanies(){
     bindAgentChats(content);
     bindReminders(content, companies);
     bindFoldCards(content);
+    bindCoFilter(content);
   }catch(e){
     content.innerHTML = `<div class="card"><div class="empty">Impossible de charger les entreprises.</div></div>`;
   }
@@ -7612,6 +7651,7 @@ function applyCoCardColors(root){
   const PAL = [
     ['Notifications', '249,115,22', '#FDBA74'],
     ['Lien pour mes clients', '34,197,94', '#86EFAC'],
+    ["Adresse de l'entreprise", '6,182,212', '#67E8F9'],
     ['Support STS', '239,68,68', '#FCA5A5'],
     ["Guide de l'entreprise", '20,184,166', '#5EEAD4'],
     ["Logo de l'entreprise", '236,72,153', '#F9A8D4']
@@ -7649,6 +7689,13 @@ async function renderCompanySettings(main){
         <button type="button" class="ghost" id="coLinkCopy" style="flex:1;color:#fff;border-color:var(--accent);">📋 Copier</button>
         <button type="button" id="coLinkWa" style="flex:1;border:none;border-radius:12px;background:#25D366;color:#06210F;font-weight:800;cursor:pointer;">💬 WhatsApp</button>
       </div>
+    </div>
+    <div class="card">
+      <h2>📍 Adresse de l'entreprise</h2>
+      <p class="sub">Indiquez où se trouve votre entreprise. SamTraceStore la voit dans son espace Admin.</p>
+      <textarea id="coAddrInput" rows="2" placeholder="Ex : 12 rue Capois, Delmas 33, Port-au-Prince" style="width:100%;background:#fff;color:#111;border:1px solid var(--border);border-radius:10px;padding:12px 13px;font-size:14.5px;margin-bottom:12px;outline:none;font-family:inherit;resize:vertical;">${escHtml((company && company.companyAddress) || '')}</textarea>
+      <button type="button" class="primary" id="btnSaveCoAddr">💾 Enregistrer l'adresse</button>
+      <div id="coAddrMsg" class="sub" style="margin-top:8px;font-weight:700;overflow-wrap:anywhere;"></div>
     </div>
     <div class="card" style="background:rgba(245,185,61,0.1);border:1px solid rgba(245,185,61,0.3);">
       <h2 style="color:var(--warn);">🔑 Mon code d'accès</h2>
@@ -7722,6 +7769,19 @@ async function renderCompanySettings(main){
       };
     }catch(e){ box.innerHTML = '<div class="empty">Impossible de charger les notifications.</div>'; }
   }
+  const btnAddr = document.getElementById('btnSaveCoAddr');
+  if(btnAddr) btnAddr.onclick = async ()=>{
+    const v = document.getElementById('coAddrInput').value.trim();
+    const m = document.getElementById('coAddrMsg');
+    if(v.length < 5){ m.style.color = 'var(--danger)'; m.textContent = 'Entrez une adresse complète (au moins 5 caractères).'; return; }
+    m.style.color = ''; m.textContent = '⏳ Enregistrement…';
+    try{
+      await db.collection('companies').doc(companySession.code).set({companyAddress: v}, {merge: true});
+      delete companyHomeCache[companySession.code];
+      Object.keys(coScreenCache).forEach(k => { delete coScreenCache[k]; });
+      m.style.color = 'var(--ok)'; m.textContent = '✅ Adresse enregistrée';
+    }catch(e){ m.style.color = 'var(--danger)'; m.textContent = "❌ Impossible d'enregistrer. Vérifiez votre connexion."; }
+  };
   document.getElementById('btnNotifOpen').onclick = ()=>{
     const box = document.getElementById('notifBox');
     if(box.style.display === 'none'){ box.style.display = 'block'; loadNotifs(); } else { box.style.display = 'none'; }
@@ -7937,6 +7997,7 @@ async function renderCompany(){
       <button class="ghost" id="btnCompanyLogout" style="flex:0 0 auto;padding:8px 12px;font-size:13px;">Déconnexion</button>
     </div>
     ${subscriptionBannerHTML(co)}
+    ${(co && !co.companyAddress) ? '<div id="coAddrReminder" style="cursor:pointer;margin:0 0 12px;padding:12px 14px;border-radius:12px;background:rgba(245,158,11,0.15);border:1px solid rgba(245,158,11,0.55);color:#FBBF24;font-weight:700;font-size:13.5px;line-height:1.4;">📍 Ajoutez l\'adresse de votre entreprise (touchez ici). SamTraceStore a besoin de savoir où vous êtes.</div>' : ''}
     <button class="primary bigOrange" id="coBtnColis"><span class="bi">📦</span><span>Colis<br><span style="font-size:12px;font-weight:500;opacity:.85;">Ajouter et suivre vos colis</span></span></button>
     <button class="primary bigOrange" id="coBtnSettings"><span class="bi">⚙️</span><span>Paramètre<br><span style="font-size:12px;font-weight:500;opacity:.85;">Mon code, support et guide</span></span></button>
     <button class="primary bigOrange" id="coBtnMsgs"><span class="bi">💬</span><span>Messages<br><span style="font-size:12px;font-weight:500;opacity:.85;">Écrire à STS <span id="coMsgBadge"></span></span></span></button>
@@ -7944,6 +8005,7 @@ async function renderCompany(){
     ${whatsappBubbleHTML()}`;
   document.getElementById('coBtnColis').onclick = ()=>{ companyScreen = 'colis'; renderCompany(); };
   document.getElementById('coBtnSettings').onclick = ()=>{ companyScreen = 'settings'; renderCompany(); };
+  const _ar = document.getElementById('coAddrReminder'); if(_ar) _ar.onclick = ()=>{ companyScreen = 'settings'; renderCompany(); };
   document.getElementById('coBtnClient').onclick = ()=>{ companyScreen = 'client'; renderCompany(); };
   document.getElementById('btnCompanyLogout').onclick = ()=>{ companySession = null; companyScreen = 'home'; renderCompany(); };
   document.getElementById('coLogoBtn').onclick = ()=>{ companyScreen = 'settings'; renderCompany(); };
