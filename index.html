@@ -2688,6 +2688,7 @@ function deliverFile(blob, filename, label){
       ${canShare ? '<button class="primary" id="fileShare" style="width:100%;margin-bottom:8px;">📤 Envoyer / enregistrer ailleurs (WhatsApp, Drive, email…)</button>' : ''}
       <button class="${canShare ? 'ghost' : 'primary'}" id="fileDown" style="width:100%;margin-bottom:8px;">⬇️ Télécharger sur le téléphone</button>
       <p class="sub" style="font-size:12px;margin:0 0 10px;">Avec « Télécharger », le fichier est enregistré dans l'application « Fichiers », dossier « Téléchargements » (Download). Une notification de Chrome apparaît en haut : touchez-la pour l'ouvrir.${canShare ? ' Le bouton orange sert à l\'envoyer ou le garder dans une autre application.' : ''}</p>
+      ${(blob.type === 'application/json' && blob.size < 60000) ? '<button class="ghost" id="fileCopy" style="width:100%;margin-bottom:8px;">📋 Copier le texte (à coller dans WhatsApp, Notes, email)</button>' : ''}
       <button class="ghost" id="fileClose" style="width:100%;">Fermer</button>
       <div id="fileMsg" class="sub" style="margin-top:8px;font-weight:700;"></div>
     </div>`;
@@ -2696,7 +2697,12 @@ function deliverFile(blob, filename, label){
   const sh = document.getElementById('fileShare');
   if(sh) sh.onclick = async ()=>{
     try{ await navigator.share({files: [file], title: filename}); msg.style.color = 'var(--ok)'; msg.textContent = '✅ Envoyé vers l\'application choisie' + shareNote; }
-    catch(e){ if(e && e.name === 'AbortError') return; msg.style.color = 'var(--danger)'; msg.textContent = 'Partage impossible, utilisez « Télécharger ».'; }
+    catch(e){ if(e && e.name === 'AbortError') return; msg.style.color = 'var(--danger)'; msg.textContent = 'Votre téléphone refuse ce partage' + (e && e.name ? ' (' + e.name + ')' : '') + '. Utilisez « Télécharger »' + (document.getElementById('fileCopy') ? ' ou « Copier le texte »' : '') + '.'; }
+  };
+  const cp = document.getElementById('fileCopy');
+  if(cp) cp.onclick = async ()=>{
+    try{ const txt = await blob.text(); await navigator.clipboard.writeText(txt); msg.style.color = 'var(--ok)'; msg.textContent = '✅ Texte copié : ouvrez WhatsApp (ou Notes) et collez-le'; }
+    catch(e){ msg.style.color = 'var(--danger)'; msg.textContent = 'Copie impossible, utilisez « Télécharger ».'; }
   };
   document.getElementById('fileDown').onclick = ()=>{
     const a = document.createElement('a'); a.href = url; a.download = filename; document.body.appendChild(a); a.click(); a.remove();
@@ -4224,7 +4230,7 @@ async function renderOwnerSettings(){
   const csv = rows => '\ufeff' + rows.map(r => r.map(v => '"' + String(v == null ? '' : v).replace(/"/g, '""') + '"').join(';')).join('\r\n');
   const stamp = new Date().toISOString().slice(0, 10);
   const getAll = async (n)=> (await db.collection(n).get()).docs.map(d => Object.assign({_id: d.id}, d.data()));
-  const lite = o => JSON.parse(JSON.stringify(o, (k, v) => (typeof v === 'string' && v.length > 20000) ? '[image non incluse]' : v));
+  const lite = o => JSON.parse(JSON.stringify(o, (k, v) => (typeof v === 'string' && (v.length > 20000 || v.indexOf('data:image') === 0)) ? '[image non incluse]' : v));
   document.getElementById('btnBackupJson').onclick = async ()=>{
     bmsg('⏳ Préparation de la sauvegarde…');
     try{
@@ -4371,7 +4377,7 @@ async function renderOwnerPayments(){
           <div style="color:#fff;font-weight:700;font-size:16px;">Code d'accès propriétaire</div>
         </div>
         <div style="padding:14px 16px;">
-          <p class="sub">Code actuel : <b>${currentOwnerCode || 'non défini'}</b></p>
+          <p class="sub">Code actuel : <b id="ownerCodeShown">${currentOwnerCode ? '••••' : 'non défini'}</b>${currentOwnerCode ? ' <button type="button" class="ghost" id="btnToggleOwnerCode" style="width:auto;padding:4px 12px;margin-left:8px;font-size:12.5px;">👁️ Voir</button>' : ''}</p>
           <label>Nouveau code (4 chiffres)</label>
           <input id="ownerCodeInput" type="text" inputmode="numeric" maxlength="4" placeholder="••••">
           <button class="primary" id="btnSaveOwnerCode" style="margin-top:10px;">Enregistrer le nouveau code</button>
@@ -4735,7 +4741,8 @@ async function renderOwnerPayments(){
         toast("Préparation de l'export...");
         const companies = await getAllCompanies();
         const packages = await getAllPackages();
-        const backup = {exportedAt: new Date().toISOString(), companies, packages};
+        const noImg = o => JSON.parse(JSON.stringify(o, (k, v) => (typeof v === 'string' && (v.length > 20000 || v.indexOf('data:image') === 0)) ? '[image non incluse]' : v));
+        const backup = {exportedAt: new Date().toISOString(), companies: noImg(companies), packages: noImg(packages)};
         deliverFile(new Blob([JSON.stringify(backup, null, 2)], {type:'application/json'}), `sts-sauvegarde-${new Date().toISOString().slice(0,10)}.json`, '💾 Sauvegarde des entreprises et des colis (JSON)');
       }catch(e){ toast("Erreur lors de l'export"); }
     };
@@ -4755,10 +4762,21 @@ async function renderOwnerPayments(){
         toast(`✅ ${orphans.length} colis orphelin(s) supprimé(s)`);
       }catch(e){ toast("Erreur lors du nettoyage"); }
     };
+    const tgl = document.getElementById('btnToggleOwnerCode');
+    if(tgl) tgl.onclick = ()=>{
+      const b = document.getElementById('ownerCodeShown');
+      const hidden = b.textContent === '••••';
+      b.textContent = hidden ? currentOwnerCode : '••••';
+      tgl.textContent = hidden ? '🙈 Cacher' : '👁️ Voir';
+    };
     document.getElementById('btnSaveOwnerCode').onclick = async ()=>{
       const newCode = document.getElementById('ownerCodeInput').value.trim();
       if(newCode.length !== 4 || !/^\d{4}$/.test(newCode)){
         toast("Le code doit contenir exactement 4 chiffres");
+        return;
+      }
+      if(/^(\d)\1{3}$/.test(newCode) || /^(19|20)\d\d$/.test(newCode) || ['0123', '1234', '2345', '3456', '4567', '5678', '6789', '4321', '3210'].indexOf(newCode) >= 0){
+        toast("⚠️ Ce code est trop facile à deviner (année, suite ou chiffres répétés). Choisissez-en un autre.");
         return;
       }
       await db.collection('settings').doc('ownerAuth').set({code:newCode},{merge:true});
