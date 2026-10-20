@@ -2670,8 +2670,14 @@ function deliverFile(blob, filename, label){
   const kb = Math.max(1, Math.round(blob.size / 1024));
   let file = null;
   try{ file = new File([blob], filename, {type: blob.type}); }catch(e){}
-  let canShare = false;
+  let canShare = false, shareNote = '';
   try{ canShare = !!(file && navigator.share && navigator.canShare && navigator.canShare({files: [file]})); }catch(e){}
+  if(!canShare && file && blob.type !== 'application/pdf'){
+    try{
+      const alt = new File([blob], filename + '.txt', {type: 'text/plain'});
+      if(navigator.share && navigator.canShare && navigator.canShare({files: [alt]})){ file = alt; canShare = true; shareNote = ' (envoyé en .txt : renommez-le sans « .txt » si besoin)'; }
+    }catch(e){}
+  }
   const ov = document.createElement('div');
   ov.id = 'fileOv';
   ov.style.cssText = 'position:fixed;inset:0;z-index:300;background:rgba(0,0,0,0.8);display:flex;align-items:center;justify-content:center;padding:14px;overflow-y:auto;';
@@ -2679,9 +2685,9 @@ function deliverFile(blob, filename, label){
       <div style="font-weight:800;font-size:17px;margin-bottom:4px;">✅ Fichier prêt</div>
       <div style="font-size:14px;overflow-wrap:anywhere;">${escHtml(label || '')}</div>
       <div class="sub" style="font-size:12.5px;margin:2px 0 12px;overflow-wrap:anywhere;">${escHtml(filename)} · ${kb} Ko</div>
-      ${canShare ? '<button class="primary" id="fileShare" style="width:100%;margin-bottom:8px;">📤 Ouvrir avec… / Enregistrer (conseillé)</button>' : ''}
+      ${canShare ? '<button class="primary" id="fileShare" style="width:100%;margin-bottom:8px;">📤 Envoyer / enregistrer ailleurs (WhatsApp, Drive, email…)</button>' : ''}
       <button class="${canShare ? 'ghost' : 'primary'}" id="fileDown" style="width:100%;margin-bottom:8px;">⬇️ Télécharger sur le téléphone</button>
-      <p class="sub" style="font-size:12px;margin:0 0 10px;">« Ouvrir avec… » vous laisse choisir l'application (PDF, Excel, Drive, WhatsApp…). Avec « Télécharger », le fichier est dans l'application « Fichiers », dossier « Téléchargements » (Download).</p>
+      <p class="sub" style="font-size:12px;margin:0 0 10px;">Avec « Télécharger », le fichier est enregistré dans l'application « Fichiers », dossier « Téléchargements » (Download). Une notification de Chrome apparaît en haut : touchez-la pour l'ouvrir.${canShare ? ' Le bouton orange sert à l\'envoyer ou le garder dans une autre application.' : ''}</p>
       <button class="ghost" id="fileClose" style="width:100%;">Fermer</button>
       <div id="fileMsg" class="sub" style="margin-top:8px;font-weight:700;"></div>
     </div>`;
@@ -2689,7 +2695,7 @@ function deliverFile(blob, filename, label){
   const msg = document.getElementById('fileMsg');
   const sh = document.getElementById('fileShare');
   if(sh) sh.onclick = async ()=>{
-    try{ await navigator.share({files: [file], title: filename}); msg.style.color = 'var(--ok)'; msg.textContent = '✅ Envoyé vers l\'application choisie'; }
+    try{ await navigator.share({files: [file], title: filename}); msg.style.color = 'var(--ok)'; msg.textContent = '✅ Envoyé vers l\'application choisie' + shareNote; }
     catch(e){ if(e && e.name === 'AbortError') return; msg.style.color = 'var(--danger)'; msg.textContent = 'Partage impossible, utilisez « Télécharger ».'; }
   };
   document.getElementById('fileDown').onclick = ()=>{
@@ -4373,14 +4379,14 @@ async function renderOwnerPayments(){
       </div>`;
 
     const backupCard = `<div class="card" style="padding:0;overflow:hidden;">
-        <div style="background:linear-gradient(135deg,#8B5CF6,#EC4899);padding:14px 16px;display:flex;align-items:center;gap:10px;">
+        <div style="background:linear-gradient(135deg,#FF7A1A,#F59E0B);padding:14px 16px;display:flex;align-items:center;gap:10px;">
           <span style="font-size:22px;">💾</span>
           <div style="color:#fff;font-weight:700;font-size:16px;">Sauvegarde des données</div>
         </div>
         <div style="padding:14px 16px;">
           <p class="sub">Télécharge une copie de toutes tes entreprises et de tous tes colis, au cas où.</p>
           <button class="primary" id="btnExportBackup" style="margin-top:6px;">📥 Exporter mes données</button>
-          <button class="primary" id="btnCleanOrphans" style="margin-top:10px;background:linear-gradient(135deg,#8B5CF6,#EC4899);">🧹 Nettoyer les colis orphelins</button>
+          <button class="primary" id="btnCleanOrphans" style="margin-top:10px;background:linear-gradient(135deg,#F59E0B,#EA580C);">🧹 Nettoyer les colis orphelins</button>
         </div>
       </div>`;
 
