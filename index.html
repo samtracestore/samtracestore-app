@@ -7665,6 +7665,7 @@ async function clientCouponsHTML(){
 }
 
 // ===== Avis et questions de STS (entreprises + clients) =====
+const svSeen = new Set();
 const SV_AUD_LABEL = {both: 'Entreprises et clients', companies: 'Entreprises seulement', clients: 'Clients seulement'};
 const SV_TYPE_LABEL = {stars: '⭐ Note', text: '💬 Réponse écrite', both: '⭐ + 💬 Note et message'};
 async function getSurveys(){
@@ -7727,7 +7728,9 @@ async function surveysAdminHTML(companies){
       <input id="svQ" placeholder="Ex : Aimez-vous la plateforme STS ?" style="width:100%;">
       <label>Type de réponse</label><select id="svType" style="width:100%;"><option value="stars">⭐ Note de 1 à 5 étoiles</option><option value="text">💬 Réponse écrite (ex : que voulez-vous que j'ajoute ?)</option><option value="both">⭐ + 💬 Note et message</option></select>
       <label>Pour qui ?</label><select id="svAud" style="width:100%;"><option value="both">Entreprises et clients</option><option value="companies">Entreprises seulement</option><option value="clients">Clients seulement</option></select>
-      <button type="button" class="primary" id="btnSvAdd" style="margin-top:10px;">📣 Envoyer la question</button></div>`;
+      <div class="sub" style="font-weight:800;margin:10px 0 6px;">👀 Aperçu : voici ce que recevront les entreprises et les clients</div>
+      <div id="svPrev"></div>
+      <button type="button" class="primary" id="btnSvAdd" style="margin-top:6px;">📣 Envoyer la question</button></div>`;
     const btnBase = 'flex:1;padding:7px 6px;border-radius:10px;border:1px solid var(--border);background:transparent;color:var(--text);font-weight:800;font-size:12.5px;cursor:pointer;';
     const btnOn = 'flex:1;padding:7px 6px;border-radius:10px;border:1px solid #F97316;background:#F97316;color:#fff;font-weight:800;font-size:12.5px;cursor:pointer;';
     const rowHTML = (sv, kind, r) => {
@@ -7741,27 +7744,39 @@ async function surveysAdminHTML(companies){
         <div data-sv-dg style="display:none;margin-top:8px;padding:8px 10px;border-radius:10px;background:rgba(255,255,255,0.05);font-size:13px;">${given}</div>
         <div data-sv-dn style="display:none;margin-top:8px;padding:8px 10px;border-radius:10px;background:rgba(255,255,255,0.05);font-size:13px;">${notGiven}</div></div>`};
     };
-    const blocks = svs.map(sv => {
+    const emptyDemo = !svs.length;
+    const list0 = emptyDemo ? [{id: 'none', question: 'Aucune question pour le moment : posez-en une ci-dessus', type: 'stars', audience: 'both', createdAt: ''}] : svs;
+    if(!svSeen.has('root')){ svSeen.add('root'); foldOpen.add('avis'); }
+    list0.forEach(x => { if(!svSeen.has(x.id) && (emptyDemo || x.id === list0[0].id)){ svSeen.add(x.id); foldOpen.add('svco-' + x.id); foldOpen.add('svcl-' + x.id); } });
+    const blocks = list0.map(sv => {
       const wantCo = sv.audience !== 'clients', wantCl = sv.audience !== 'companies';
       const build = (kind, list) => { const rs = list.map(r => rowHTML(sv, kind, r)); rs.sort((x, y) => (y.a ? 1 : 0) - (x.a ? 1 : 0)); return {n: rs.filter(x => x.a).length, total: rs.length, html: rs.map(x => x.html).join('') || '<p class="sub" style="margin:0;">Aucun pour le moment.</p>'}; };
       const co = wantCo ? build('company', cos) : null, cli = wantCl ? build('client', clients) : null;
       const cnt = {1: 0, 2: 0, 3: 0, 4: 0, 5: 0}; let nAns = 0;
-      Object.keys(ans).forEach(k => { const a = ans[k]; if(a.surveyId === sv.id){ nAns++; if(cnt[a.stars] !== undefined) cnt[a.stars]++; } });
+      let sumSt = 0, nSt = 0;
+      Object.keys(ans).forEach(k => { const a = ans[k]; if(a.surveyId === sv.id){ nAns++; if(cnt[a.stars] !== undefined){ cnt[a.stars]++; sumSt += a.stars; nSt++; } } });
+      const avgTxt = nSt ? ' · Moyenne ' + (Math.round(sumSt / nSt * 10) / 10) + '/5' : '';
       const chip = (v, label) => `<button type="button" data-sv-filter="${v}" style="padding:6px 10px;border-radius:12px;border:1px solid var(--border);background:transparent;color:var(--text);font-weight:800;font-size:12.5px;cursor:pointer;${v === 'all' ? 'background:#F97316;color:#fff;border-color:#F97316;' : ''}">${label}</button>`;
       const chips = sv.type !== 'text' ? `<div style="display:flex;flex-wrap:wrap;gap:6px;margin:8px 0;">${chip('all', 'Tous')}${[5, 4, 3, 2, 1].map(n => chip(n, n + ' ⭐ (' + cnt[n] + ')')).join('')}</div><div class="sub" style="font-size:11.5px;margin-bottom:8px;">Touchez les étoiles pour voir qui a donné cette note.</div>` : '';
       return `<div data-sv-block="${escHtml(sv.id)}" style="margin-bottom:14px;padding:12px;border:1px solid rgba(139,92,246,0.5);border-radius:14px;background:rgba(139,92,246,0.06);">
         <div style="font-weight:800;font-size:15px;overflow-wrap:anywhere;">❓ ${escHtml(sv.question)}</div>
-        <div class="sub" style="font-size:12px;margin-top:2px;">${SV_TYPE_LABEL[sv.type] || ''} · ${SV_AUD_LABEL[sv.audience] || ''} · ${nAns} réponse${nAns > 1 ? 's' : ''}${sv.createdAt ? ' · ' + fmtDate(sv.createdAt) : ''}</div>
+        <div class="sub" style="font-size:12px;margin-top:2px;">${SV_TYPE_LABEL[sv.type] || ''} · ${SV_AUD_LABEL[sv.audience] || ''} · ${nAns} réponse${nAns > 1 ? 's' : ''}${avgTxt}${sv.createdAt ? ' · ' + fmtDate(sv.createdAt) : ''}</div>
         ${chips}
         ${co ? foldCardHTML('svco-' + sv.id, '#F97316,#EF4444', '🏢', 'Entreprises', co.n + '/' + co.total, co.html) : ''}
         ${cli ? foldCardHTML('svcl-' + sv.id, '#0EA5E9,#2563EB', '👥', 'Clients', cli.n + '/' + cli.total, cli.html) : ''}
-        <button type="button" class="ghost" data-sv-del="${escHtml(sv.id)}" style="width:100%;margin-top:6px;color:var(--danger);border-color:rgba(239,93,93,0.4);">🗑️ Supprimer cette question</button></div>`;
-    }).join('') || '<p class="sub" style="margin:0;">Aucune question pour le moment.</p>';
+        ${sv.id === 'none' ? '' : `<button type="button" class="ghost" data-sv-del="${escHtml(sv.id)}" style="width:100%;margin-top:6px;color:var(--danger);border-color:rgba(239,93,93,0.4);">🗑️ Supprimer cette question</button>`}</div>`;
+    }).join('');
     return foldCardHTML('avis', '#8B5CF6,#EC4899', '⭐', 'Avis sur la plateforme STS', svs.length,
       '<p class="sub" style="margin-top:0;">Posez une question aux entreprises et aux clients. Celui qui a répondu ne reçoit plus la même question. Vous voyez qui a répondu (bouton orange) et qui n\'a pas encore répondu.</p>' + form + blocks);
   }catch(e){ return ''; }
 }
 function bindSurveysAdmin(root, rerender){
+  const prev = root.querySelector('#svPrev');
+  if(prev){
+    const upd = ()=>{ prev.innerHTML = surveyAskHTML({id: 'preview', question: root.querySelector('#svQ').value.trim() || 'Aimez-vous la plateforme STS ?', type: root.querySelector('#svType').value}); };
+    ['#svQ', '#svType', '#svAud'].forEach(id => { const el = root.querySelector(id); el.addEventListener('input', upd); el.addEventListener('change', upd); });
+    upd();
+  }
   const add = root.querySelector('#btnSvAdd');
   if(add) add.onclick = async ()=>{
     const q = root.querySelector('#svQ').value.trim();
