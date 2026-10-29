@@ -2507,7 +2507,7 @@ document.addEventListener('click', async (e)=>{
     await db.collection('packages').doc(tid).set({rating: n, ratingComment: comment, ratedAt: new Date().toISOString(), ratingPhotoCount: photos.length}, {merge: true});
     try{
       const pd = await db.collection('packages').doc(tid).get(); const cc = pd.exists ? (pd.data().companyCode || '') : '';
-      try{ if((comment || photos.length) && pd.exists){ const ocx = await getOwnerCode(), pdd = pd.data() || {}; await db.collection('reviews').doc(tid).set({trackingId: tid, scope: (cc && cc !== (ocx || (typeof OWNER_CODE_SYNC !== 'undefined' ? OWNER_CODE_SYNC : ''))) ? cc : '__sts', name: pdd.name || 'Client', stars: n, comment: comment, photos: photos, reply: '', at: new Date().toISOString()}, {merge: true}); } }catch(e5){}
+      try{ if(pd.exists){ const ocx = await getOwnerCode(), pdd = pd.data() || {}; await db.collection('reviews').doc(tid).set({trackingId: tid, scope: (cc && cc !== (ocx || (typeof OWNER_CODE_SYNC !== 'undefined' ? OWNER_CODE_SYNC : ''))) ? cc : '__sts', name: pdd.name || 'Client', stars: n, comment: comment, photos: photos, reply: '', at: new Date().toISOString()}, {merge: true}); } }catch(e5){}
       const oc2 = await getOwnerCode(); if(cc && cc !== oc2) await db.collection('companies').doc(cc).set({ratingSum: firebase.firestore.FieldValue.increment(n), ratingCount: firebase.firestore.FieldValue.increment(1)}, {merge: true}); else await db.collection('settings').doc('stsBadge').set({ratingSum: firebase.firestore.FieldValue.increment(n), ratingCount: firebase.firestore.FieldValue.increment(1)}, {merge: true});
     }catch(e3){}
     box.innerHTML = '<div style="font-size:14px;font-weight:700;">Merci pour votre avis ! <span style="color:#F5B93D;font-size:18px;">' + '★'.repeat(n) + '☆'.repeat(5 - n) + '</span>' + (comment ? '<div style="margin-top:5px;font-size:13px;font-weight:400;overflow-wrap:anywhere;">💬 « ' + escHtml(comment) + ' »</div>' : '') + (photos.length ? window.stsPhotosHTML(photos) : '') + '</div>';
@@ -2629,7 +2629,7 @@ async function renderClientCore(){
       const resultEl = document.getElementById('quickTrackResult');
       const quickEmail = document.getElementById('quickTrackEmail').value.trim();
       if(!trackingId){ toast("Entrez un numéro de suivi"); return; }
-      if(quickEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(quickEmail)){ toast("Adresse email invalide"); return; }
+      if(quickEmail && window.stsEmailBad(quickEmail)){ toast("Adresse email invalide"); return; }
       resultEl.innerHTML = `<div class="empty">Recherche...</div>`;
       try{
         const clean = trackingId.replace(/\s+/g,'').toUpperCase();
@@ -2666,7 +2666,7 @@ async function renderClientCore(){
           resultEl.appendChild(box);
           document.getElementById('btnAlertEmail').onclick = async ()=>{
             const email = document.getElementById('alertEmail').value.trim();
-            if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)){ toast("Adresse email invalide"); return; }
+            if(window.stsEmailBad(email)){ toast("Adresse email invalide ou mal écrite (ex : nom@gmail.com)"); return; }
             try{
               await Promise.all(family.map(f => saveTrackingAlert(f.p.trackingId, email)));
               toast("✅ Vous serez prévenu par email");
@@ -2697,10 +2697,12 @@ async function renderClientCore(){
         showEmailError("L'email est obligatoire pour recevoir les messages sur vos colis.", "Imèl la obligatwa pou w ka resevwa mesaj sou kolis ou.");
         return;
       }
-      if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)){
+      if(!/^[^\s@]+@[^\s@]+\.[A-Za-z]{2,}$/.test(email)){
         showEmailError("Cette adresse email n'est pas valide. Exemple : nom@gmail.com", "Imèl sa a pa bon. Egzanp : non@gmail.com");
         return;
       }
+      { const fix = window.stsEmailTypo(email);
+        if(fix){ showEmailError("Cette adresse semble contenir une faute. Vouliez-vous écrire « @" + fix + " » ? Exemple : nom@gmail.com", "Imèl sa a gen yon fòt. Èske ou te vle ekri « @" + fix + " » ? Egzanp : non@gmail.com"); return; } }
       if(!name || !phone){ toast("Merci de remplir tous les champs"); return; }
       if(normNameTokens(name).length < 2){ toast("Écrivez votre nom complet (prénom et nom), comme sur votre colis."); return; }
       try{
@@ -5116,7 +5118,7 @@ async function openTrackingEmailModal(p){
   document.getElementById('trackMailCancel').onclick = close;
   document.getElementById('trackMailSend').onclick = async ()=>{
     const email = document.getElementById('trackMailInput').value.trim();
-    if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)){ toast("Adresse email invalide"); return; }
+    if(window.stsEmailBad(email)){ toast("Adresse email invalide ou mal écrite (ex : nom@gmail.com)"); return; }
     if(!emailjsReady && !appsScriptReady){ toast("L'envoi d'email n'est pas configuré"); return; }
     const btn = document.getElementById('trackMailSend');
     btn.disabled = true; btn.textContent = 'Envoi...';
@@ -8275,6 +8277,13 @@ function addBadgeHost(main, extraCodes){
       }
       host.insertAdjacentHTML('beforeend', lg.map(x => '<div style="margin:0 0 12px;padding:14px;border-radius:20px;border:1px solid var(--border);background:var(--panel);display:flex;align-items:center;justify-content:space-between;gap:12px;"><div style="min-width:0;"><div class="sub" style="font-size:13px;margin:0;">Entreprise</div><div style="font-weight:900;font-size:19px;overflow-wrap:anywhere;">' + escHtml(x[0]) + '</div></div>' + logoBoxHTML({logoUrl: x[1]}, 120, '20px', 'border:3px solid var(--accent);box-shadow:0 6px 18px rgba(255,106,0,0.35);') + '</div>').join(''));
     }catch(e){}
+    for(const c of Array.from(codes)){
+      if(clientLinkCompany && clientLinkCompany.code === c) continue;
+      try{
+        const cd2 = await db.collection('catalogs').doc(c).get(); const it2 = cd2.exists ? (cd2.data().items || []) : [];
+        if(it2.length){ const co2 = await getCompanyByCode(c); host.insertAdjacentHTML('beforeend', catalogCardHTML(it2, '🛍️ Nos produits · ' + ((co2 && co2.companyName) || ''))); }
+      }catch(e){}
+    }
     if(hasOwn){ try{ const cd = await db.collection('catalogs').doc('sts').get(); const items = cd.exists ? (cd.data().items || []) : []; if(items.length) host.insertAdjacentHTML('beforeend', catalogCardHTML(items, '🛍️ Nos produits · Sam Trace Store')); }catch(e){} }
   })();
 }
@@ -8300,7 +8309,7 @@ async function badgesAdminHTML(companies){
       const reviews = i.arr.slice().sort((x, y) => String(y.ratedAt || '').localeCompare(String(x.ratedAt || ''))).slice(0, 8).map(p => '<div style="font-size:13px;padding:6px 0;border-top:1px solid var(--border);overflow-wrap:anywhere;"><b style="color:#F5B93D;">' + '★'.repeat(parseInt(p.rating, 10) || 0) + '☆'.repeat(5 - (parseInt(p.rating, 10) || 0)) + '</b> · ' + escHtml(p.name || 'Client') + (p.ratingComment ? '<div class="sub" style="margin-top:2px;">💬 « ' + escHtml(p.ratingComment) + ' »</div>' : '') + '</div>').join('') || '<p class="sub" style="margin:0;">Aucun avis de client pour le moment.</p>';
       const btn = kind === 'give' ? '<button type="button" class="primary" data-badge-give="' + escHtml(c.code) + '" style="margin-top:10px;">🏅 Donner le badge</button>' : (kind === 'has' ? '<button type="button" class="ghost" data-badge-remove="' + escHtml(c.code) + '" style="margin-top:10px;color:var(--danger);border-color:rgba(239,93,93,0.4);">Retirer le badge</button>' : '<button type="button" class="ghost" data-badge-give="' + escHtml(c.code) + '" data-force="1" style="margin-top:10px;color:#F5B93D;border-color:#F5B93D;">🏅 Donner le badge quand même</button>');
       const verBtn = '<button type="button" class="ghost" data-verify="' + escHtml(c.code) + '" data-on="' + (c.verified === true ? '1' : '0') + '" style="margin-top:8px;color:#60A5FA;border-color:#60A5FA;">' + (c.verified === true ? 'Retirer « Entreprise vérifiée »' : '✔ Marquer « Entreprise vérifiée »') + '</button>';
-      return foldCardHTML('bd-' + c.code, kind === 'has' ? '#F59E0B,#D97706' : (kind === 'give' ? '#10B981,#059669' : '#475569,#334155'), coLogoMini(c) || '🏢', escHtml(c.companyName || c.code), i.n ? i.avg + '/5 · ' + i.n : '—',
+      return foldCardHTML('bd-' + c.code, kind === 'has' ? '#F59E0B,#D97706' : (kind === 'give' ? '#10B981,#059669' : '#475569,#334155'), coLogoMini(c) || '🏢', escHtml(c.companyName || c.code), i.n ? i.avg + '/5 · ' + i.n : '0/5 · 0',
         '<div style="font-weight:800;margin-bottom:4px;">' + (i.n ? '⭐ ' + i.avg + '/5 (' + i.n + ' avis)' : 'Aucune note') + '</div>' + reviews + btn + verBtn);
     };
     const banner = elig.length ? '<div style="margin-bottom:12px;padding:11px 13px;border-radius:12px;background:rgba(245,185,61,0.15);border:1px solid #F5B93D;color:#F5B93D;font-weight:800;">🔔 ' + elig.length + ' entreprise' + (elig.length > 1 ? 's ont' : ' a') + ' au moins 3 avis et 4,5/5. Ouvrez la carte « Badges des entreprises » pour donner le badge.</div>' : '';
@@ -8581,7 +8590,7 @@ async function renderOwnerCompanies(){
   const content = document.getElementById('ownerContent');
   if(!ownerViewCache.companies) content.innerHTML = `<div class="card"><div class="empty">Chargement<span class="ldots"><i></i><i></i><i></i></span></div></div>`;
   try{
-    if(!window._ghostPurged){ window._ghostPurged = true; const nGh = await purgeGhostCompanies(); if(nGh) toast('🧹 ' + nGh + ' entreprise(s) vide(s) supprimée(s)'); }
+    if(!window._ghostPurged){ window._ghostPurged = true; const nGh = await purgeGhostCompanies(); if(nGh) toast('🧹 Nettoyage automatique : ' + nGh + ' fiche(s) vide(s) (sans nom ni téléphone) retirée(s). Vos vraies entreprises sont intactes.'); }
     const companies = await getAllCompanies();
     await Promise.all(companies.map(expireSubscriptionIfNeeded));
     const [srHtml, actHtml, delHtml, cpkHtml, annHtml, msgHtml0, agHtml, dashHtml, rulesHtml, bcHtml, svHtml, rpHtml, bgHtml, cpnHtml, lowHtml, topHtml, refHtml, stsHtml] = await Promise.all([
@@ -10824,11 +10833,11 @@ window.stsSyncReviews = async function(pkgs){
     let n = 0;
     for(const p of (pkgs || [])){
       if(n >= 25) break;
-      if(!p || !p.rating || !p.ratingComment) continue;
-      const sig = p.ratingComment + '|' + (p.ratingReply || '');
+      if(!p || !p.rating) continue;
+      const sig = (p.rating || '') + '|' + (p.ratingComment || '') + '|' + (p.ratingReply || '');
       if(done[p.trackingId] === sig) continue;
       const scope = (p.companyCode && p.companyCode !== oc) ? p.companyCode : '__sts';
-      await db.collection('reviews').doc(p.trackingId).set({trackingId: p.trackingId, scope: scope, name: p.name || 'Client', stars: parseInt(p.rating, 10) || 0, comment: p.ratingComment, reply: p.ratingReply || '', at: p.ratedAt || new Date().toISOString()}, {merge: true});
+      await db.collection('reviews').doc(p.trackingId).set({trackingId: p.trackingId, scope: scope, name: p.name || 'Client', stars: parseInt(p.rating, 10) || 0, comment: p.ratingComment || '', reply: p.ratingReply || '', at: p.ratedAt || new Date().toISOString()}, {merge: true});
       done[p.trackingId] = sig; n++;
     }
     if(n) localStorage.setItem('sts_rv_synced', JSON.stringify(done));
@@ -10883,7 +10892,7 @@ window.fillClientReviews = async function(host){
 window.fillOwnReviews = async function(host){
   try{
     host.innerHTML = foldCardHTML('ownrev', '#F59E0B,#EF4444', '💬', 'Commentaires des clients', '…', '<div class="empty">Chargement' + LDOTS + '</div>'); bindFoldCards(host);
-    try{ const pk = (await getAllPackages()).filter(p => p && p.rating && p.ratingComment); await window.stsSyncReviews(pk); }catch(e){}
+    try{ const pk = (await getAllPackages()).filter(p => p && p.rating); await window.stsSyncReviews(pk); }catch(e){}
     const cos = {}; try{ (await getAllCompanies()).forEach(c => { cos[c.code] = c.companyName || c.code; }); }catch(e){}
     const paint = async function(){
       const docs = []; try{ const sn = await db.collection('reviews').get(); sn.forEach(d => docs.push(d.data())); }catch(e){}
@@ -10908,11 +10917,19 @@ window.fillOwnVisits = async function(host){
       const row = (c, isNew) => '<div style="padding:10px;margin-bottom:8px;border:1px solid var(--border);border-radius:12px;"><div style="font-weight:800;overflow-wrap:anywhere;">' + (coLogoMini(c) || '🏢') + ' ' + escHtml(c.companyName || c.code) + '</div>'
         + '<div class="sub" style="font-size:12.5px;margin:3px 0 0;">📞 ' + escHtml(c.companyPhone || c.companyWhatsapp || '—') + (c.companyAddress ? ' · 📍 ' + escHtml(c.companyAddress) : '') + '</div>'
         + '<div class="sub" style="font-size:12.5px;margin:2px 0 0;">🕒 Dernière visite : ' + escHtml(window.stsFmtDT(c.lastSeenAt)) + (c.subEndsAt ? ' · Abonnement jusqu\'au ' + escHtml(new Date(c.subEndsAt).toLocaleDateString('fr-FR')) : '') + '</div>'
-        + '<button type="button" class="miniBtn" data-visit-to="' + (isNew ? '1' : '0') + '" data-visit-code="' + escHtml(c.code) + '" style="margin-top:8px;">' + (isNew ? '👁️ Vue' : '↩️ Non vue') + '</button></div>';
+        + '<button type="button" class="miniBtn" data-visit-to="' + (isNew ? '1' : '0') + '" data-visit-code="' + escHtml(c.code) + '" style="margin-top:8px;">' + (isNew ? '👁️ Vue' : '↩️ Non vue') + '</button>' + (isNew ? '' : '<button type="button" class="miniBtn" data-visit-del="' + escHtml(c.code) + '" style="margin-top:8px;margin-left:8px;color:var(--danger);border-color:rgba(239,93,93,0.4);">🗑️ Supprimer</button>') + '</div>';
       host.innerHTML = foldCardHTML('ownvisits', '#8B5CF6,#EC4899', '🕒', 'Dernière visite', un.length,
         (un.length ? un.map(c => row(c, true)).join('') : '<p class="sub" style="margin:0 0 8px;">Aucune nouvelle visite. 🎉</p>')
         + (seen.length ? '<div style="font-weight:800;margin:10px 0 6px;">Déjà vues (' + seen.length + ')</div>' + seen.map(c => row(c, false)).join('') : ''));
       bindFoldCards(host);
+      host.querySelectorAll('[data-visit-del]').forEach(function(b){
+        b.onclick = async function(){
+          if(!confirm('Retirer cette entreprise de la liste « Déjà vues » ?\n(L\'entreprise n\'est pas supprimée, seulement cette ligne.)')) return;
+          if(b.disabled) return; b.disabled = true; b.innerHTML = '…' + LDOTS;
+          try{ await db.collection('companies').doc(b.dataset.visitDel).set({visitSeen: 'hidden'}, {merge: true}); }catch(e){ toast('Échec, réessayez'); }
+          paint();
+        };
+      });
       host.querySelectorAll('[data-visit-code]').forEach(function(b){
         b.onclick = async function(){
           if(b.disabled) return; b.disabled = true; b.innerHTML = '…' + LDOTS;
@@ -10980,7 +10997,7 @@ window.fillClientReviews = async function(host){
 window.fillOwnReviews = async function(host){
   try{
     host.innerHTML = foldCardHTML('ownrev', '#F59E0B,#EF4444', '💬', 'Commentaires des clients', '…', '<div class="empty">Chargement' + LDOTS + '</div>'); bindFoldCards(host);
-    try{ const pk = (await getAllPackages()).filter(p => p && p.rating && p.ratingComment); await window.stsSyncReviews(pk); }catch(e){}
+    try{ const pk = (await getAllPackages()).filter(p => p && p.rating); await window.stsSyncReviews(pk); }catch(e){}
     const cos = {}; try{ (await getAllCompanies()).forEach(c => { cos[c.code] = c; }); }catch(e){}
     let stsU = ''; try{ stsU = await stsLogoUrl(); }catch(e){}
     const paint = async function(){
@@ -11026,11 +11043,11 @@ window.fillOwnTrack = async function(host){
     const row = function(c, kind, pos, at, svc){
       const tc = c.transferCode || '';
       return '<div style="padding:10px;margin-bottom:8px;border:1px solid var(--border);border-radius:14px;">'
-        + '<div style="display:flex;align-items:center;gap:8px;"><div style="flex:1;min-width:0;"><div style="font-weight:800;overflow-wrap:anywhere;display:flex;align-items:center;">' + (kind === 'pending' ? '<span style="margin-right:8px;font-weight:900;color:#2DD4BF;">#' + pos + '</span>' : '') + (coLogoMini(c) || '') + '<span>' + escHtml(c.companyName || c.code) + '</span></div>'
+        + '<div style="display:flex;align-items:center;gap:8px;"><div style="flex:1;min-width:0;"><div style="font-weight:800;overflow-wrap:anywhere;display:flex;align-items:center;">' + (kind === 'pending' ? '<span style="margin-right:8px;font-weight:900;color:#F59E0B;">#' + pos + '</span>' : '') + (coLogoMini(c) || '') + '<span>' + escHtml(c.companyName || c.code) + '</span></div>'
         + '<div class="sub" style="font-size:12.5px;margin:2px 0 0;">' + escHtml(svc || 'Dépôt') + ' · ' + escHtml(window.stsFmtDT(at)) + '</div>'
         + '<div class="sub" style="font-size:12.5px;margin:2px 0 0;">🎫 Ticket : <b>' + (tc ? escHtml(tc) : '—') + '</b></div></div>'
         + (tc ? '<button type="button" data-copy="' + escHtml(tc) + '" aria-label="Copier" style="flex:0 0 auto;width:40px;height:40px;border:none;background:transparent;cursor:pointer;display:flex;align-items:center;justify-content:center;">' + copyIconSVG() + '</button>' : '')
-        + '<button type="button" data-trk-open="' + escHtml(c.code + ':' + kind) + '" aria-label="Voir les étapes" style="flex:0 0 auto;width:46px;height:46px;border-radius:50%;border:none;background:linear-gradient(135deg,#14B8A6,#0F766E);display:flex;align-items:center;justify-content:center;cursor:pointer;">' + window.STS_TRUCK_SVG + '</button></div>'
+        + '<button type="button" data-trk-open="' + escHtml(c.code + ':' + kind) + '" aria-label="Voir les étapes" style="flex:0 0 auto;width:46px;height:46px;border-radius:50%;border:none;background:linear-gradient(135deg,#F59E0B,#EA580C);display:flex;align-items:center;justify-content:center;cursor:pointer;">' + window.STS_TRUCK_SVG + '</button></div>'
         + '<div data-trk-steps="' + escHtml(c.code + ':' + kind) + '" style="display:none;margin-top:10px;padding-top:8px;border-top:1px dashed var(--border);">' + window.stsTrackStepsHTML(kind, c, pos, queue.length, at) + '</div></div>';
     };
     const full = it => Object.assign({}, cos[it.code] || {}, {code: it.code, companyName: (cos[it.code] && cos[it.code].companyName) || it.name});
@@ -11101,10 +11118,10 @@ window.stsSyncReviews = async function(pkgs){
     let n = 0;
     for(const p of (pkgs || [])){
       if(n >= 25) break;
-      if(!p || !p.rating || !p.ratingComment) continue;
-      const sig = p.ratingComment + '|' + (p.ratingReply || '');
+      if(!p || !p.rating) continue;
+      const sig = (p.rating || '') + '|' + (p.ratingComment || '') + '|' + (p.ratingReply || '');
       if(done[p.trackingId] === sig) continue;
-      await db.collection('reviews').doc(p.trackingId).set({trackingId: p.trackingId, scope: window.stsScopeOf(p, oc), name: p.name || 'Client', stars: parseInt(p.rating, 10) || 0, comment: p.ratingComment, reply: p.ratingReply || '', at: p.ratedAt || new Date().toISOString()}, {merge: true});
+      await db.collection('reviews').doc(p.trackingId).set({trackingId: p.trackingId, scope: window.stsScopeOf(p, oc), name: p.name || 'Client', stars: parseInt(p.rating, 10) || 0, comment: p.ratingComment || '', reply: p.ratingReply || '', at: p.ratedAt || new Date().toISOString()}, {merge: true});
       done[p.trackingId] = sig; n++;
     }
     if(n) localStorage.setItem('sts_rv_synced2', JSON.stringify(done));
@@ -11170,7 +11187,7 @@ window.fillClientReviews = async function(host){
 window.fillOwnReviews = async function(host){
   try{
     host.innerHTML = foldCardHTML('ownrev', '#F59E0B,#EF4444', '💬', 'Commentaires des clients', '…', '<div class="empty">Chargement' + LDOTS + '</div>'); bindFoldCards(host);
-    try{ const pk = (await getAllPackages()).filter(p => p && p.rating && p.ratingComment); await window.stsSyncReviews(pk); }catch(e){}
+    try{ const pk = (await getAllPackages()).filter(p => p && p.rating); await window.stsSyncReviews(pk); }catch(e){}
     const cos = {}; try{ (await getAllCompanies()).forEach(c => { cos[c.code] = c; }); }catch(e){}
     const oc = await window.stsOwnerCodeNow(), infos = {};
     const paint = async function(){
@@ -11221,7 +11238,29 @@ window.stsTrackPreviewHTML = function(queue){
     + '<p class="sub" style="margin:0 0 8px;font-size:12.5px;">' + (real ? 'Exemple avec la vraie file d\'attente.' : 'Exemple avec des données de démonstration (aucun paiement en attente).') + '</p>'
     + '<div style="font-weight:800;font-size:13px;margin:6px 0;">1) En touchant le camion « Suivi » :</div>' + input
     + '<div style="font-weight:800;font-size:13px;margin:10px 0 6px;">2) Après avoir collé le code :</div>'
-    + '<div style="background:linear-gradient(180deg,#FFFFFF,#FFF3DC);color:#2B1B05;border-radius:22px;padding:14px;">' + window.stsTrackResultHTML(items, idx, selfCode) + '</div>';
+    + '<div style="background:linear-gradient(180deg,#FFFFFF,#FFF3DC);color:#2B1B05;border-radius:22px;padding:14px;">' + window.stsTrackResultHTML(items, idx, selfCode) + '</div>'
+    + '<div style="font-weight:800;font-size:13px;margin:12px 0 6px;">3) Petite notification d\'alerte (ouvre WhatsApp vers STS) :</div>'
+    + '<div style="background:linear-gradient(180deg,#FFFFFF,#FFF3DC);color:#2B1B05;border-radius:22px;padding:14px;">'
+    + '<div style="width:100%;padding:14px;border-radius:16px;background:linear-gradient(135deg,#F59E0B,#EA580C);color:#fff;font-weight:900;font-size:15px;text-align:center;">🔔 Alerter STS sur WhatsApp</div>'
+    + '<div style="font-size:12.5px;margin:10px 2px 4px;opacity:.85;">Message envoyé à STS : « Bonjour STS, veuillez vérifier mon paiement. Entreprise : <b>' + escHtml(items[idx].name) + '</b>. Code de transfert : <b>A4FD24ED</b>. Merci. »</div>'
+    + '<div style="font-size:12.5px;margin:8px 2px 4px;opacity:.85;">Après l\'envoi, le bouton se bloque 30 minutes :</div>'
+    + '<div style="width:100%;padding:14px;border-radius:16px;background:#8A99AC;color:#fff;font-weight:800;font-size:14px;text-align:center;">🔔 Vous pouvez alerter à nouveau dans 29:59</div>'
+    + '<div style="height:6px;border-radius:6px;background:#E5E7EB;overflow:hidden;margin-top:8px;"><div style="height:100%;width:4%;background:#475569;"></div></div></div>';
+};
+
+
+// ===== V4 : contrôle des emails =====
+window.stsEmailTypo = function(email){
+  const m = String(email || '').trim().toLowerCase().match(/@([^@\s]+)$/); if(!m) return '';
+  const d = m[1];
+  const map = {'gemail.com': 'gmail.com', 'gmial.com': 'gmail.com', 'gmai.com': 'gmail.com', 'gamil.com': 'gmail.com', 'gmail.co': 'gmail.com', 'gmail.con': 'gmail.com', 'gmail.cm': 'gmail.com', 'gmail.comm': 'gmail.com', 'gmaill.com': 'gmail.com', 'gnail.com': 'gmail.com', 'gmil.com': 'gmail.com', 'gmal.com': 'gmail.com', 'gmail.om': 'gmail.com', 'gmail.vom': 'gmail.com', 'gmail.ocm': 'gmail.com', 'gmailcom': 'gmail.com', 'gmeil.com': 'gmail.com', 'gimail.com': 'gmail.com', 'yaho.com': 'yahoo.com', 'yahooo.com': 'yahoo.com', 'yahoo.co': 'yahoo.com', 'yahoo.con': 'yahoo.com', 'yahoo.cm': 'yahoo.com', 'hotmial.com': 'hotmail.com', 'hotmai.com': 'hotmail.com', 'hotmail.con': 'hotmail.com', 'hotmil.com': 'hotmail.com', 'hotmal.com': 'hotmail.com', 'outlok.com': 'outlook.com', 'outlook.con': 'outlook.com', 'outllok.com': 'outlook.com', 'icloud.con': 'icloud.com', 'icloud.co': 'icloud.com'};
+  if(map[d]) return map[d];
+  if(/^gmail\./.test(d) && d !== 'gmail.com') return 'gmail.com';
+  return '';
+};
+window.stsEmailBad = function(email){
+  const e = String(email || '').trim();
+  return !/^[^\s@]+@[^\s@]+\.[A-Za-z]{2,}$/.test(e) || !!window.stsEmailTypo(e);
 };
 
 perfInstall();
