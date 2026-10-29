@@ -2394,7 +2394,7 @@ function isOwnPkg(p){
   return !!OWNER_CODE_SYNC && p.companyCode === OWNER_CODE_SYNC;
 }
 function replyBtnHTML(p){
-  if(!p || !p.ratingComment || p.ratingReply) return '';
+  if(!p || !p.rating || p.ratingReply) return '';
   return '<button type="button" data-rate-reply="' + escHtml(p.trackingId) + '" style="margin-top:4px;padding:4px 10px;border-radius:10px;border:1px solid var(--accent);background:transparent;color:var(--accent2);font-weight:800;font-size:12px;cursor:pointer;">↩️ Répondre au client</button>';
 }
 function replyBlockHTML(p){
@@ -3313,7 +3313,7 @@ function visitDT(v){ try{ return new Date(v).toLocaleString('fr-FR', {weekday: '
 async function recordCompanyVisit(code){
   try{
     const now = new Date().toISOString();
-    await db.collection('companyVisits').add({code: code, at: now});
+    await db.collection('companyVisits').add({code: code, at: now, seen: false});
     await db.collection('companies').doc(code).set({lastSeenAt: now, visitSeen: false}, {merge: true});
   }catch(e){}
 }
@@ -8303,22 +8303,23 @@ async function badgesAdminHTML(companies){
       info[c.code] = {n, avg: n ? Math.round(sum / n * 10) / 10 : 0, arr, eligible: n >= 3 && sum / n >= 4.5 && c.badge !== true};
       if((parseInt(c.ratingCount, 10) || 0) !== n || (Number(c.ratingSum) || 0) !== sum){ db.collection('companies').doc(c.code).set({ratingSum: sum, ratingCount: n}, {merge: true}).catch(() => {}); }
     });
-    const withB = list.filter(c => c.badge === true), elig = list.filter(c => info[c.code].eligible), others = list.filter(c => c.badge !== true && !info[c.code].eligible);
+    const withB = list.filter(c => c.badge === true), elig = list.filter(c => info[c.code].eligible), ver = list.filter(c => c.verified === true && c.badge !== true && !info[c.code].eligible), others = list.filter(c => c.badge !== true && c.verified !== true && !info[c.code].eligible);
     const fold = (c, kind) => {
       const i = info[c.code];
       const reviews = i.arr.slice().sort((x, y) => String(y.ratedAt || '').localeCompare(String(x.ratedAt || ''))).slice(0, 8).map(p => '<div style="font-size:13px;padding:6px 0;border-top:1px solid var(--border);overflow-wrap:anywhere;"><b style="color:#F5B93D;">' + '★'.repeat(parseInt(p.rating, 10) || 0) + '☆'.repeat(5 - (parseInt(p.rating, 10) || 0)) + '</b> · ' + escHtml(p.name || 'Client') + (p.ratingComment ? '<div class="sub" style="margin-top:2px;">💬 « ' + escHtml(p.ratingComment) + ' »</div>' : '') + '</div>').join('') || '<p class="sub" style="margin:0;">Aucun avis de client pour le moment.</p>';
       const btn = kind === 'give' ? '<button type="button" class="primary" data-badge-give="' + escHtml(c.code) + '" style="margin-top:10px;">🏅 Donner le badge</button>' : (kind === 'has' ? '<button type="button" class="ghost" data-badge-remove="' + escHtml(c.code) + '" style="margin-top:10px;color:var(--danger);border-color:rgba(239,93,93,0.4);">Retirer le badge</button>' : '<button type="button" class="ghost" data-badge-give="' + escHtml(c.code) + '" data-force="1" style="margin-top:10px;color:#F5B93D;border-color:#F5B93D;">🏅 Donner le badge quand même</button>');
       const verBtn = '<button type="button" class="ghost" data-verify="' + escHtml(c.code) + '" data-on="' + (c.verified === true ? '1' : '0') + '" style="margin-top:8px;color:#60A5FA;border-color:#60A5FA;">' + (c.verified === true ? 'Retirer « Entreprise vérifiée »' : '✔ Marquer « Entreprise vérifiée »') + '</button>';
-      return foldCardHTML('bd-' + c.code, kind === 'has' ? '#F59E0B,#D97706' : (kind === 'give' ? '#10B981,#059669' : '#475569,#334155'), coLogoMini(c) || '🏢', escHtml(c.companyName || c.code), i.n ? i.avg + '/5 · ' + i.n : '0/5 · 0',
+      return foldCardHTML('bd-' + c.code, kind === 'has' ? '#F59E0B,#D97706' : (kind === 'ver' ? '#3B82F6,#1D4ED8' : (kind === 'give' ? '#10B981,#059669' : '#475569,#334155')), coLogoMini(c) || '🏢', escHtml(c.companyName || c.code) + (c.verified === true ? ' ✔' : ''), i.n ? i.avg + '/5 · ' + i.n : '0/5 · 0',
         '<div style="font-weight:800;margin-bottom:4px;">' + (i.n ? '⭐ ' + i.avg + '/5 (' + i.n + ' avis)' : 'Aucune note') + '</div>' + reviews + btn + verBtn);
     };
     const banner = elig.length ? '<div style="margin-bottom:12px;padding:11px 13px;border-radius:12px;background:rgba(245,185,61,0.15);border:1px solid #F5B93D;color:#F5B93D;font-weight:800;">🔔 ' + elig.length + ' entreprise' + (elig.length > 1 ? 's ont' : ' a') + ' au moins 3 avis et 4,5/5. Ouvrez la carte « Badges des entreprises » pour donner le badge.</div>' : '';
     const body = '<p class="sub" style="margin-top:0;">Comment ça marche : après la livraison, le client touche les étoiles (1 à 5) et peut écrire un commentaire. La note d\'une entreprise est la moyenne de toutes ses étoiles (exemple : 5 étoiles + 1 étoile = 6 ÷ 2 avis = 3/5). À partir de 3 avis et 4,5/5, un message vous prévient et vous donnez le badge à la main. Pour donner le badge plus tôt, ouvrez la carte de l\'entreprise et touchez « Donner le badge quand même ».</p>'
       + (elig.length ? '<div style="font-weight:800;margin:8px 0 6px;">🔔 À donner (' + elig.length + ')</div>' + elig.map(c => fold(c, 'give')).join('') : '<p class="sub" style="margin:0 0 10px;">Aucune entreprise n\'a encore 3 avis avec 4,5/5.</p>')
       + '<div style="font-weight:800;margin:12px 0 6px;">🏅 Entreprises avec le badge (' + withB.length + ')</div>' + (withB.length ? withB.map(c => fold(c, 'has')).join('') : '<p class="sub" style="margin:0 0 8px;">Aucune pour le moment.</p>')
+      + '<div style="font-weight:800;margin:12px 0 6px;">✔ Entreprises vérifiées (' + ver.length + ')</div>' + (ver.length ? ver.map(c => fold(c, 'ver')).join('') : '<p class="sub" style="margin:0 0 8px;">Aucune pour le moment.</p>')
       + '<div style="font-weight:800;margin:12px 0 6px;">⭐ Les autres entreprises (' + others.length + ')</div>' + (others.length ? others.map(c => fold(c, 'other')).join('') : '<p class="sub" style="margin:0 0 8px;">Aucune.</p>')
       + '<div style="font-weight:800;margin:12px 0 2px;">👀 Aperçu : voici le badge</div>' + badgeSampleHTML();
-    return banner + foldCardHTML('badges', '#F59E0B,#D97706', '🏅', 'Badges des entreprises', withB.length + (elig.length ? ' · 🔔' + elig.length : ''), body);
+    return banner + foldCardHTML('badges', '#F59E0B,#D97706', '🏅', 'Badges des entreprises', withB.length + (ver.length ? ' · ✔' + ver.length : '') + (elig.length ? ' · 🔔' + elig.length : ''), body);
   }catch(e){ return ''; }
 }
 function bindBadges(root, rerender){
@@ -8460,7 +8461,7 @@ async function fillCoStats(host){
     const avgD = delays.length ? Math.round(delays.reduce((x, y) => x + y, 0) / delays.length * 10) / 10 : null;
     const rated = pk.filter(p => p.rating), avgR = rated.length ? Math.round(rated.reduce((x, p) => x + (parseInt(p.rating, 10) || 0), 0) / rated.length * 10) / 10 : null;
     const mx = Math.max(1, ...weeks);
-    const reviewsBlock = '<p class="sub" style="font-size:12px;margin:0 0 6px;">Le bouton « Répondre » apparaît quand le client a écrit un commentaire avec sa note.</p>' + (rated.length ? rated.slice().sort((a, b) => String(b.ratedAt || '').localeCompare(String(a.ratedAt || ''))).slice(0, 10).map(p => '<div style="font-size:13px;padding:6px 0;border-top:1px solid var(--border);overflow-wrap:anywhere;"><b style="color:#F5B93D;">' + '★'.repeat(parseInt(p.rating, 10) || 0) + '☆'.repeat(5 - (parseInt(p.rating, 10) || 0)) + '</b> · ' + escHtml(p.name || 'Client') + (p.ratingComment ? '<div class="sub" style="margin-top:2px;">💬 « ' + escHtml(p.ratingComment) + ' »</div>' : '') + replyBlockHTML(p) + '</div>').join('') : '<p class="sub" style="margin:0;">Aucun avis pour le moment.</p>');
+    const reviewsBlock = '<p class="sub" style="font-size:12px;margin:0 0 6px;">Touchez « Répondre au client » sous chaque avis pour répondre.</p>' + (rated.length ? rated.slice().sort((a, b) => String(b.ratedAt || '').localeCompare(String(a.ratedAt || ''))).slice(0, 10).map(p => '<div style="font-size:13px;padding:6px 0;border-top:1px solid var(--border);overflow-wrap:anywhere;"><b style="color:#F5B93D;">' + '★'.repeat(parseInt(p.rating, 10) || 0) + '☆'.repeat(5 - (parseInt(p.rating, 10) || 0)) + '</b> · ' + escHtml(p.name || 'Client') + (p.ratingComment ? '<div class="sub" style="margin-top:2px;">💬 « ' + escHtml(p.ratingComment) + ' »</div>' : '') + replyBlockHTML(p) + '</div>').join('') : '<p class="sub" style="margin:0;">Aucun avis pour le moment.</p>');
     const bars = weeks.map((n, i) => '<div style="flex:1;text-align:center;"><div style="height:70px;display:flex;align-items:flex-end;justify-content:center;"><div style="width:70%;height:' + Math.max(4, Math.round(n / mx * 70)) + 'px;background:linear-gradient(180deg,#38BDF8,#2563EB);border-radius:6px 6px 0 0;"></div></div><div style="font-weight:800;font-size:12px;">' + n + '</div><div class="sub" style="font-size:10px;">' + (i === 5 ? 'Cette sem.' : '−' + (5 - i) + ' sem.') + '</div></div>').join('');
     const box = (t, v) => '<div style="flex:1;min-width:120px;padding:9px 10px;border:1px solid var(--border);border-radius:12px;"><div class="sub" style="font-size:11.5px;">' + t + '</div><div style="font-weight:900;font-size:17px;">' + v + '</div></div>';
     host.innerHTML = foldCardHTML('costats', '#0EA5E9,#2563EB', '📈', 'Mes statistiques', pk.length,
@@ -10978,7 +10979,7 @@ window.fillClientReviews = async function(host){
     host.innerHTML = scopes.map(sc => foldCardHTML('clrev-' + sc, '#F59E0B,#EF4444', '💬', 'Commentaires des clients', '…', '<div class="empty">Chargement' + LDOTS + '</div>')).join(''); bindFoldCards(host);
     await window.stsSyncReviews(pk);
     const canDel = window.stsIsOwnerAdmin();
-    const canReplyFor = sc => (mode === 'company' && companySession && companySession.code === sc) || (sc === '__sts' && window.stsIsOwnerAdmin());
+    const canReplyFor = sc => false;
     const paint = async function(){
       let html = '';
       for(const sc of scopes){
@@ -11169,7 +11170,7 @@ window.fillClientReviews = async function(host){
     host.innerHTML = scopes.map(sc => foldCardHTML('clrev-' + sc, '#F59E0B,#EF4444', '💬', 'Commentaires des clients', '…', '<div class="empty">Chargement' + LDOTS + '</div>')).join(''); bindFoldCards(host);
     await window.stsSyncReviews(pk);
     const canDel = window.stsIsOwnerAdmin();
-    const canReplyFor = sc => (mode === 'company' && companySession && (companySession.code === sc || (sc === '__sts' && companySession.code === oc))) || (sc === '__sts' && window.stsIsOwnerAdmin());
+    const canReplyFor = sc => false;
     const info = {}; for(const sc of scopes) info[sc] = await window.stsResolveScope(sc, null);
     const paint = async function(){
       let html = '';
@@ -11261,6 +11262,108 @@ window.stsEmailTypo = function(email){
 window.stsEmailBad = function(email){
   const e = String(email || '').trim();
   return !/^[^\s@]+@[^\s@]+\.[A-Za-z]{2,}$/.test(e) || !!window.stsEmailTypo(e);
+};
+
+
+// ===== V5 : visites une par une, commentaires sans entreprise =====
+window.fillOwnVisits = async function(host){
+  try{
+    host.innerHTML = foldCardHTML('ownvisits', '#8B5CF6,#EC4899', '🕒', 'Dernière visite', '…', '<div class="empty">Chargement' + LDOTS + '</div>'); bindFoldCards(host);
+    const paint = async function(){
+      const cos = {}; (await getAllCompanies()).forEach(c => { cos[c.code] = c; });
+      const un = [], seen = [];
+      const take = (sn, arr) => sn.forEach(d => { const v = d.data() || {}; if(v.code && v.at) arr.push({kind: 'ev', id: d.id, code: v.code, at: v.at}); });
+      try{ take(await db.collection('companyVisits').where('seen', '==', false).get(), un); }catch(e){}
+      try{ take(await db.collection('companyVisits').where('seen', '==', true).get(), seen); }catch(e){}
+      // anciennes visites (avant cette version) : une ligne par entreprise
+      Object.keys(cos).forEach(code => {
+        const c = cos[code];
+        if(c.lastSeenAt && c.visitSeen === false && !un.some(x => x.code === code)) un.push({kind: 'co', id: code, code: code, at: c.lastSeenAt});
+        if(c.lastSeenAt && c.visitSeen === true && !seen.some(x => x.code === code)) seen.push({kind: 'co', id: code, code: code, at: c.lastSeenAt});
+      });
+      const byDate = (a, b) => String(b.at).localeCompare(String(a.at));
+      un.sort(byDate); seen.sort(byDate);
+      const seenShown = seen.slice(0, 10);
+      const row = (it, isNew) => {
+        const c = cos[it.code] || {code: it.code, companyName: it.code};
+        return '<div style="padding:10px;margin-bottom:8px;border:1px solid var(--border);border-radius:12px;"><div style="font-weight:800;overflow-wrap:anywhere;display:flex;align-items:center;">' + (coLogoMini(c) || '🏢') + '<span style="margin-left:4px;">' + escHtml(c.companyName || c.code) + '</span></div>'
+          + '<div class="sub" style="font-size:12.5px;margin:3px 0 0;">📞 ' + escHtml(c.companyPhone || c.companyWhatsapp || '—') + (c.companyAddress ? ' · 📍 ' + escHtml(c.companyAddress) : '') + '</div>'
+          + '<div class="sub" style="font-size:12.5px;margin:2px 0 0;">🕒 Visite : ' + escHtml(window.stsFmtDT(it.at)) + (c.subEndsAt ? ' · Abonnement jusqu\'au ' + escHtml(new Date(c.subEndsAt).toLocaleDateString('fr-FR')) : '') + '</div>'
+          + '<button type="button" class="miniBtn" data-vis-op="' + (isNew ? 'seen' : 'unseen') + '" data-vis-kind="' + it.kind + '" data-vis-id="' + escHtml(it.id) + '" style="margin-top:8px;">' + (isNew ? '👁️ Vue' : '↩️ Non vue') + '</button>'
+          + (isNew ? '' : '<button type="button" class="miniBtn" data-vis-op="hide" data-vis-kind="' + it.kind + '" data-vis-id="' + escHtml(it.id) + '" style="margin-top:8px;margin-left:8px;color:var(--danger);border-color:rgba(239,93,93,0.4);">🗑️ Supprimer</button>') + '</div>';
+      };
+      host.innerHTML = foldCardHTML('ownvisits', '#8B5CF6,#EC4899', '🕒', 'Dernière visite', un.length,
+        (un.length > 1 ? '<button type="button" class="miniBtn" data-vis-all="1" style="margin-bottom:8px;">👁️ Tout marquer comme vu (' + un.length + ')</button>' : '')
+        + (un.length ? un.map(it => row(it, true)).join('') : '<p class="sub" style="margin:0 0 8px;">Aucune nouvelle visite. 🎉</p>')
+        + (seenShown.length ? '<div style="font-weight:800;margin:10px 0 6px;">Déjà vues (' + seenShown.length + ')</div>' + seenShown.map(it => row(it, false)).join('') : ''));
+      bindFoldCards(host);
+      const apply = async function(it, op){
+        const val = op === 'seen' ? true : (op === 'unseen' ? false : 'hidden');
+        if(it.kind === 'ev') await db.collection('companyVisits').doc(it.id).set({seen: val}, {merge: true});
+        else await db.collection('companies').doc(it.id).set({visitSeen: val}, {merge: true});
+      };
+      host.querySelectorAll('[data-vis-op]').forEach(function(b){
+        b.onclick = async function(){
+          if(b.disabled) return;
+          if(b.dataset.visOp === 'hide' && !confirm('Retirer cette visite de la liste « Déjà vues » ?\n(L\'entreprise n\'est pas supprimée, seulement cette ligne.)')) return;
+          b.disabled = true; b.innerHTML = '…' + LDOTS;
+          try{ await apply({kind: b.dataset.visKind, id: b.dataset.visId}, b.dataset.visOp); }catch(e){ toast('Échec, réessayez'); }
+          paint();
+        };
+      });
+      const all = host.querySelector('[data-vis-all]');
+      if(all) all.onclick = async function(){
+        if(all.disabled) return; all.disabled = true; all.innerHTML = '…' + LDOTS;
+        try{ for(const it of un) await apply(it, 'seen'); }catch(e){ toast('Échec, réessayez'); }
+        paint();
+      };
+    };
+    await paint();
+  }catch(e){ try{ host.querySelectorAll('.empty').forEach(el => { el.textContent = 'Impossible de charger pour le moment.'; }); }catch(e2){} }
+};
+
+// Admin : commentaires dont l'entreprise n'existe plus -> choisir la bonne entreprise
+window.fillOwnReviews = async function(host){
+  try{
+    host.innerHTML = foldCardHTML('ownrev', '#F59E0B,#EF4444', '💬', 'Commentaires des clients', '…', '<div class="empty">Chargement' + LDOTS + '</div>'); bindFoldCards(host);
+    try{ const pk = (await getAllPackages()).filter(p => p && p.rating); await window.stsSyncReviews(pk); }catch(e){}
+    const cos = {}; try{ (await getAllCompanies()).forEach(c => { cos[c.code] = c; }); }catch(e){}
+    const oc = await window.stsOwnerCodeNow(), infos = {};
+    const opts = Object.keys(cos).map(k => '<option value="' + escHtml(k) + '">' + escHtml(cos[k].companyName || k) + '</option>').join('');
+    const paint = async function(){
+      const docs = []; try{ const sn = await db.collection('reviews').get(); sn.forEach(d => docs.push(d.data())); }catch(e){}
+      docs.sort((a, b) => String(b.at || '').localeCompare(String(a.at || '')));
+      let html = '';
+      for(const r of docs){
+        const sc = (r.scope === oc || r.scope === '__sts') ? '__sts' : r.scope;
+        if(!infos[sc]) infos[sc] = await window.stsResolveScope(sc, cos);
+        let row = window.stsReviewRowHTML(r, true, infos[sc].name || sc, infos[sc].logo, sc === '__sts');
+        if(sc !== '__sts' && !infos[sc].name){
+          const extra = '<div style="margin-top:8px;padding:8px;border:1px dashed #F5B93D;border-radius:12px;"><div class="sub" style="font-size:12px;margin:0 0 6px;">⚠️ Le code « ' + escHtml(sc) + ' » ne correspond à aucune entreprise actuelle. Choisissez la bonne entreprise :</div><div style="display:flex;gap:6px;flex-wrap:wrap;"><select data-assign-sel="' + escHtml(r.trackingId) + '" style="flex:1;min-width:140px;padding:8px;border-radius:10px;background:var(--panel2);color:var(--text);border:1px solid var(--border);">' + opts + '</select><button type="button" class="miniBtn" data-assign-go="' + escHtml(r.trackingId) + '">🏢 Associer</button></div></div>';
+          row = row.replace(/<\/div>$/, extra + '</div>');
+        }
+        html += row;
+      }
+      host.innerHTML = foldCardHTML('ownrev', '#F59E0B,#EF4444', '💬', 'Commentaires des clients', docs.length,
+        '<p class="sub" style="margin:0 0 6px;">Seul l\'admin peut supprimer un commentaire. Chaque entreprise répond aux avis de ses clients depuis sa carte « Avis de mes clients ».</p>' + (docs.length ? html : '<p class="sub" style="margin:0;">Aucun commentaire pour le moment.</p>'));
+      bindFoldCards(host); window.stsBindReviewDel(host, paint);
+      host.querySelectorAll('[data-assign-go]').forEach(function(b){
+        b.onclick = async function(){
+          const tid = b.dataset.assignGo, sel = host.querySelector('[data-assign-sel="' + tid + '"]'); if(!sel || b.disabled) return;
+          const code = sel.value, nm = (cos[code] && cos[code].companyName) || code;
+          if(!confirm('Associer ce commentaire (et son colis) à « ' + nm + ' » ?')) return;
+          b.disabled = true; b.innerHTML = '…' + LDOTS;
+          try{
+            await db.collection('reviews').doc(tid).set({scope: code}, {merge: true});
+            await db.collection('packages').doc(tid).set({companyCode: code}, {merge: true});
+            toast('✅ Associé à ' + nm);
+          }catch(e){ toast('Échec, réessayez'); }
+          paint();
+        };
+      });
+    };
+    await paint();
+  }catch(e){ try{ host.querySelectorAll('.empty').forEach(el => { el.textContent = 'Impossible de charger pour le moment.'; }); }catch(e2){} }
 };
 
 perfInstall();
