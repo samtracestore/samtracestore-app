@@ -2460,7 +2460,7 @@ document.addEventListener('click', async (e)=>{
   e.stopPropagation();
   const t = await askTextOverlay('↩️ Répondre au client', 'Le client verra votre réponse sous son commentaire.', 'Merci pour votre retour...');
   if(t === null) return;
-  try{ await db.collection('packages').doc(b.dataset.rateReply).set({ratingReply: t, ratingReplyAt: new Date().toISOString()}, {merge: true}); toast('✅ Réponse envoyée'); if(mode === 'company' && typeof renderCompany === 'function') renderCompany(); else if(typeof renderAdmin === 'function') renderAdmin(); }
+  try{ await db.collection('packages').doc(b.dataset.rateReply).set({ratingReply: t, ratingReplyAt: new Date().toISOString()}, {merge: true}); db.collection('reviews').doc(b.dataset.rateReply).update({reply: t}).catch(()=>{}); toast('✅ Réponse envoyée'); if(mode === 'company' && typeof renderCompany === 'function') renderCompany(); else if(typeof renderAdmin === 'function') renderAdmin(); }
   catch(err){ toast('Erreur, réessayez'); }
 }, true);
 function companyBadge(co){
@@ -5788,7 +5788,7 @@ async function renderOwnerPayments(){
             </div>
           </div>`).join('');
     const pendingHtml = compactCardHtml('pending', '#F9A8D4,#F472B6', '💰', 'Dépôts en attente',
-      `${pending.length} en attente — appuyez pour voir la liste`, window.stsQueueAdminHTML(window.stsQueueFrom(pending, pendingReg)) + pendingListContent);
+      `${pending.length} en attente — appuyez pour voir la liste`, pendingListContent);
 
     const notifCardOwner = `<div class="card" style="padding:0;overflow:hidden;">
       <div style="background:linear-gradient(135deg,#F59E0B,#EF4444);padding:14px 16px;display:flex;align-items:center;gap:10px;">
@@ -5922,7 +5922,7 @@ async function renderOwnerPayments(){
         <p class="sub" style="margin-top:0;">Remplissez le numéro et le nom du bénéficiaire. Le chiffre 2 apparaît à côté du logo chez les entreprises. Quand un compte est « Non actif », l'entreprise voit un message et ne peut pas envoyer d'argent dessus.</p>
         ${SLOTS.map(slotHtml).join('')}
       </div>`);
-    content.innerHTML = emailCard + codeCard + backupCard + pendingRegHtml + pendingHtml + notifCardOwner + confirmedRegHtml + confirmedHtml + receiptsHistoryHTML(receiptHistory) + settingsHtml + methodsHtml + extraAccountsHtml + `
+    content.innerHTML = emailCard + codeCard + backupCard + '<div id="ownTrackHost"></div>' + pendingRegHtml + pendingHtml + notifCardOwner + confirmedRegHtml + confirmedHtml + receiptsHistoryHTML(receiptHistory) + settingsHtml + methodsHtml + extraAccountsHtml + `
       <div class="card">
         <h2>Avatar du service client</h2>
         <p class="sub">Choisissez une photo depuis votre galerie pour la bulle WhatsApp affichée aux entreprises.</p>
@@ -7733,7 +7733,8 @@ async function renderClient(){
     const isCoClient = mode === 'company' && companySession && companyScreen === 'client';
     if(mode !== 'client' && !isCoClient) return;
     const main = document.getElementById('main'); if(!main) return;
-    if(isCoClient){ addBadgeHost(main, [companySession.code]); return; }
+    if(isCoClient){ addBadgeHost(main, [companySession.code]); }
+    if(!isCoClient){
     const oldF = document.getElementById('clFicheHost'); if(oldF) oldF.remove();
     const oldS = document.getElementById('clSurveyHost'); if(oldS) oldS.remove();
     const oldC = document.getElementById('clCouponHost'); if(oldC) oldC.remove();
@@ -7753,6 +7754,7 @@ async function renderClient(){
     }
     if(clientPhone){ const hostS = document.createElement('div'); hostS.id = 'clSurveyHost'; main.insertBefore(hostS, main.firstChild); renderSurveyHost(hostS, 'client', bcKey(clientPhone), clientName || ''); }
     addBadgeHost(main, []);
+    }
     const old = document.getElementById('clRulesHost'); if(old) old.remove();
     const host = document.createElement('div'); host.id = 'clRulesHost'; main.appendChild(host);
     { const rvOld = document.getElementById('clReviewsHost'); if(rvOld) rvOld.remove(); const rv = document.createElement('div'); rv.id = 'clReviewsHost'; main.insertBefore(rv, host); window.fillClientReviews(rv); }
@@ -10633,7 +10635,7 @@ window.fillOwnStats = async function(host){
     const mx = Math.max(1, ...weeks);
     const bars = weeks.map((n, i) => '<div style="flex:1;text-align:center;"><div style="height:70px;display:flex;align-items:flex-end;justify-content:center;"><div style="width:70%;height:' + Math.max(4, Math.round(n / mx * 70)) + 'px;background:linear-gradient(180deg,#38BDF8,#2563EB);border-radius:6px 6px 0 0;"></div></div><div style="font-weight:800;font-size:12px;">' + n + '</div><div class="sub" style="font-size:10px;">' + (i === 5 ? 'Cette sem.' : '−' + (5 - i) + ' sem.') + '</div></div>').join('');
     const box = (t, v) => '<div style="flex:1;min-width:120px;padding:9px 10px;border:1px solid var(--border);border-radius:12px;"><div class="sub" style="font-size:11.5px;">' + t + '</div><div style="font-weight:900;font-size:17px;">' + v + '</div></div>';
-    const reviews = rated.length ? rated.slice().sort((a, b) => String(b.ratedAt || '').localeCompare(String(a.ratedAt || ''))).map(p => '<div style="font-size:13px;padding:6px 0;border-top:1px solid var(--border);overflow-wrap:anywhere;"><b style="color:#F5B93D;">' + '★'.repeat(parseInt(p.rating, 10) || 0) + '☆'.repeat(5 - (parseInt(p.rating, 10) || 0)) + '</b> · ' + escHtml(p.name || 'Client') + (p.ratingComment ? '<div class="sub" style="margin-top:2px;">💬 « ' + escHtml(p.ratingComment) + ' »</div>' : '') + (p.ratingReply ? '<div class="sub" style="margin-top:2px;">↩️ Réponse : « ' + escHtml(p.ratingReply) + ' »</div>' : '') + '</div>').join('') : '<p class="sub" style="margin:0;">Aucun avis pour le moment.</p>';
+    const reviews = rated.length ? rated.slice().sort((a, b) => String(b.ratedAt || '').localeCompare(String(a.ratedAt || ''))).map(p => '<div style="font-size:13px;padding:6px 0;border-top:1px solid var(--border);overflow-wrap:anywhere;"><b style="color:#F5B93D;">' + '★'.repeat(parseInt(p.rating, 10) || 0) + '☆'.repeat(5 - (parseInt(p.rating, 10) || 0)) + '</b> · ' + escHtml(p.name || 'Client') + (p.ratingComment ? '<div class="sub" style="margin-top:2px;">💬 « ' + escHtml(p.ratingComment) + ' »</div>' : '') + replyBlockHTML(p) + '</div>').join('') : '<p class="sub" style="margin:0;">Aucun avis pour le moment.</p>';
     host.innerHTML = foldCardHTML('ownstats', '#0EA5E9,#2563EB', '📈', 'Mes statistiques STS', pk.length,
         '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px;">' + box('Colis au total', pk.length) + box('Livrés', liv.length + (pk.length ? ' (' + Math.round(liv.length / pk.length * 100) + '%)' : '')) + box('Délai moyen Expédié → Livré', avgD !== null ? avgD + ' j' : '—') + box('Note des clients', avgR !== null ? avgR + '/5 (' + rated.length + ')' : '—') + '</div><div style="font-weight:800;margin-bottom:6px;">Colis ajoutés par semaine (6 dernières semaines)</div><div style="display:flex;gap:4px;">' + bars + '</div>')
       + foldCardHTML('ownreviews', '#F59E0B,#EF4444', '⭐', 'Avis de mes clients STS', rated.length, (avgR !== null ? '<div style="font-weight:800;margin-bottom:4px;">⭐ ' + avgR + '/5 (' + rated.length + ' avis)</div>' : '') + reviews);
@@ -10643,7 +10645,7 @@ window.fillOwnStats = async function(host){
 (function(){
   const main = document.getElementById('main'); if(!main) return;
   new MutationObserver(function(){
-    [['ownStatsHost', 'fillOwnStats'], ['ownVisitsHost', 'fillOwnVisits'], ['ownReviewsHost', 'fillOwnReviews']].forEach(function(x){
+    [['ownStatsHost', 'fillOwnStats'], ['ownVisitsHost', 'fillOwnVisits'], ['ownReviewsHost', 'fillOwnReviews'], ['ownTrackHost', 'fillOwnTrack']].forEach(function(x){
       const h = document.getElementById(x[0]);
       if(h && !h.dataset.filled && !h.firstChild){ h.dataset.filled = '1'; window[x[1]](h); }
     });
@@ -10737,11 +10739,10 @@ window.stsFillGateTransfer = async function(host, code, name){
     const tc = await window.stsTransferCode(code);
     host.innerHTML = '<div class="card" style="flex-direction:column;align-items:stretch;border:1px solid rgba(245,158,11,0.6);">'
       + '<div style="font-weight:900;font-size:16px;margin-bottom:8px;">🚚 Suivi de transfert</div>'
-      + '<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;padding:10px 12px;border:1px solid var(--border);border-radius:14px;"><div><div class="sub" style="font-size:11px;letter-spacing:1px;margin:0;">CODE DE TRANSFERT</div><div style="font-weight:900;font-size:20px;letter-spacing:1px;">' + escHtml(tc) + '</div></div><button type="button" class="ghost" data-copy-tc style="width:auto;padding:8px 14px;">📋 Copier</button></div>'
+      + payFieldHTML('Code de transfert', tc)
       + '<p class="sub" style="font-size:12.5px;margin:10px 0;">Note : les transferts sont confirmés entre 10 minutes et 6 heures. Au-delà de 6 heures, contactez un admin. Ce code n\'expire jamais : gardez-le pour suivre votre place à chaque paiement.</p>'
       + '<button type="button" class="primary" data-alert-btn style="margin-bottom:6px;">🔔 Alerter STS sur WhatsApp</button><div style="height:6px;border-radius:6px;background:var(--panel2);overflow:hidden;margin-bottom:10px;"><div data-alert-bar style="height:100%;width:0%;background:#475569;"></div></div>'
       + '<button type="button" class="ghost" data-track-open>🚚 Voir ma place dans la file</button></div>';
-    host.querySelector('[data-copy-tc]').onclick = function(){ window.stsCopy(tc); };
     host.querySelector('[data-track-open]').onclick = function(){ window.openTransferTrack(tc); };
     window.stsBindAlert(host, code, name, tc);
   }catch(e){ host.innerHTML = '<div class="card"><div class="empty">Impossible de charger le suivi pour le moment.</div></div>'; }
@@ -10772,9 +10773,8 @@ window.openTransferTrack = function(prefill){
       try{
         const tc = await window.stsTransferCode(myCode);
         const m = document.getElementById('trkMine'); if(!m) return;
-        m.innerHTML = '<div style="margin-top:12px;display:flex;justify-content:space-between;align-items:center;gap:10px;padding:10px 12px;border-radius:14px;border:1px solid #F3D9A4;background:#fff;"><div><div style="font-size:11px;letter-spacing:1px;opacity:.6;">MON CODE DE TRANSFERT</div><div style="font-weight:900;font-size:18px;">' + escHtml(tc) + '</div></div><div style="display:flex;gap:6px;"><button type="button" id="trkUse" style="padding:8px 12px;border-radius:12px;border:1px solid #F59E0B;background:#FFF3DC;color:#B45309;font-weight:800;">Utiliser</button><button type="button" id="trkCopy" style="padding:8px 12px;border-radius:12px;border:1px solid #D1D5DB;background:#fff;color:#111;font-weight:800;">📋</button></div></div>';
+        m.innerHTML = '<div style="margin-top:12px;display:flex;justify-content:space-between;align-items:center;gap:10px;padding:10px 12px;border-radius:14px;border:1px solid #F3D9A4;background:#fff;"><div><div style="font-size:11px;letter-spacing:1px;opacity:.6;">MON CODE DE TRANSFERT</div><div style="font-weight:900;font-size:18px;">' + escHtml(tc) + '</div></div><div style="display:flex;gap:6px;"><button type="button" id="trkUse" style="padding:8px 12px;border-radius:12px;border:1px solid #F59E0B;background:#FFF3DC;color:#B45309;font-weight:800;">Utiliser</button><button type="button" data-copy="' + escHtml(tc) + '" aria-label="Copier" style="display:flex;align-items:center;gap:6px;padding:8px 12px;border-radius:12px;border:1px solid #F59E0B;background:#FFF3DC;color:#B45309;font-weight:800;cursor:pointer;">' + copyIconSVG() + ' Copier</button></div></div>';
         document.getElementById('trkUse').onclick = function(){ document.getElementById('trkInput').value = tc; doSearch(tc); };
-        document.getElementById('trkCopy').onclick = function(){ window.stsCopy(tc); };
       }catch(e){}
     }
   };
@@ -10930,6 +10930,123 @@ window.stsOwnerSkeleton = function(view){
     settings: [['💬 Mon numéro WhatsApp', 'rgba(16,185,129,0.6)'], ['🖼️ Logo de Sam Trace Store', 'rgba(249,115,22,0.6)'], ['🏷️ Coupon de fête', 'rgba(249,115,22,0.6)'], ['🛍️ Mon catalogue', 'rgba(249,115,22,0.6)']]
   };
   return (lists[view] || lists.companies).map(x => window.stsSk(x[0], x[1])).join('');
+};
+
+
+// ===== V2 : réponses, logos, cartes Client dans Entreprise, suivi Admin =====
+window.stsReviewRowHTML = function(r, canDel, coName, logoHtml, canReply){
+  const st = Math.max(0, Math.min(5, parseInt(r.stars, 10) || 0));
+  return '<div style="padding:9px 0;border-top:1px solid var(--border);overflow-wrap:anywhere;"><b style="color:#F5B93D;">' + '★'.repeat(st) + '☆'.repeat(5 - st) + '</b> · <b>' + escHtml(r.name || 'Client') + '</b> <span class="sub" style="font-size:11px;">' + escHtml(window.stsFmtDT(r.at)) + '</span>'
+    + (coName ? '<div class="sub" style="font-size:12.5px;margin:3px 0 0;display:flex;align-items:center;">' + (logoHtml || '') + '<span>🏢 ' + escHtml(coName) + '</span></div>' : '')
+    + '<div style="margin-top:3px;">💬 « ' + escHtml(r.comment || '') + ' »</div>'
+    + (r.reply ? '<div class="sub" style="margin-top:2px;">↩️ Réponse : « ' + escHtml(r.reply) + ' »</div>' : (canReply ? '<button type="button" data-rate-reply="' + escHtml(r.trackingId) + '" style="margin-top:5px;padding:5px 12px;border-radius:10px;border:1px solid var(--accent);background:transparent;color:var(--accent2);font-weight:800;font-size:12px;cursor:pointer;">↩️ Répondre au client</button>' : ''))
+    + (canDel ? '<button type="button" class="ghost" data-rv-del="' + escHtml(r.trackingId) + '" style="margin:6px 0 0 6px;width:auto;padding:5px 12px;font-size:12px;color:var(--danger);border-color:rgba(239,93,93,0.4);">🗑️ Supprimer</button>' : '') + '</div>';
+};
+window.stsIsOwnerAdmin = function(){ return !!((adminSession && adminSession.isOwner) || (typeof adminStash !== 'undefined' && adminStash && adminStash.isOwner)); };
+window.fillClientReviews = async function(host){
+  try{
+    const isCo = (mode === 'company' && companySession && companyScreen === 'client');
+    if(!clientPhone && !isCo) return;
+    const pk = window.__clPkgs || [], oc = await getOwnerCode();
+    const scopes = [];
+    if(isCo) scopes.push(companySession.code);
+    else{
+      pk.filter(p => p && !p.hiddenByClient).forEach(p => { const sc = (p.companyCode && p.companyCode !== oc) ? p.companyCode : '__sts'; if(scopes.indexOf(sc) < 0) scopes.push(sc); });
+      if(!scopes.length && clientLinkCompany && clientLinkCompany.code) scopes.push(clientLinkCompany.code);
+    }
+    if(!scopes.length) return;
+    host.innerHTML = scopes.map(sc => foldCardHTML('clrev-' + sc, '#F59E0B,#EF4444', '💬', 'Commentaires des clients', '…', '<div class="empty">Chargement' + LDOTS + '</div>')).join(''); bindFoldCards(host);
+    await window.stsSyncReviews(pk);
+    const canDel = window.stsIsOwnerAdmin();
+    const canReplyFor = sc => (mode === 'company' && companySession && companySession.code === sc) || (sc === '__sts' && window.stsIsOwnerAdmin());
+    const paint = async function(){
+      let html = '';
+      for(const sc of scopes){
+        const docs = [];
+        try{ const sn = await db.collection('reviews').where('scope', '==', sc).get(); sn.forEach(d => docs.push(d.data())); }catch(e){}
+        docs.sort((a, b) => String(b.at || '').localeCompare(String(a.at || '')));
+        const nm = sc === '__sts' ? 'Sam Trace Store' : (companyNameCache[sc] || (isCo ? companySession.companyName : ''));
+        html += foldCardHTML('clrev-' + sc, '#F59E0B,#EF4444', '💬', 'Commentaires des clients' + (scopes.length > 1 && nm ? ' · ' + nm : ''), docs.length,
+          docs.length ? docs.map(r => window.stsReviewRowHTML(r, canDel, '', '', canReplyFor(sc))).join('') : '<p class="sub" style="margin:0;">Aucun commentaire pour le moment.</p>');
+      }
+      host.innerHTML = html; bindFoldCards(host); window.stsBindReviewDel(host, paint);
+    };
+    await paint();
+  }catch(e){ try{ host.querySelectorAll('.empty').forEach(el => { el.textContent = 'Impossible de charger pour le moment.'; }); }catch(e2){} }
+};
+window.fillOwnReviews = async function(host){
+  try{
+    host.innerHTML = foldCardHTML('ownrev', '#F59E0B,#EF4444', '💬', 'Commentaires des clients', '…', '<div class="empty">Chargement' + LDOTS + '</div>'); bindFoldCards(host);
+    try{ const pk = (await getAllPackages()).filter(p => p && p.rating && p.ratingComment); await window.stsSyncReviews(pk); }catch(e){}
+    const cos = {}; try{ (await getAllCompanies()).forEach(c => { cos[c.code] = c; }); }catch(e){}
+    let stsU = ''; try{ stsU = await stsLogoUrl(); }catch(e){}
+    const paint = async function(){
+      const docs = []; try{ const sn = await db.collection('reviews').get(); sn.forEach(d => docs.push(d.data())); }catch(e){}
+      docs.sort((a, b) => String(b.at || '').localeCompare(String(a.at || '')));
+      const row = r => {
+        const sts = r.scope === '__sts', co = cos[r.scope] || {};
+        return window.stsReviewRowHTML(r, true, sts ? 'Sam Trace Store' : (co.companyName || r.scope), sts ? coLogoMini({logoUrl: stsU}) : coLogoMini(co), sts);
+      };
+      host.innerHTML = foldCardHTML('ownrev', '#F59E0B,#EF4444', '💬', 'Commentaires des clients', docs.length,
+        '<p class="sub" style="margin:0 0 6px;">Seul l\'admin peut supprimer un commentaire. Chaque entreprise répond aux commentaires de ses clients depuis sa carte « Avis de mes clients ».</p>' + (docs.length ? docs.map(row).join('') : '<p class="sub" style="margin:0;">Aucun commentaire pour le moment.</p>'));
+      bindFoldCards(host); window.stsBindReviewDel(host, paint);
+    };
+    await paint();
+  }catch(e){ try{ host.querySelectorAll('.empty').forEach(el => { el.textContent = 'Impossible de charger pour le moment.'; }); }catch(e2){} }
+};
+
+// ----- Admin : suivi des transferts (camion + étapes)
+window.stsTrackStepsHTML = function(kind, c, pos, total, at){
+  const st = (state, icon, title, sub) => '<div style="display:flex;gap:10px;align-items:flex-start;padding:5px 0;"><span style="flex:0 0 26px;height:26px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:14px;background:' + (state === 'done' ? '#10B981' : state === 'now' ? '#F59E0B' : state === 'bad' ? '#EF4444' : 'var(--panel2)') + ';color:#fff;">' + icon + '</span><div style="min-width:0;"><div style="font-weight:800;font-size:13.5px;' + (state === 'todo' ? 'opacity:.55;' : '') + '">' + title + '</div>' + (sub ? '<div class="sub" style="font-size:12px;margin:0;">' + sub + '</div>' : '') + '</div></div>';
+  let steps, idx;
+  if(kind === 'pending'){
+    idx = 2;
+    steps = [st('done', '✓', 'Paiement envoyé', escHtml(window.stsFmtDT(at))), st('done', '✓', 'Dans la file d\'attente', 'Place #' + pos + ' sur ' + total), st('now', '🔍', 'Vérification par STS', 'En cours'), st('todo', '4', 'Paiement validé', 'En attente')];
+  }else if(kind === 'ok'){
+    idx = 3;
+    steps = [st('done', '✓', 'Paiement envoyé', escHtml(window.stsFmtDT(at))), st('done', '✓', 'Dans la file d\'attente', 'Passé en file'), st('done', '✓', 'Vérification par STS', 'Terminée'), st('done', '✓', 'Paiement validé', c.subPaidAt ? escHtml(window.stsFmtDT(c.subPaidAt)) + (c.subEndsAt ? ' · Abonnement jusqu\'au ' + escHtml(new Date(c.subEndsAt).toLocaleDateString('fr-FR')) : '') : '')];
+  }else{
+    idx = 3;
+    steps = [st('done', '✓', 'Paiement envoyé', escHtml(window.stsFmtDT(at))), st('done', '✓', 'Dans la file d\'attente', 'Passé en file'), st('done', '✓', 'Vérification par STS', 'Terminée'), st('bad', '✕', 'Paiement refusé', escHtml(c.rejectionReason || 'Motif non précisé'))];
+  }
+  const bar = '<div style="position:relative;height:30px;margin:6px 4px 8px;"><div style="position:absolute;left:0;right:0;top:14px;height:4px;border-radius:4px;background:var(--panel2);"></div><div style="position:absolute;left:0;top:14px;height:4px;border-radius:4px;background:linear-gradient(90deg,#10B981,#F59E0B);width:' + Math.round(idx / 3 * 100) + '%;"></div><div style="position:absolute;top:0;left:calc(' + Math.round(idx / 3 * 100) + '% - 14px);font-size:20px;">🚚</div></div>';
+  return bar + steps.join('');
+};
+window.fillOwnTrack = async function(host){
+  try{
+    host.innerHTML = foldCardHTML('owntrack', '#F59E0B,#EA580C', '🚚', 'Suivi des transferts', '…', '<div class="empty">Chargement' + LDOTS + '</div>'); bindFoldCards(host);
+    const r = await Promise.all([getPendingDeposits().catch(()=>[]), getPendingRegistrations().catch(()=>[]), getAllCompanies().catch(()=>[])]);
+    const queue = window.stsQueueFrom(r[0], r[1]), cos = {};
+    r[2].forEach(c => { cos[c.code] = c; });
+    const ok = r[2].filter(c => c.paymentStatus === 'active' && c.depositSubmittedAt).sort((a, b) => String(b.subPaidAt || b.depositSubmittedAt).localeCompare(String(a.subPaidAt || a.depositSubmittedAt))).slice(0, 10);
+    const bad = r[2].filter(c => c.paymentStatus === 'rejected' && c.depositSubmittedAt).slice(0, 5);
+    const row = function(c, kind, pos, at, svc){
+      const tc = c.transferCode || '';
+      return '<div style="padding:10px;margin-bottom:8px;border:1px solid var(--border);border-radius:14px;">'
+        + '<div style="display:flex;align-items:center;gap:8px;"><div style="flex:1;min-width:0;"><div style="font-weight:800;overflow-wrap:anywhere;display:flex;align-items:center;">' + (kind === 'pending' ? '<span style="margin-right:8px;font-weight:900;color:#F59E0B;">#' + pos + '</span>' : '') + (coLogoMini(c) || '') + '<span>' + escHtml(c.companyName || c.code) + '</span></div>'
+        + '<div class="sub" style="font-size:12.5px;margin:2px 0 0;">' + escHtml(svc || 'Dépôt') + ' · ' + escHtml(window.stsFmtDT(at)) + '</div>'
+        + '<div class="sub" style="font-size:12.5px;margin:2px 0 0;">🎫 Ticket : <b>' + (tc ? escHtml(tc) : '—') + '</b></div></div>'
+        + (tc ? '<button type="button" data-copy="' + escHtml(tc) + '" aria-label="Copier" style="flex:0 0 auto;width:40px;height:40px;border:none;background:transparent;cursor:pointer;display:flex;align-items:center;justify-content:center;">' + copyIconSVG() + '</button>' : '')
+        + '<button type="button" data-trk-open="' + escHtml(c.code + ':' + kind) + '" aria-label="Voir les étapes" style="flex:0 0 auto;width:46px;height:46px;border-radius:50%;border:none;background:linear-gradient(135deg,#F59E0B,#EA580C);display:flex;align-items:center;justify-content:center;cursor:pointer;">' + window.STS_TRUCK_SVG + '</button></div>'
+        + '<div data-trk-steps="' + escHtml(c.code + ':' + kind) + '" style="display:none;margin-top:10px;padding-top:8px;border-top:1px dashed var(--border);">' + window.stsTrackStepsHTML(kind, c, pos, queue.length, at) + '</div></div>';
+    };
+    const full = it => Object.assign({}, cos[it.code] || {}, {code: it.code, companyName: (cos[it.code] && cos[it.code].companyName) || it.name});
+    const body = '<p class="sub" style="margin:0 0 10px;">Touchez le camion 🚚 d\'une entreprise pour voir toutes les étapes de son paiement.</p>'
+      + '<div style="font-weight:800;margin:6px 0;">⏳ En attente (' + queue.length + ')</div>'
+      + (queue.length ? queue.map((it, i) => row(full(it), 'pending', i + 1, it.at, it.service)).join('') : '<p class="sub" style="margin:0 0 8px;">Aucun paiement en attente.</p>')
+      + '<div style="font-weight:800;margin:12px 0 6px;">✅ Paiements confirmés (' + ok.length + ')</div>'
+      + (ok.length ? ok.map(c => row(c, 'ok', 0, c.depositSubmittedAt, 'Dépôt')).join('') : '<p class="sub" style="margin:0 0 8px;">Aucun pour le moment.</p>')
+      + (bad.length ? '<div style="font-weight:800;margin:12px 0 6px;">❌ Refusés (' + bad.length + ')</div>' + bad.map(c => row(c, 'bad', 0, c.depositSubmittedAt, 'Dépôt')).join('') : '');
+    host.innerHTML = foldCardHTML('owntrack', '#F59E0B,#EA580C', '🚚', 'Suivi des transferts', queue.length, body);
+    bindFoldCards(host);
+    host.querySelectorAll('[data-trk-open]').forEach(function(b){
+      b.onclick = function(e){
+        e.stopPropagation();
+        const box = host.querySelector('[data-trk-steps="' + b.dataset.trkOpen + '"]');
+        if(box) box.style.display = (box.style.display === 'none') ? 'block' : 'none';
+      };
+    });
+  }catch(e){ try{ host.querySelectorAll('.empty').forEach(el => { el.textContent = 'Impossible de charger pour le moment.'; }); }catch(e2){} }
 };
 
 perfInstall();
