@@ -2596,6 +2596,7 @@ async function renderClientCore(){
   if(!clientPhone){
     main.innerHTML = `
       ${firebaseWarningHTML()}
+      ${window.stsCoNoPhoneCard()}
       <div class="card">
         <h2>Suivez vos colis</h2>
         <p class="sub">Entrez vos informations pour retrouver uniquement vos colis chez ${clientLinkCompany ? clientLinkCompany.companyName : 'Sam Trace Store'}.</p>
@@ -7750,10 +7751,10 @@ async function renderClient(){
       getCompanyByCode(clientLinkCompany.code).then(co => {
         if(!co) return;
         const bd = companyBadge(co), wa = waPhone(co.companyWhatsapp || co.companyPhone || '');
-        hostF.innerHTML = '<div style="margin:0 0 12px;padding:14px;border-radius:16px;border:1px solid var(--border);background:rgba(255,255,255,0.04);text-align:center;">' + (co.logoUrl ? logoBoxHTML(co, 110, '20px', 'border:3px solid var(--accent);box-shadow:0 0 18px rgba(249,115,22,0.35);') : '') + '<div style="font-weight:900;font-size:18px;margin-top:6px;overflow-wrap:anywhere;">' + escHtml(co.companyName || '') + '</div>' + (co.verified === true ? '<div style="color:#60A5FA;font-weight:800;font-size:13px;">✔ Entreprise vérifiée</div>' : '') + (co.companyAddress ? '<div class="sub" style="margin-top:2px;overflow-wrap:anywhere;">📍 ' + escHtml(co.companyAddress) + '</div>' : '') + (bd ? '<div style="margin-top:6px;color:#F5B93D;font-weight:800;">⭐ ' + bd.avg + '/5 (' + bd.count + ' avis)</div>' : '') + (wa ? '<div><a href="https://wa.me/' + wa + '" target="_blank" rel="noopener" style="display:inline-block;margin-top:10px;padding:8px 16px;border-radius:12px;background:#25D366;color:#06210F;font-weight:800;text-decoration:none;">💬 Contacter l\'entreprise</a></div>' : '') + '</div>';
+        hostF.innerHTML = '<div style="margin:0 0 12px;padding:14px;border-radius:16px;border:1px solid var(--border);background:rgba(255,255,255,0.04);text-align:center;">' + (co.logoUrl ? logoBoxHTML(co, 110, '20px', 'border:3px solid var(--accent);box-shadow:0 0 18px rgba(249,115,22,0.35);') : '') + '<div style="font-weight:900;font-size:18px;margin-top:6px;overflow-wrap:anywhere;">' + escHtml(co.companyName || '') + '</div>' + (co.verified === true ? '<div style="color:#60A5FA;font-weight:800;font-size:13px;display:flex;align-items:center;justify-content:center;gap:5px;">' + window.STS_SHIELD_SVG(16) + ' Entreprise vérifiée</div>' : '') + (co.companyAddress ? '<div class="sub" style="margin-top:2px;overflow-wrap:anywhere;">📍 ' + escHtml(co.companyAddress) + '</div>' : '') + (bd ? '<div style="margin-top:6px;color:#F5B93D;font-weight:800;">⭐ ' + bd.avg + '/5 (' + bd.count + ' avis)</div>' : '') + (wa ? '<div><a href="https://wa.me/' + wa + '" target="_blank" rel="noopener" style="display:inline-block;margin-top:10px;padding:8px 16px;border-radius:12px;background:#25D366;color:#06210F;font-weight:800;text-decoration:none;">💬 Contacter l\'entreprise</a></div>' : '') + '</div>';
         db.collection('catalogs').doc(co.code).get().then(d => {
           const items = d.exists ? (d.data().items || []) : []; if(!items.length) return;
-          hostF.insertAdjacentHTML('beforeend', '<div style="margin:0 0 12px;padding:14px;border-radius:16px;border:1px solid var(--border);background:rgba(255,255,255,0.04);"><div style="font-weight:800;margin:0 0 8px;text-align:left;">🛍️ Nos produits</div><div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">' + items.map(it => '<div style="border:1px solid var(--border);border-radius:12px;overflow:hidden;text-align:left;">' + (it.img ? '<img src="' + it.img + '" alt="" style="width:100%;aspect-ratio:1/1;object-fit:cover;">' : '') + '<div style="padding:6px 8px;"><div style="font-weight:800;font-size:13px;overflow-wrap:anywhere;">' + escHtml(it.n) + '</div><div class="sub" style="font-size:12px;">' + escHtml(it.pr || '') + '</div></div></div>').join('') + '</div></div>');
+          hostF.insertAdjacentHTML('beforeend', catalogCardHTML(items, '🛍️ Nos produits', {phone: co.companyWhatsapp || co.companyPhone, name: co.companyName}));
         }).catch(() => {});
       }).catch(() => {});
     }
@@ -8281,10 +8282,10 @@ function addBadgeHost(main, extraCodes){
       if(clientLinkCompany && clientLinkCompany.code === c) continue;
       try{
         const cd2 = await db.collection('catalogs').doc(c).get(); const it2 = cd2.exists ? (cd2.data().items || []) : [];
-        if(it2.length){ const co2 = await getCompanyByCode(c); host.insertAdjacentHTML('beforeend', catalogCardHTML(it2, '🛍️ Nos produits · ' + ((co2 && co2.companyName) || ''))); }
+        if(it2.length){ const co2 = await getCompanyByCode(c); host.insertAdjacentHTML('beforeend', catalogCardHTML(it2, '🛍️ Nos produits · ' + ((co2 && co2.companyName) || ''), {phone: co2 && (co2.companyWhatsapp || co2.companyPhone), name: co2 && co2.companyName})); }
       }catch(e){}
     }
-    if(hasOwn){ try{ const cd = await db.collection('catalogs').doc('sts').get(); const items = cd.exists ? (cd.data().items || []) : []; if(items.length) host.insertAdjacentHTML('beforeend', catalogCardHTML(items, '🛍️ Nos produits · Sam Trace Store')); }catch(e){} }
+    if(hasOwn){ try{ const cd = await db.collection('catalogs').doc('sts').get(); const items = cd.exists ? (cd.data().items || []) : []; if(items.length) host.insertAdjacentHTML('beforeend', catalogCardHTML(items, '🛍️ Nos produits · Sam Trace Store', {phone: WHATSAPP_NUMBER, name: 'Sam Trace Store'})); }catch(e){} }
   })();
 }
 
@@ -8309,17 +8310,17 @@ async function badgesAdminHTML(companies){
       const reviews = i.arr.slice().sort((x, y) => String(y.ratedAt || '').localeCompare(String(x.ratedAt || ''))).slice(0, 8).map(p => '<div style="font-size:13px;padding:6px 0;border-top:1px solid var(--border);overflow-wrap:anywhere;"><b style="color:#F5B93D;">' + '★'.repeat(parseInt(p.rating, 10) || 0) + '☆'.repeat(5 - (parseInt(p.rating, 10) || 0)) + '</b> · ' + escHtml(p.name || 'Client') + (p.ratingComment ? '<div class="sub" style="margin-top:2px;">💬 « ' + escHtml(p.ratingComment) + ' »</div>' : '') + '</div>').join('') || '<p class="sub" style="margin:0;">Aucun avis de client pour le moment.</p>';
       const btn = kind === 'give' ? '<button type="button" class="primary" data-badge-give="' + escHtml(c.code) + '" style="margin-top:10px;">🏅 Donner le badge</button>' : (kind === 'has' ? '<button type="button" class="ghost" data-badge-remove="' + escHtml(c.code) + '" style="margin-top:10px;color:var(--danger);border-color:rgba(239,93,93,0.4);">Retirer le badge</button>' : '<button type="button" class="ghost" data-badge-give="' + escHtml(c.code) + '" data-force="1" style="margin-top:10px;color:#F5B93D;border-color:#F5B93D;">🏅 Donner le badge quand même</button>');
       const verBtn = '<button type="button" class="ghost" data-verify="' + escHtml(c.code) + '" data-on="' + (c.verified === true ? '1' : '0') + '" style="margin-top:8px;color:#60A5FA;border-color:#60A5FA;">' + (c.verified === true ? 'Retirer « Entreprise vérifiée »' : '✔ Marquer « Entreprise vérifiée »') + '</button>';
-      return foldCardHTML('bd-' + c.code, kind === 'has' ? '#F59E0B,#D97706' : (kind === 'ver' ? '#3B82F6,#1D4ED8' : (kind === 'give' ? '#10B981,#059669' : '#475569,#334155')), coLogoMini(c) || '🏢', escHtml(c.companyName || c.code) + (c.verified === true ? ' ✔' : ''), i.n ? i.avg + '/5 · ' + i.n : '0/5 · 0',
+      return foldCardHTML('bd-' + c.code, kind === 'has' ? '#F59E0B,#D97706' : (kind === 'ver' ? '#3B82F6,#1D4ED8' : (kind === 'give' ? '#10B981,#059669' : '#475569,#334155')), coLogoMini(c) || '🏢', escHtml(c.companyName || c.code) + (c.verified === true ? ' ' + window.STS_SHIELD_SVG(18) : ''), i.n ? i.avg + '/5 · ' + i.n : '0/5 · 0',
         '<div style="font-weight:800;margin-bottom:4px;">' + (i.n ? '⭐ ' + i.avg + '/5 (' + i.n + ' avis)' : 'Aucune note') + '</div>' + reviews + btn + verBtn);
     };
     const banner = elig.length ? '<div style="margin-bottom:12px;padding:11px 13px;border-radius:12px;background:rgba(245,185,61,0.15);border:1px solid #F5B93D;color:#F5B93D;font-weight:800;">🔔 ' + elig.length + ' entreprise' + (elig.length > 1 ? 's ont' : ' a') + ' au moins 3 avis et 4,5/5. Ouvrez la carte « Badges des entreprises » pour donner le badge.</div>' : '';
     const body = '<p class="sub" style="margin-top:0;">Comment ça marche : après la livraison, le client touche les étoiles (1 à 5) et peut écrire un commentaire. La note d\'une entreprise est la moyenne de toutes ses étoiles (exemple : 5 étoiles + 1 étoile = 6 ÷ 2 avis = 3/5). À partir de 3 avis et 4,5/5, un message vous prévient et vous donnez le badge à la main. Pour donner le badge plus tôt, ouvrez la carte de l\'entreprise et touchez « Donner le badge quand même ».</p>'
       + (elig.length ? '<div style="font-weight:800;margin:8px 0 6px;">🔔 À donner (' + elig.length + ')</div>' + elig.map(c => fold(c, 'give')).join('') : '<p class="sub" style="margin:0 0 10px;">Aucune entreprise n\'a encore 3 avis avec 4,5/5.</p>')
       + '<div style="font-weight:800;margin:12px 0 6px;">🏅 Entreprises avec le badge (' + withB.length + ')</div>' + (withB.length ? withB.map(c => fold(c, 'has')).join('') : '<p class="sub" style="margin:0 0 8px;">Aucune pour le moment.</p>')
-      + '<div style="font-weight:800;margin:12px 0 6px;">✔ Entreprises vérifiées (' + ver.length + ')</div>' + (ver.length ? ver.map(c => fold(c, 'ver')).join('') : '<p class="sub" style="margin:0 0 8px;">Aucune pour le moment.</p>')
+      + '<div style="font-weight:800;margin:12px 0 6px;display:flex;align-items:center;gap:6px;">' + window.STS_SHIELD_SVG(20) + ' Entreprises vérifiées (' + ver.length + ')</div>' + (ver.length ? ver.map(c => fold(c, 'ver')).join('') : '<p class="sub" style="margin:0 0 8px;">Aucune pour le moment.</p>')
       + '<div style="font-weight:800;margin:12px 0 6px;">⭐ Les autres entreprises (' + others.length + ')</div>' + (others.length ? others.map(c => fold(c, 'other')).join('') : '<p class="sub" style="margin:0 0 8px;">Aucune.</p>')
       + '<div style="font-weight:800;margin:12px 0 2px;">👀 Aperçu : voici le badge</div>' + badgeSampleHTML();
-    return banner + foldCardHTML('badges', '#F59E0B,#D97706', '🏅', 'Badges des entreprises', withB.length + (ver.length ? ' · ✔' + ver.length : '') + (elig.length ? ' · 🔔' + elig.length : ''), body);
+    return banner + foldCardHTML('badges', '#F59E0B,#D97706', '🏅', 'Badges des entreprises', withB.length + (ver.length ? ' · 🛡️' + ver.length : '') + (elig.length ? ' · 🔔' + elig.length : ''), body);
   }catch(e){ return ''; }
 }
 function bindBadges(root, rerender){
@@ -11364,6 +11365,37 @@ window.fillOwnReviews = async function(host){
     };
     await paint();
   }catch(e){ try{ host.querySelectorAll('.empty').forEach(el => { el.textContent = 'Impossible de charger pour le moment.'; }); }catch(e2){} }
+};
+
+
+// ===== V6 : carte Changer, icône bouclier, WhatsApp sur les produits =====
+window.STS_SHIELD_SVG = function(size){
+  size = size || 18;
+  return '<svg width="' + size + '" height="' + size + '" viewBox="0 0 24 24" style="vertical-align:middle;flex:0 0 auto;" aria-label="Entreprise vérifiée"><path d="M12 2l8 3v6c0 5-3.5 9.3-8 11-4.5-1.7-8-6-8-11V5l8-3z" fill="#3B82F6" stroke="#fff" stroke-width="1.2"/><path d="M8 12.2l2.6 2.6L16 9.4" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+};
+window.stsCoNoPhoneCard = function(){
+  if(!(mode === 'company' && companySession && companyScreen === 'client')) return '';
+  return '<div class="card"><div style="display:flex;justify-content:space-between;align-items:center;"><div><p class="sub" style="margin:0">Connecté avec le numéro</p><b>Aucun numéro pour le moment</b></div><button class="ghost" id="btnChangeCo" type="button">Changer</button></div></div>';
+};
+document.addEventListener('click', function(e){
+  if(e.target && e.target.closest && e.target.closest('#btnChangeCo')){
+    const r = document.getElementById('regName');
+    if(r){ r.scrollIntoView({behavior: 'smooth', block: 'center'}); try{ r.focus(); }catch(err){} }
+  }
+});
+window.catalogCardHTML = function(items, title, wa){
+  if(!items || !items.length) return '';
+  const num = (wa && wa.phone) ? waPhone(wa.phone) : '';
+  const nm = (wa && wa.name) ? wa.name : '';
+  return '<div style="margin:0 0 14px;padding:12px;border-radius:16px;border:1px solid var(--border);background:rgba(255,255,255,0.04);"><div style="font-weight:800;margin-bottom:8px;">' + title + '</div><div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">'
+    + items.map(function(it){
+      const msg = 'Bonjour' + (nm ? ' ' + nm : '') + ', je suis intéressé(e) par : ' + (it.n || '') + (it.pr ? ' (' + it.pr + ')' : '') + '. Est-il disponible ?';
+      return '<div style="border:1px solid var(--border);border-radius:12px;overflow:hidden;text-align:left;">'
+        + (it.img ? '<img src="' + it.img + '" alt="" style="width:100%;aspect-ratio:1/1;object-fit:cover;">' : '')
+        + '<div style="padding:6px 8px;"><div style="font-weight:800;font-size:13px;overflow-wrap:anywhere;">' + escHtml(it.n) + '</div><div class="sub" style="font-size:12px;">' + escHtml(it.pr || '') + '</div></div>'
+        + (num ? '<a href="https://wa.me/' + num + '?text=' + encodeURIComponent(msg) + '" target="_blank" rel="noopener" style="display:block;margin:0 8px 8px;padding:8px;border-radius:10px;background:#25D366;color:#06210F;font-weight:800;font-size:13px;text-align:center;text-decoration:none;">💬 Commander</a>' : '')
+        + '</div>';
+    }).join('') + '</div></div>';
 };
 
 perfInstall();
