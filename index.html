@@ -1687,11 +1687,21 @@ function pkgMatchesName(p, typed){
   if(aInB && bInA) return true;
   return false;
 }
+function stsSamePhone(a, b){
+  const da = String(a || '').replace(/\D/g, ''), dbb = String(b || '').replace(/\D/g, '');
+  if(da.length >= 8 && dbb.length >= 8) return da.slice(-8) === dbb.slice(-8);
+  return normalizePhone(a) === normalizePhone(b);
+}
 async function getPackagesForPhone(phone, typedName){
+  if(URL_COMPANY_PUB && !clientLinkCompany){ try{ await resolveClientLinkCompany(); }catch(e){} }
   phone = normalizePhone(phone);
-  const snap = await db.collection('packages').where('phone','==',phone).get();
-  let pkgs = [];
-  snap.forEach(doc=>pkgs.push(doc.data()));
+  const digits = phone.replace(/\D/g, ''), last8 = digits.slice(-8);
+  const variants = Array.from(new Set([phone, digits, last8, '509' + last8, '+509' + last8, '00509' + last8].filter(Boolean)));
+  let failed = 0; const byId = {};
+  const snaps = await Promise.all(variants.map(v => db.collection('packages').where('phone','==',v).get().catch(()=>{ failed++; return null; })));
+  if(failed === variants.length) throw new Error('offline');
+  snaps.forEach(sn => { if(sn) sn.forEach(doc => { const d = doc.data(); if(d && d.trackingId && stsSamePhone(d.phone, phone)) byId[d.trackingId] = d; }); });
+  let pkgs = Object.keys(byId).map(k => byId[k]);
   pkgs.sort((a,b)=> new Date(b.updatedAt) - new Date(a.updatedAt));
   if(typedName) pkgs = pkgs.filter(p => pkgMatchesName(p, typedName));
   const scope = clientScopeCode();
@@ -2516,7 +2526,6 @@ function pkgCardHTML(p, label){
       </div>
       <span class="badge ${p.status}">${STATUS_LABEL[p.status]||p.status}</span>
     </div>
-    ${pkgLogoHTML(p)}
     ${courierStripHTML(p)}
     ${hist ? `<div style="margin-top:8px;border-top:1px solid var(--border);padding-top:8px;">${hist}</div>` : ''}
     ${p.photoCount > 0 ? `<div class="photosWrap" data-photos-wrap-for="${escHtml(p.trackingId)}" style="margin-top:10px;"><button type="button" data-photos-for="${escHtml(p.trackingId)}" style="width:100%;background:rgba(255,122,26,0.12);border:1px solid var(--accent);color:var(--accent2);border-radius:10px;padding:10px;font-size:13px;font-weight:700;cursor:pointer;">📷 Voir les photos de mon colis (${p.photoCount})</button><div class="photosBox" style="display:none;"></div></div>` : ''}
@@ -2641,7 +2650,7 @@ async function renderClientCore(){
         }
       }catch(e){ resultEl.innerHTML = `<div class="empty">Erreur, réessayez.</div>`; }
     };
-    document.getElementById('btnRegister').onclick = async ()=>{
+    const __regFn = async ()=>{
       if(!firebaseReady){ toast("Firebase non configuré"); return; }
       const name = document.getElementById('regName').value.trim();
       const email = document.getElementById('regEmail').value.trim();
@@ -2682,12 +2691,21 @@ async function renderClientCore(){
         renderClient();
       }catch(e){ toast("Erreur d'enregistrement, réessayez"); }
     };
+    document.getElementById('btnRegister').onclick = async ()=>{
+      const b = document.getElementById('btnRegister'); if(!b || b.disabled) return;
+      b.disabled = true; b.innerHTML = 'Vérification' + LDOTS;
+      try{ await __regFn(); }
+      finally{ const b2 = document.getElementById('btnRegister'); if(b2){ b2.disabled = false; b2.textContent = 'Accéder à mes colis'; } }
+    };
     return;
   }
 
-  main.innerHTML = `<div class="card" style="display:flex;justify-content:space-between;align-items:center;">
-      <div><p class="sub" style="margin:0">Connecté avec le numéro</p><b>${clientPhone}</b></div>
-      <button class="ghost" id="btnLogout">Changer</button>
+  main.innerHTML = `<div class="card">
+      <div style="display:flex;justify-content:space-between;align-items:center;">
+        <div><p class="sub" style="margin:0">Connecté avec le numéro</p><b>${clientPhone}</b></div>
+        <button class="ghost" id="btnLogout">Changer</button>
+      </div>
+      <div id="clLogoSlot"></div>
     </div>
     <div id="pkgList"><div class="empty">Chargement<span class="ldots"><i></i><i></i><i></i></span></div></div>`;
   document.getElementById('btnLogout').onclick = ()=>{ clientPhone=null; clientName=''; renderClient(); };
@@ -2697,6 +2715,19 @@ async function renderClientCore(){
     const allPkgs = await getPackagesForPhone(clientPhone, clientName);
     courierOwnerCode = await preloadCourierAvatars(allPkgs);
     await getCompanyNamesFor(allPkgs);
+    try{
+      const slot = document.getElementById('clLogoSlot');
+      if(slot){
+        const codes = []; allPkgs.filter(p => !p.hiddenByClient).forEach(p => { const c = p.companyCode || ''; if(codes.indexOf(c) < 0) codes.push(c); });
+        if(!codes.length && clientLinkCompany) codes.push(clientLinkCompany.code);
+        slot.innerHTML = codes.map(c => {
+          const url = companyLogoCache[c] || (clientLinkCompany && clientLinkCompany.code === c ? clientLinkCompany.logoUrl : '');
+          if(!url) return '';
+          const nm = companyNameCache[c] || (clientLinkCompany && clientLinkCompany.code === c ? clientLinkCompany.companyName : '') || '';
+          return '<div style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:14px;padding-top:14px;border-top:1px solid var(--border);"><div style="min-width:0;"><div class="sub" style="font-size:12px;margin:0;">Entreprise</div><div style="font-weight:900;font-size:17px;overflow-wrap:anywhere;">' + escHtml(nm) + '</div></div>' + logoBoxHTML({logoUrl: url}, 120, '20px', 'border:3px solid var(--accent);box-shadow:0 6px 18px rgba(255,106,0,0.35);') + '</div>';
+        }).join('');
+      }
+    }catch(e){}
     const multiCompanies = new Set(allPkgs.filter(p => !p.hiddenByClient).map(p => p.companyCode || '')).size >= 2;
     const nums = packageNumbers(allPkgs);
     const pkgs = allPkgs.filter(p => !p.hiddenByClient).sort((a, b) => pkgCreatedAt(a) - pkgCreatedAt(b));
@@ -10281,7 +10312,7 @@ async function getCompanyFast(code, onChange){
   if(c && Date.now() - c.t < 300000){
     getCompanyByCode(code).then(fresh => {
       companyHomeCache[code] = {co: fresh, t: Date.now()};
-      if(onChange && fresh && JSON.stringify(fresh) !== JSON.stringify(c.co)) onChange();
+      if(onChange && fresh && window.stsStable(fresh) !== window.stsStable(c.co)) onChange();
     }).catch(()=>{});
     return c.co;
   }
@@ -10297,15 +10328,17 @@ async function renderCompany(){
     const old = document.getElementById('coSurveyHost'); if(old) old.remove();
     const host = document.createElement('div'); host.id = 'coSurveyHost'; main.insertBefore(host, main.firstChild);
     renderSurveyHost(host, 'company', companySession.code, companySession.companyName || '');
-    const hst = document.createElement('div'); hst.id = 'coStatsHost'; main.appendChild(hst); fillCoStats(hst);
-    const hb = document.createElement('div'); hb.id = 'coBadgeHost'; main.insertBefore(hb, main.firstChild);
-    getCompanyByCode(companySession.code).then(co => {
+    { const o1 = document.getElementById('coStatsHost'); if(o1) o1.remove(); } const hst = document.createElement('div'); hst.id = 'coStatsHost'; main.appendChild(hst); fillCoStats(hst);
+    { const o2 = document.getElementById('coBadgeHost'); if(o2) o2.remove(); } const hb = document.createElement('div'); hb.id = 'coBadgeHost'; main.insertBefore(hb, main.firstChild);
+    const __paintB = (co) => {
       const bd = companyBadge(co); if(!bd){ if(co && co.verified === true) hb.innerHTML = verifiedHeroHTML(co.companyName || ''); return; }
       hb.innerHTML = bd.top
         ? badgeHeroHTML(co.companyName || '', bd.avg, bd.count)
         : (bd.eligible ? '<div style="margin:0 0 12px;padding:10px 12px;border-radius:12px;border:1px solid #F5B93D;color:#F5B93D;font-size:13px;font-weight:700;">🎉 Vos clients vous notent ' + bd.avg + '/5 (' + bd.count + ' avis). STS peut maintenant vous donner le badge 🏅 Entreprise 5 ⭐.</div>' : '<div class="sub" style="margin:0 0 12px;padding:10px 12px;border-radius:12px;border:1px solid var(--border);font-size:12.5px;">⭐ Note de vos clients : <b>' + bd.avg + '/5</b> (' + bd.count + ' avis). Avec au moins 3 avis et 4,5/5, STS peut vous donner le badge 🏅 Entreprise 5 ⭐.</div>');
       if(co && co.verified === true) hb.innerHTML = verifiedHeroHTML(co.companyName || '') + hb.innerHTML;
-    }).catch(()=>{});
+    };
+    { const cc0 = companyHomeCache[companySession.code]; if(cc0 && cc0.co) __paintB(cc0.co); }
+    getCompanyByCode(companySession.code).then(__paintB).catch(()=>{});
   }catch(e){}
 }
 async function renderCompanyCore(){
@@ -10386,9 +10419,9 @@ async function renderCompanyCore(){
     adminSession = {code: companySession.code, isOwner:false, companyName: companySession.companyName};
     updateCompanyBar();
     const ckey = companySession.code + ':colis';
-    if(coScreenCache[ckey]){ main.innerHTML = coScreenCache[ckey]; main.style.pointerEvents = 'none'; }
+    if(coScreenCache[ckey]){ main.innerHTML = window.STS_LOAD_BANNER + coScreenCache[ckey]; main.style.pointerEvents = 'none'; main.style.opacity = '.55'; } else { main.innerHTML = window.STS_LOAD_BANNER; }
     try{ await renderAdminCore(); companyFixLogoutBtn(); }
-    finally{ main.style.pointerEvents = ''; if(companySession && companyScreen === 'colis') coScreenCache[ckey] = main.innerHTML; }
+    finally{ main.style.pointerEvents = ''; main.style.opacity = ''; { const lb = document.getElementById('stsLoadBanner'); if(lb) lb.remove(); } if(companySession && companyScreen === 'colis') coScreenCache[ckey] = main.innerHTML; }
     return;
   }
   if(companyScreen === 'payment'){
@@ -10406,13 +10439,13 @@ async function renderCompanyCore(){
   if(companyScreen === 'gift'){ await renderCompanyGift(main); return; }
   if(companyScreen === 'settings'){
     const skey = (companySession ? companySession.code : '') + ':settings';
-    if(coScreenCache[skey]){ main.innerHTML = coScreenCache[skey]; main.style.pointerEvents = 'none'; }
+    if(coScreenCache[skey]){ main.innerHTML = window.STS_LOAD_BANNER + coScreenCache[skey]; main.style.pointerEvents = 'none'; main.style.opacity = '.55'; } else { main.innerHTML = window.STS_LOAD_BANNER; }
     try{ await renderCompanySettings(main); }
-    finally{ main.style.pointerEvents = ''; if(companySession && companyScreen === 'settings') coScreenCache[skey] = main.innerHTML; }
+    finally{ main.style.pointerEvents = ''; main.style.opacity = ''; { const lb = document.getElementById('stsLoadBanner'); if(lb) lb.remove(); } if(companySession && companyScreen === 'settings') coScreenCache[skey] = main.innerHTML; }
     return;
   }
 
-  const co = await getCompanyFast(companySession.code, ()=>{ if(mode === 'company' && companyScreen === 'home' && companySession) renderCompany(); });
+  const co = await getCompanyFast(companySession.code, ()=>{ if(mode === 'company' && companyScreen === 'home' && companySession) window.softRender(); });
   const logoBox = (co && co.logoUrl)
     ? logoBoxHTML(co, 104, '18px', 'border:2px solid var(--accent);box-shadow:0 6px 18px rgba(255,106,0,0.35);')
     : `<div style="width:80px;height:80px;border-radius:18px;border:2px dashed var(--accent);display:flex;flex-direction:column;align-items:center;justify-content:center;font-size:10.5px;font-weight:700;color:var(--accent2);line-height:1.2;text-align:center;"><span style="font-size:22px;">📷</span>Mon logo</div>`;
@@ -10476,10 +10509,49 @@ document.getElementById('btnClientMode').onclick = ()=>{ setMode('client'); };
 document.getElementById('btnAdminMode').onclick = ()=>{ setMode('admin'); };
 document.getElementById('btnCompanyMode').onclick = ()=>{ setMode('company'); };
 
+// ===== FIABILITÉ DES BOUTONS ET DES CARTES =====
+window.STS_LOAD_BANNER = '<div id="stsLoadBanner" class="empty" style="margin:0 0 12px;">Chargement<span class="ldots"><i></i><i></i><i></i></span></div>';
+window.stsStable = function(o){
+  try{ return JSON.stringify(o, function(k, v){ return /visit|lastseen|lastlogin|lastactive|updatedat/i.test(k) ? undefined : v; }); }catch(e){ return String(Math.random()); }
+};
+(function(){
+  const st = document.createElement('style');
+  st.textContent = 'button,a,[data-fold-head],.compactCard,.bigOrange,#btnClientMode,#btnAdminMode,#btnCompanyMode{touch-action:manipulation;-webkit-tap-highlight-color:transparent;}';
+  document.head.appendChild(st);
+  let lastTouch = 0;
+  document.addEventListener('pointerdown', ()=>{ lastTouch = Date.now(); }, true);
+  window.softRender = function(tries){
+    tries = tries || 0;
+    const a = document.activeElement;
+    const typing = a && /^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName);
+    if((typing || Date.now() - lastTouch < 1500) && tries < 15){ setTimeout(()=>window.softRender(tries + 1), 800); return; }
+    render();
+  };
+  ['renderClient', 'renderCompany', 'renderAdmin'].forEach(function(name){
+    const orig = window[name]; let running = false, again = 0;
+    window[name] = function(){
+      if(running){ again = Math.min(again + 1, 2); return Promise.resolve(); }
+      running = true;
+      return (async ()=>{
+        try{
+          let pass = 0;
+          do{
+            if(again > 0) again--;
+            pass++;
+            await Promise.race([Promise.resolve().then(()=>orig()), new Promise(r => setTimeout(r, 25000))]);
+          }while(again > 0 && pass < 3);
+          again = 0;
+        }catch(e){ console.warn(name, e); }
+        finally{ running = false; }
+      })();
+    };
+  });
+})();
+
 perfInstall();
 installInit();
 render();
-loadSupportAvatar().then(()=>{ if(supportAvatarUrl || waHidden){ waHidden = false; render(); } samAvatarsLoaded(); });
+loadSupportAvatar().then(()=>{ if(supportAvatarUrl || waHidden){ waHidden = false; window.softRender(); } samAvatarsLoaded(); });
 
 document.addEventListener('click', (e)=>{
   const zoomEl = e.target.closest('[data-zoom]');
@@ -10498,7 +10570,7 @@ if ('serviceWorker' in navigator) {
     navigator.serviceWorker.register('sw.js').catch(()=>{});
   });
 }
-resolveClientLinkCompany().then(()=>{ if(clientLinkCompany && mode === 'client') renderClient(); updateHeaderCompanyLogo(); });
+resolveClientLinkCompany().then(()=>{ if(clientLinkCompany && mode === 'client') window.softRender(); updateHeaderCompanyLogo(); });
 if(URL_COMPANY_PUB){ const ms = document.querySelector('.modeSwitch'); if(ms) ms.style.display = 'none'; }
 </script>
 </body>
