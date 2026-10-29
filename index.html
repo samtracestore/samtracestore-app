@@ -2504,9 +2504,10 @@ document.addEventListener('click', async (e)=>{
     await db.collection('packages').doc(tid).set({rating: n, ratingComment: comment, ratedAt: new Date().toISOString()}, {merge: true});
     try{
       const pd = await db.collection('packages').doc(tid).get(); const cc = pd.exists ? (pd.data().companyCode || '') : '';
+      try{ if(comment && pd.exists){ const ocx = await getOwnerCode(), pdd = pd.data() || {}; await db.collection('reviews').doc(tid).set({trackingId: tid, scope: (cc && cc !== ocx) ? cc : '__sts', name: pdd.name || 'Client', stars: n, comment: comment, reply: '', at: new Date().toISOString()}, {merge: true}); } }catch(e5){}
       const oc2 = await getOwnerCode(); if(cc && cc !== oc2) await db.collection('companies').doc(cc).set({ratingSum: firebase.firestore.FieldValue.increment(n), ratingCount: firebase.firestore.FieldValue.increment(1)}, {merge: true}); else await db.collection('settings').doc('stsBadge').set({ratingSum: firebase.firestore.FieldValue.increment(n), ratingCount: firebase.firestore.FieldValue.increment(1)}, {merge: true});
     }catch(e3){}
-    box.innerHTML = '<div style="font-size:14px;font-weight:700;">Merci pour votre avis ! <span style="color:#F5B93D;font-size:18px;">' + '★'.repeat(n) + '☆'.repeat(5 - n) + '</span></div>';
+    box.innerHTML = '<div style="font-size:14px;font-weight:700;">Merci pour votre avis ! <span style="color:#F5B93D;font-size:18px;">' + '★'.repeat(n) + '☆'.repeat(5 - n) + '</span>' + (comment ? '<div style="margin-top:5px;font-size:13px;font-weight:400;overflow-wrap:anywhere;">💬 « ' + escHtml(comment) + ' »</div>' : '') + '</div>';
   }catch(err){ toast("Impossible d'enregistrer la note. Réessayez."); if(msg) msg.textContent = 'Échec, touchez « Envoyer ma note » pour réessayer'; }
 }, true);
 function clientContactBtnHTML(p){
@@ -2737,8 +2738,9 @@ async function renderClientCore(){
     const allPkgs = await getPackagesForPhone(clientPhone, clientName);
     courierOwnerCode = await preloadCourierAvatars(allPkgs);
     await getCompanyNamesFor(allPkgs);
+    window.__clPkgs = allPkgs;
     try{
-      const slot = document.getElementById('clLogoSlot');
+      const slot = null;
       if(slot){
         const codes = []; allPkgs.filter(p => !p.hiddenByClient).forEach(p => { const c = p.companyCode || ''; if(codes.indexOf(c) < 0) codes.push(c); });
         if(!codes.length && clientLinkCompany) codes.push(clientLinkCompany.code);
@@ -3307,7 +3309,7 @@ async function recordCompanyVisit(code){
   try{
     const now = new Date().toISOString();
     await db.collection('companyVisits').add({code: code, at: now});
-    await db.collection('companies').doc(code).set({lastSeenAt: now}, {merge: true});
+    await db.collection('companies').doc(code).set({lastSeenAt: now, visitSeen: false}, {merge: true});
   }catch(e){}
 }
 function visitsHTML(c){
@@ -5434,7 +5436,7 @@ async function renderOwnerPanel(main){
       </button>
       <button id="btnOwnerSettings" class="${ownerView==='settings'?'active':''}" style="flex:1;font-size:12.5px;padding-left:2px;padding-right:2px;">Paramètres</button>
     </div>
-    <div id="ownerContent"></div>
+    ${ownerView === 'companies' ? '<div id="ownVisitsHost"></div><div id="ownReviewsHost"></div>' : ''}<div id="ownerContent"></div>
     ${whatsappBubbleHTML()}`;
   document.getElementById('btnAdminLogout').onclick = ()=>{ adminSession=null; stopPendingListener(); renderAdmin(); };
   document.getElementById('btnTestSound').onclick = ()=>{ unlockNotifAudio(); playNotificationSound(); toast("🔊 Test du son envoyé"); };
@@ -5445,7 +5447,7 @@ async function renderOwnerPanel(main){
 
   const ownerBox = document.getElementById('ownerContent');
   const useCache = (ownerView === 'companies' || ownerView === 'payments');
-  if(useCache && ownerViewCache[ownerView]){ ownerBox.innerHTML = ownerViewCache[ownerView]; ownerBox.style.pointerEvents = 'none'; }
+  if(ownerView !== 'packages') ownerBox.innerHTML = window.stsOwnerSkeleton(ownerView);
   try{
     if(ownerView === 'packages'){
       await renderOwnerPackages();
@@ -5488,8 +5490,8 @@ async function renderOwnerSettings(){
     </div>
     ${giftAdminSettingsHTML(_gsOwn)}
     <div id="ownLogoHost"></div>
-    <div id="ownCouponHost"></div>
-    <div id="ownCatalogHost"></div>
+    <div id="ownCouponHost">${window.stsSk('🏷️ Coupon de fête', 'rgba(249,115,22,0.6)')}</div>
+    <div id="ownCatalogHost">${window.stsSk('🛍️ Mon catalogue', 'rgba(249,115,22,0.6)')}</div>
     <div class="card">
       <h2>📱 Code QR du lien de l'application</h2>
       <p class="sub">Vos clients scannent ce code et ouvrent l'application Sam Trace Store. Imprimez-le ou affichez-le sur un autre écran : un téléphone ne peut pas scanner son propre écran. Pour un client à distance, envoyez plutôt le lien.</p>
@@ -5786,7 +5788,7 @@ async function renderOwnerPayments(){
             </div>
           </div>`).join('');
     const pendingHtml = compactCardHtml('pending', '#F9A8D4,#F472B6', '💰', 'Dépôts en attente',
-      `${pending.length} en attente — appuyez pour voir la liste`, pendingListContent);
+      `${pending.length} en attente — appuyez pour voir la liste`, window.stsQueueAdminHTML(window.stsQueueFrom(pending, pendingReg)) + pendingListContent);
 
     const notifCardOwner = `<div class="card" style="padding:0;overflow:hidden;">
       <div style="background:linear-gradient(135deg,#F59E0B,#EF4444);padding:14px 16px;display:flex;align-items:center;gap:10px;">
@@ -7753,6 +7755,7 @@ async function renderClient(){
     addBadgeHost(main, []);
     const old = document.getElementById('clRulesHost'); if(old) old.remove();
     const host = document.createElement('div'); host.id = 'clRulesHost'; main.appendChild(host);
+    { const rvOld = document.getElementById('clReviewsHost'); if(rvOld) rvOld.remove(); const rv = document.createElement('div'); rv.id = 'clReviewsHost'; main.insertBefore(rv, host); window.fillClientReviews(rv); }
     const r = await getRules();
     host.innerHTML = `<div class="card" style="border:1px solid rgba(14,165,233,0.6);background:rgba(14,165,233,0.08);"><h2 style="color:#38BDF8;">📋 Règles à respecter par les clients</h2><p class="sub">B - Obligations des clients finaux (acheteurs)</p>${rulesListHTML(r.clients, 'clients', false)}</div>`;
   }catch(e){}
@@ -8258,6 +8261,15 @@ function addBadgeHost(main, extraCodes){
     let hasOwn = false;
     if(clientPhone){ try{ const oc = await getOwnerCode(); const pk = await getPackagesForPhone(clientPhone, clientName); (pk || []).forEach(p => { if(p && p.companyCode && p.companyCode !== oc) codes.add(p.companyCode); else if(p) hasOwn = true; }); }catch(e){} }
     await fillBadgeHost(host, Array.from(codes), hasOwn);
+    try{
+      const lg = [];
+      if(hasOwn){ const u = await stsLogoUrl(); if(u) lg.push(['Sam Trace Store', u]); }
+      for(const c of Array.from(codes)){
+        if(clientLinkCompany && clientLinkCompany.code === c) continue;
+        const co = await getCompanyByCode(c); if(co && co.logoUrl) lg.push([co.companyName || '', co.logoUrl]);
+      }
+      host.insertAdjacentHTML('beforeend', lg.map(x => '<div style="margin:0 0 12px;padding:14px;border-radius:20px;border:1px solid var(--border);background:var(--panel);display:flex;align-items:center;justify-content:space-between;gap:12px;"><div style="min-width:0;"><div class="sub" style="font-size:13px;margin:0;">Entreprise</div><div style="font-weight:900;font-size:19px;overflow-wrap:anywhere;">' + escHtml(x[0]) + '</div></div>' + logoBoxHTML({logoUrl: x[1]}, 120, '20px', 'border:3px solid var(--accent);box-shadow:0 6px 18px rgba(255,106,0,0.35);') + '</div>').join(''));
+    }catch(e){}
     if(hasOwn){ try{ const cd = await db.collection('catalogs').doc('sts').get(); const items = cd.exists ? (cd.data().items || []) : []; if(items.length) host.insertAdjacentHTML('beforeend', catalogCardHTML(items, '🛍️ Nos produits · Sam Trace Store')); }catch(e){} }
   })();
 }
@@ -8936,8 +8948,10 @@ async function renderPaymentGate(main, company, status){
         <p class="sub">Votre demande de dépôt a été envoyée avec succès ! Notre équipe vérifie les informations.</p>
         <p class="sub" style="margin:0;">Montant déclaré : ${company.depositAmount} ${company.depositCurrency} via ${company.depositMethod}</p>
       </div>
+      <div id="pgTransfer">${window.stsSk('🚚 Suivi de transfert', 'rgba(245,158,11,0.6)')}</div>
       ${whatsappBubbleHTML()}`;
     document.getElementById('btnAdminLogout').onclick = ()=>{ adminSession=null; renderAdmin(); };
+    window.stsFillGateTransfer(document.getElementById('pgTransfer'), adminSession.code, adminSession.companyName || company.companyName || '');
     return;
   }
 
@@ -10491,6 +10505,7 @@ async function renderCompanyCore(){
         <span style="position:absolute;right:-6px;bottom:-6px;width:22px;height:22px;border-radius:50%;background:var(--accent);color:#fff;font-size:12px;display:flex;align-items:center;justify-content:center;box-shadow:0 2px 6px rgba(0,0,0,0.4);">✎</span>
       </div>
       <button class="ghost" id="btnCompanyLogout" style="flex:0 0 auto;padding:8px 12px;font-size:13px;">Déconnexion</button>
+      <button type="button" id="coTrackBtn" style="margin-left:auto;display:flex;flex-direction:column;align-items:center;gap:3px;background:none;border:none;padding:0;cursor:pointer;"><span style="font-size:11.5px;font-weight:900;color:#FB923C;letter-spacing:.5px;">Suivi</span><span style="width:50px;height:50px;border-radius:50%;background:linear-gradient(135deg,#F59E0B,#EA580C);display:flex;align-items:center;justify-content:center;box-shadow:0 4px 14px rgba(234,88,12,0.5);">${window.STS_TRUCK_SVG}</span></button>
     </div>
     ${subscriptionBannerHTML(co)}
     <div id="coTodayBox"></div>
@@ -10512,6 +10527,7 @@ async function renderCompanyCore(){
   document.getElementById('coBtnClient').onclick = ()=>{ companyScreen = 'client'; renderCompany(); };
   document.getElementById('btnCompanyLogout').onclick = ()=>{ companySession = null; companyScreen = 'home'; renderCompany(); };
   document.getElementById('coLogoBtn').onclick = ()=>{ companyScreen = 'settings'; renderCompany(); };
+  { const tb = document.getElementById('coTrackBtn'); if(tb) tb.onclick = ()=>{ window.openTransferTrack(); }; }
   document.getElementById('coBtnMsgs').onclick = ()=>{ openMessagesModal(companySession.code, companySession.companyName, 'company'); };
   loadAnnouncementBanner(main);
   perfPrefetchCompany();
@@ -10627,11 +10643,294 @@ window.fillOwnStats = async function(host){
 (function(){
   const main = document.getElementById('main'); if(!main) return;
   new MutationObserver(function(){
-    const h = document.getElementById('ownStatsHost');
-    if(h && !h.dataset.filled && !h.firstChild){ h.dataset.filled = '1'; window.fillOwnStats(h); }
+    [['ownStatsHost', 'fillOwnStats'], ['ownVisitsHost', 'fillOwnVisits'], ['ownReviewsHost', 'fillOwnReviews']].forEach(function(x){
+      const h = document.getElementById(x[0]);
+      if(h && !h.dataset.filled && !h.firstChild){ h.dataset.filled = '1'; window[x[1]](h); }
+    });
   }).observe(main, {childList: true, subtree: true});
 })();
 
+
+
+// ===== SUIVI DE TRANSFERT, COMMENTAIRES, DERNIÈRE VISITE =====
+window.STS_TRUCK_SVG = '<svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="1" y="3" width="15" height="13"/><polygon points="16 8 20 8 23 11 23 16 16 16 16 8"/><circle cx="5.5" cy="18.5" r="2.5"/><circle cx="18.5" cy="18.5" r="2.5"/></svg>';
+window.stsFmtDT = function(iso){ try{ return new Date(iso).toLocaleString('fr-FR', {day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit'}); }catch(e){ return ''; } };
+window.stsAbbrev = function(name){
+  const w = String(name || '').trim().split(/\s+/).filter(Boolean);
+  if(w.length < 2) return w[0] || '—';
+  return w[0] + ' ' + w[w.length - 1].charAt(0).toUpperCase() + '.';
+};
+window.stsCopy = function(txt){
+  const done = ()=>{ try{ toast('Code copié ✅'); }catch(e){} };
+  try{ if(navigator.clipboard && navigator.clipboard.writeText){ navigator.clipboard.writeText(txt).then(done, ()=>{ window.prompt('Copiez le code :', txt); }); return; } }catch(e){}
+  window.prompt('Copiez le code :', txt);
+};
+window.stsTransferCode = async function(code){
+  const co = await getCompanyByCode(code);
+  if(co && co.transferCode) return co.transferCode;
+  let t = '';
+  for(let i = 0; i < 6; i++){
+    t = Array.from(crypto.getRandomValues(new Uint8Array(4))).map(b => b.toString(16).padStart(2, '0')).join('').toUpperCase();
+    try{ const q = await db.collection('companies').where('transferCode', '==', t).limit(1).get(); if(q.empty) break; }catch(e){ break; }
+  }
+  await db.collection('companies').doc(code).set({transferCode: t}, {merge: true});
+  try{ if(companyHomeCache[code] && companyHomeCache[code].co) companyHomeCache[code].co.transferCode = t; const c2 = Object.assign({}, co || {}, {transferCode: t}); stsCoSet(code, c2); }catch(e){}
+  return t;
+};
+window.stsQueueFrom = function(dep, reg){
+  const items = [];
+  (dep || []).forEach(c => items.push({code: c.code, name: c.companyName || c.code, at: c.depositSubmittedAt || '', service: 'Dépôt', logo: c.logoUrl || ''}));
+  (reg || []).forEach(c => items.push({code: c.code, name: c.companyName || c.code, at: c.regDepositSubmittedAt || '', service: 'Inscription', logo: c.logoUrl || ''}));
+  items.sort((a, b) => String(a.at).localeCompare(String(b.at)));
+  return items;
+};
+window.stsGetQueue = async function(){
+  const r = await Promise.all([getPendingDeposits().catch(()=>[]), getPendingRegistrations().catch(()=>[])]);
+  return window.stsQueueFrom(r[0], r[1]);
+};
+window.stsQueueRowsHTML = function(items, selfCode, full){
+  return items.map(function(it, i){
+    const me = it.code === selfCode;
+    const nm = full ? it.name : window.stsAbbrev(it.name);
+    const av = (me && it.logo) ? logoBoxHTML({logoUrl: it.logo}, 52, '50%', '') : '<div style="width:52px;height:52px;border-radius:50%;background:linear-gradient(135deg,#F59E0B,#EA580C);color:#fff;font-weight:900;font-size:22px;display:flex;align-items:center;justify-content:center;">' + escHtml((it.name || '?').charAt(0).toUpperCase()) + '</div>';
+    const late = it.at && (Date.now() - new Date(it.at).getTime()) > 6 * 3600000;
+    return '<div style="display:flex;align-items:center;gap:12px;padding:10px;margin-bottom:8px;border-radius:16px;border:2px solid ' + (me ? '#F5B93D' : '#F3D9A4') + ';background:' + (me ? '#FFF1C9' : '#FFF8EA') + ';color:#2B1B05;">'
+      + '<div style="position:relative;flex:0 0 auto;">' + av + '<span style="position:absolute;right:-4px;bottom:-4px;width:22px;height:22px;border-radius:50%;background:#fff;color:#EA580C;font-weight:900;font-size:12px;display:flex;align-items:center;justify-content:center;box-shadow:0 1px 4px rgba(0,0,0,.35);">' + (i + 1) + '</span></div>'
+      + '<div style="min-width:0;flex:1;"><div style="font-weight:800;overflow-wrap:anywhere;">' + (me ? '✅ Vous-même (' + escHtml(nm) + ')' : '👤 ' + escHtml(nm)) + (i === 0 ? ' <span style="display:inline-block;margin-left:4px;padding:2px 8px;border-radius:999px;background:#FFE2A8;color:#B45309;font-size:11px;font-weight:900;">TÊTE DE FILE</span>' : '') + '</div>'
+      + '<div style="font-size:12.5px;opacity:.75;">' + escHtml(it.service) + ' · ' + escHtml(window.stsFmtDT(it.at)) + '</div>'
+      + (late ? '<div style="font-size:11.5px;color:#B91C1C;font-weight:800;">Dépasse la fenêtre de 6 h</div>' : '') + '</div></div>';
+  }).join('');
+};
+window.stsQueueAdminHTML = function(items){
+  if(!items || !items.length) return '';
+  return '<div class="card" style="flex-direction:column;align-items:stretch;border:1px solid #F5B93D;"><div style="font-weight:900;font-size:16px;margin-bottom:4px;">🚚 Placement des paiements</div><p class="sub" style="margin:0 0 10px;">Ordre d\'arrivée des paiements en attente (le #1 est à traiter en premier).</p>' + window.stsQueueRowsHTML(items, '', true) + '</div>';
+};
+window.stsBindAlert = function(root, code, name, tcode){
+  const btn = root.querySelector('[data-alert-btn]'); if(!btn) return;
+  const bar = root.querySelector('[data-alert-bar]');
+  const key = 'sts_alert_' + code, COOL = 30 * 60 * 1000;
+  const tick = function(){
+    if(!document.body.contains(btn)){ clearInterval(iv); return; }
+    let last = 0; try{ last = parseInt(localStorage.getItem(key) || '0', 10) || 0; }catch(e){}
+    const left = COOL - (Date.now() - last);
+    if(left > 0){
+      btn.innerHTML = '🔔 Vous pouvez alerter à nouveau dans ' + Math.floor(left / 60000) + ':' + String(Math.floor(left % 60000 / 1000)).padStart(2, '0');
+      btn.style.opacity = '.6'; btn.dataset.wait = '1';
+      if(bar) bar.style.width = Math.min(100, Math.round((Date.now() - last) / COOL * 100)) + '%';
+    }else{
+      btn.innerHTML = '🔔 Alerter STS sur WhatsApp'; btn.style.opacity = '1'; btn.dataset.wait = '';
+      if(bar) bar.style.width = '0%';
+    }
+  };
+  const iv = setInterval(tick, 1000); tick();
+  btn.onclick = function(){
+    if(btn.dataset.wait) return;
+    const txt = 'Bonjour STS, veuillez vérifier mon paiement. Entreprise : ' + name + (tcode ? '. Code de transfert : ' + tcode : '') + '. Merci.';
+    try{ localStorage.setItem(key, String(Date.now())); }catch(e){}
+    window.open('https://wa.me/' + String(WHATSAPP_NUMBER || '').replace(/\D/g, '') + '?text=' + encodeURIComponent(txt), '_blank');
+    tick();
+  };
+};
+window.stsFillGateTransfer = async function(host, code, name){
+  if(!host) return;
+  try{
+    const tc = await window.stsTransferCode(code);
+    host.innerHTML = '<div class="card" style="flex-direction:column;align-items:stretch;border:1px solid rgba(245,158,11,0.6);">'
+      + '<div style="font-weight:900;font-size:16px;margin-bottom:8px;">🚚 Suivi de transfert</div>'
+      + '<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;padding:10px 12px;border:1px solid var(--border);border-radius:14px;"><div><div class="sub" style="font-size:11px;letter-spacing:1px;margin:0;">CODE DE TRANSFERT</div><div style="font-weight:900;font-size:20px;letter-spacing:1px;">' + escHtml(tc) + '</div></div><button type="button" class="ghost" data-copy-tc style="width:auto;padding:8px 14px;">📋 Copier</button></div>'
+      + '<p class="sub" style="font-size:12.5px;margin:10px 0;">Note : les transferts sont confirmés entre 10 minutes et 6 heures. Au-delà de 6 heures, contactez un admin. Ce code n\'expire jamais : gardez-le pour suivre votre place à chaque paiement.</p>'
+      + '<button type="button" class="primary" data-alert-btn style="margin-bottom:6px;">🔔 Alerter STS sur WhatsApp</button><div style="height:6px;border-radius:6px;background:var(--panel2);overflow:hidden;margin-bottom:10px;"><div data-alert-bar style="height:100%;width:0%;background:#475569;"></div></div>'
+      + '<button type="button" class="ghost" data-track-open>🚚 Voir ma place dans la file</button></div>';
+    host.querySelector('[data-copy-tc]').onclick = function(){ window.stsCopy(tc); };
+    host.querySelector('[data-track-open]').onclick = function(){ window.openTransferTrack(tc); };
+    window.stsBindAlert(host, code, name, tc);
+  }catch(e){ host.innerHTML = '<div class="card"><div class="empty">Impossible de charger le suivi pour le moment.</div></div>'; }
+};
+window.openTransferTrack = function(prefill){
+  const old = document.getElementById('trackOv'); if(old) old.remove();
+  const ov = document.createElement('div'); ov.id = 'trackOv';
+  ov.style.cssText = 'position:fixed;inset:0;z-index:300;background:rgba(0,0,0,0.62);overflow-y:auto;padding:14px;';
+  const myCode = (companySession && companySession.code) || (adminSession && adminSession.code) || '';
+  const myName = (companySession && companySession.companyName) || (adminSession && adminSession.companyName) || '';
+  ov.innerHTML = '<div id="trkBox" style="max-width:480px;margin:16px auto;background:linear-gradient(180deg,#FFFFFF,#FFF3DC);color:#2B1B05;border-radius:24px;padding:18px;box-shadow:0 12px 40px rgba(0,0,0,0.55);">'
+    + '<div style="display:flex;align-items:center;gap:12px;margin-bottom:14px;"><div style="width:52px;height:52px;border-radius:16px;background:linear-gradient(135deg,#F59E0B,#EA580C);display:flex;align-items:center;justify-content:center;flex:0 0 auto;">' + window.STS_TRUCK_SVG + '</div>'
+    + '<div style="flex:1;min-width:0;"><div style="font-weight:900;font-size:20px;">Suivi de transfert</div><div style="font-size:13px;opacity:.7;">Voyez votre position dans la file</div></div>'
+    + '<button type="button" id="trkClose" style="width:42px;height:42px;border-radius:50%;border:none;background:#E5E7EB;color:#111;font-size:20px;cursor:pointer;">✕</button></div>'
+    + '<div id="trkBody"></div></div>';
+  document.body.appendChild(ov);
+  const body = ov.querySelector('#trkBody');
+  document.getElementById('trkClose').onclick = function(){ ov.remove(); };
+  ov.addEventListener('click', function(e){ if(e.target === ov) ov.remove(); });
+  const showInput = async function(pre){
+    body.innerHTML = '<div style="font-size:15px;margin-bottom:10px;">Collez le code de transfert de votre dépôt en attente pour voir combien d\'entreprises sont devant vous.</div>'
+      + '<div style="display:flex;gap:10px;"><input id="trkInput" type="text" autocapitalize="characters" placeholder="Ex : A4FD24ED" value="' + escHtml(pre || '') + '" style="flex:1;min-width:0;padding:14px;border-radius:14px;border:2px solid #F59E0B;background:#fff;color:#111;font-size:18px;font-weight:800;letter-spacing:1px;"><button type="button" id="trkGo" style="width:64px;border:none;border-radius:16px;background:linear-gradient(135deg,#F59E0B,#EA580C);color:#fff;font-size:22px;cursor:pointer;">🔍</button></div>'
+      + '<div id="trkMine"></div>'
+      + '<div style="margin-top:14px;padding:12px 14px;border-radius:16px;border:2px solid #F3D9A4;background:#FFF8EA;font-size:14px;"><b style="color:#B45309;">Information :</b> ce code de transfert n\'expire jamais. Utilisez-le à chaque paiement pour voir votre place dans la file d\'attente. Seuls les transferts en attente apparaissent dans la file ; dès que votre transfert est validé ou refusé, vous n\'êtes plus dans la file.</div>';
+    document.getElementById('trkGo').onclick = function(){ doSearch(document.getElementById('trkInput').value); };
+    document.getElementById('trkInput').addEventListener('keydown', function(e){ if(e.key === 'Enter') doSearch(this.value); });
+    if(myCode){
+      try{
+        const tc = await window.stsTransferCode(myCode);
+        const m = document.getElementById('trkMine'); if(!m) return;
+        m.innerHTML = '<div style="margin-top:12px;display:flex;justify-content:space-between;align-items:center;gap:10px;padding:10px 12px;border-radius:14px;border:1px solid #F3D9A4;background:#fff;"><div><div style="font-size:11px;letter-spacing:1px;opacity:.6;">MON CODE DE TRANSFERT</div><div style="font-weight:900;font-size:18px;">' + escHtml(tc) + '</div></div><div style="display:flex;gap:6px;"><button type="button" id="trkUse" style="padding:8px 12px;border-radius:12px;border:1px solid #F59E0B;background:#FFF3DC;color:#B45309;font-weight:800;">Utiliser</button><button type="button" id="trkCopy" style="padding:8px 12px;border-radius:12px;border:1px solid #D1D5DB;background:#fff;color:#111;font-weight:800;">📋</button></div></div>';
+        document.getElementById('trkUse').onclick = function(){ document.getElementById('trkInput').value = tc; doSearch(tc); };
+        document.getElementById('trkCopy').onclick = function(){ window.stsCopy(tc); };
+      }catch(e){}
+    }
+  };
+  const doSearch = async function(raw){
+    const t = String(raw || '').trim().toUpperCase().replace(/\s+/g, '');
+    if(!t){ toast('Collez d\'abord le code de transfert'); return; }
+    body.innerHTML = '<div style="text-align:center;padding:30px 0;font-weight:800;">Recherche en cours' + LDOTS + '</div>';
+    try{
+      const q = await db.collection('companies').where('transferCode', '==', t).limit(1).get();
+      if(q.empty){ body.innerHTML = '<div style="padding:14px;border-radius:14px;background:#FEE2E2;color:#991B1B;font-weight:700;">Code introuvable. Vérifiez le code et réessayez.</div><button type="button" id="trkAgain" style="margin-top:14px;width:100%;padding:14px;border-radius:16px;border:2px solid #F3D9A4;background:#fff;font-weight:800;color:#B45309;">🔍 Suivre un autre code</button>'; document.getElementById('trkAgain').onclick = function(){ showInput(''); }; return; }
+      const co = q.docs[0].data(); const items = await window.stsGetQueue();
+      const idx = items.findIndex(x => x.code === co.code);
+      const again = '<button type="button" id="trkAgain" style="margin-top:14px;width:100%;padding:14px;border-radius:16px;border:2px solid #F3D9A4;background:#fff;font-weight:800;color:#B45309;">🔍 Suivre un autre code</button>';
+      if(idx < 0){
+        body.innerHTML = '<div style="padding:16px;border-radius:18px;background:#0F2A1F;color:#D1FAE5;"><div style="font-weight:900;font-size:17px;">Aucun transfert en attente</div><div style="font-size:14px;margin-top:6px;">Il n\'y a pas de paiement en attente pour ce code. Faites un paiement puis revenez ici avec le même code pour voir votre place.</div></div>' + again;
+      }else{
+        const me = items[idx], ahead = idx, ms = me.at ? Date.now() - new Date(me.at).getTime() : 0, late = ms > 6 * 3600000;
+        const h = Math.floor(ms / 3600000), mn = Math.floor(ms % 3600000 / 60000), pct = Math.max(3, Math.min(100, Math.round(ms / (6 * 3600000) * 100)));
+        const nm = me.name;
+        body.innerHTML = '<div style="padding:16px;border-radius:22px;background:linear-gradient(135deg,#0B1B33,#1E3A5F);color:#fff;">'
+          + '<div style="font-size:14px;opacity:.9;">● Service : <b>' + escHtml(me.service) + '</b></div>'
+          + '<div style="margin:6px 0;"><span style="font-size:56px;font-weight:900;">#' + (idx + 1) + '</span> <span style="opacity:.8;">/ ' + items.length + ' en attente</span></div>'
+          + '<div style="font-size:16px;font-weight:700;">' + (ahead === 0 ? 'Vous êtes en tête de file !' : (ahead === 1 ? 'Il y a 1 personne devant vous' : 'Il y a ' + ahead + ' personnes devant vous')) + '</div>'
+          + '<div style="margin-top:12px;padding:10px 12px;border-radius:14px;border:1px solid rgba(255,255,255,0.25);background:rgba(255,255,255,0.08);"><div style="font-size:14px;">' + (late ? '⚠️ Dépasse la fenêtre de 6 h' : '⏱️ Attente : ' + h + ' h ' + mn + ' min (fenêtre de 6 h)') + '</div><div style="height:6px;border-radius:6px;background:rgba(255,255,255,0.2);margin-top:6px;overflow:hidden;"><div style="height:100%;width:' + (late ? 100 : pct) + '%;background:' + (late ? '#EF4444' : '#F59E0B') + ';"></div></div></div></div>'
+          + '<div style="font-size:12.5px;opacity:.75;margin:10px 2px;">Note : les transferts sont confirmés entre 10 minutes et 6 heures. Au-delà de 6 heures, contactez un admin.</div>'
+          + '<div style="font-weight:900;font-size:17px;margin:12px 0 8px;">🕒 File d\'attente</div>' + window.stsQueueRowsHTML(items, co.code, false)
+          + '<div id="trkAlert" style="margin-top:12px;"><button type="button" class="primary" data-alert-btn style="width:100%;padding:14px;border-radius:16px;border:none;background:linear-gradient(135deg,#F59E0B,#EA580C);color:#fff;font-weight:900;font-size:15px;">🔔 Alerter STS sur WhatsApp</button><div style="height:6px;border-radius:6px;background:#E5E7EB;overflow:hidden;margin-top:8px;"><div data-alert-bar style="height:100%;width:0%;background:#475569;"></div></div></div>' + again;
+        window.stsBindAlert(body.querySelector('#trkAlert'), co.code, nm, t);
+      }
+      document.getElementById('trkAgain').onclick = function(){ showInput(''); };
+    }catch(e){
+      body.innerHTML = '<div style="padding:14px;border-radius:14px;background:#FEE2E2;color:#991B1B;font-weight:700;">Impossible de charger pour le moment. Vérifiez votre connexion et réessayez.</div><button type="button" id="trkAgain" style="margin-top:14px;width:100%;padding:14px;border-radius:16px;border:2px solid #F3D9A4;background:#fff;font-weight:800;color:#B45309;">Réessayer</button>';
+      document.getElementById('trkAgain').onclick = function(){ showInput(t); };
+    }
+  };
+  if(prefill){ showInput(prefill); doSearch(prefill); } else showInput('');
+};
+
+// ----- Commentaires des clients
+window.stsSyncReviews = async function(pkgs){
+  try{
+    const oc = await getOwnerCode(); let done = {};
+    try{ done = JSON.parse(localStorage.getItem('sts_rv_synced') || '{}'); }catch(e){}
+    let n = 0;
+    for(const p of (pkgs || [])){
+      if(n >= 25) break;
+      if(!p || !p.rating || !p.ratingComment) continue;
+      const sig = p.ratingComment + '|' + (p.ratingReply || '');
+      if(done[p.trackingId] === sig) continue;
+      const scope = (p.companyCode && p.companyCode !== oc) ? p.companyCode : '__sts';
+      await db.collection('reviews').doc(p.trackingId).set({trackingId: p.trackingId, scope: scope, name: p.name || 'Client', stars: parseInt(p.rating, 10) || 0, comment: p.ratingComment, reply: p.ratingReply || '', at: p.ratedAt || new Date().toISOString()}, {merge: true});
+      done[p.trackingId] = sig; n++;
+    }
+    if(n) localStorage.setItem('sts_rv_synced', JSON.stringify(done));
+  }catch(e){}
+};
+window.stsReviewRowHTML = function(r, canDel, coName){
+  const st = Math.max(0, Math.min(5, parseInt(r.stars, 10) || 0));
+  return '<div style="padding:9px 0;border-top:1px solid var(--border);overflow-wrap:anywhere;"><b style="color:#F5B93D;">' + '★'.repeat(st) + '☆'.repeat(5 - st) + '</b> · <b>' + escHtml(r.name || 'Client') + '</b> <span class="sub" style="font-size:11px;">' + escHtml(window.stsFmtDT(r.at)) + '</span>'
+    + (coName ? '<div class="sub" style="font-size:12px;margin:1px 0 0;">🏢 ' + escHtml(coName) + '</div>' : '')
+    + '<div style="margin-top:3px;">💬 « ' + escHtml(r.comment || '') + ' »</div>'
+    + (r.reply ? '<div class="sub" style="margin-top:2px;">↩️ Réponse : « ' + escHtml(r.reply) + ' »</div>' : '')
+    + (canDel ? '<button type="button" class="ghost" data-rv-del="' + escHtml(r.trackingId) + '" style="margin-top:6px;width:auto;padding:5px 12px;font-size:12px;color:var(--danger);border-color:rgba(239,93,93,0.4);">🗑️ Supprimer</button>' : '') + '</div>';
+};
+window.stsBindReviewDel = function(host, refill){
+  host.querySelectorAll('[data-rv-del]').forEach(function(b){
+    b.onclick = async function(){
+      if(!confirm('Supprimer ce commentaire ?')) return;
+      b.disabled = true; b.innerHTML = 'Suppression' + LDOTS;
+      const tid = b.dataset.rvDel;
+      try{ await db.collection('reviews').doc(tid).delete(); await db.collection('packages').doc(tid).set({ratingComment: ''}, {merge: true}); }catch(e){ toast('Échec de la suppression'); }
+      refill();
+    };
+  });
+};
+window.fillClientReviews = async function(host){
+  try{
+    if(!clientPhone) return;
+    const pk = window.__clPkgs || [], oc = await getOwnerCode();
+    const scopes = [];
+    pk.filter(p => p && !p.hiddenByClient).forEach(p => { const sc = (p.companyCode && p.companyCode !== oc) ? p.companyCode : '__sts'; if(scopes.indexOf(sc) < 0) scopes.push(sc); });
+    if(!scopes.length && clientLinkCompany && clientLinkCompany.code) scopes.push(clientLinkCompany.code);
+    if(!scopes.length) return;
+    const shell = sc => foldCardHTML('clrev-' + sc, '#F59E0B,#EF4444', '💬', 'Commentaires des clients', '…', '<div class="empty">Chargement' + LDOTS + '</div>');
+    host.innerHTML = scopes.map(shell).join(''); bindFoldCards(host);
+    await window.stsSyncReviews(pk);
+    const canDel = !!((adminSession && adminSession.isOwner) || (typeof adminStash !== 'undefined' && adminStash && adminStash.isOwner));
+    const paint = async function(){
+      let html = '';
+      for(const sc of scopes){
+        const docs = [];
+        try{ const sn = await db.collection('reviews').where('scope', '==', sc).get(); sn.forEach(d => docs.push(d.data())); }catch(e){}
+        docs.sort((a, b) => String(b.at || '').localeCompare(String(a.at || '')));
+        const nm = sc === '__sts' ? 'Sam Trace Store' : (companyNameCache[sc] || '');
+        html += foldCardHTML('clrev-' + sc, '#F59E0B,#EF4444', '💬', 'Commentaires des clients' + (scopes.length > 1 && nm ? ' · ' + nm : ''), docs.length,
+          docs.length ? docs.map(r => window.stsReviewRowHTML(r, canDel, '')).join('') : '<p class="sub" style="margin:0;">Aucun commentaire pour le moment.</p>');
+      }
+      host.innerHTML = html; bindFoldCards(host); window.stsBindReviewDel(host, paint);
+    };
+    await paint();
+  }catch(e){ try{ host.querySelectorAll('.empty').forEach(el => { el.textContent = 'Impossible de charger pour le moment.'; }); }catch(e2){} }
+};
+window.fillOwnReviews = async function(host){
+  try{
+    host.innerHTML = foldCardHTML('ownrev', '#F59E0B,#EF4444', '💬', 'Commentaires des clients', '…', '<div class="empty">Chargement' + LDOTS + '</div>'); bindFoldCards(host);
+    try{ const pk = (await getAllPackages()).filter(p => p && p.rating && p.ratingComment); await window.stsSyncReviews(pk); }catch(e){}
+    const cos = {}; try{ (await getAllCompanies()).forEach(c => { cos[c.code] = c.companyName || c.code; }); }catch(e){}
+    const paint = async function(){
+      const docs = []; try{ const sn = await db.collection('reviews').get(); sn.forEach(d => docs.push(d.data())); }catch(e){}
+      docs.sort((a, b) => String(b.at || '').localeCompare(String(a.at || '')));
+      host.innerHTML = foldCardHTML('ownrev', '#F59E0B,#EF4444', '💬', 'Commentaires des clients', docs.length,
+        '<p class="sub" style="margin:0 0 6px;">Seul l\'admin peut supprimer un commentaire. Les clients voient ces commentaires avec le nom de la personne.</p>' + (docs.length ? docs.map(r => window.stsReviewRowHTML(r, true, r.scope === '__sts' ? 'Sam Trace Store' : (cos[r.scope] || r.scope))).join('') : '<p class="sub" style="margin:0;">Aucun commentaire pour le moment.</p>'));
+      bindFoldCards(host); window.stsBindReviewDel(host, paint);
+    };
+    await paint();
+  }catch(e){ try{ host.querySelectorAll('.empty').forEach(el => { el.textContent = 'Impossible de charger pour le moment.'; }); }catch(e2){} }
+};
+
+// ----- Admin : dernière visite des entreprises
+window.fillOwnVisits = async function(host){
+  try{
+    host.innerHTML = foldCardHTML('ownvisits', '#8B5CF6,#EC4899', '🕒', 'Dernière visite', '…', '<div class="empty">Chargement' + LDOTS + '</div>'); bindFoldCards(host);
+    const paint = async function(){
+      const cos = await getAllCompanies();
+      const byDate = (a, b) => String(b.lastSeenAt || '').localeCompare(String(a.lastSeenAt || ''));
+      const un = cos.filter(c => c.visitSeen === false && c.lastSeenAt).sort(byDate);
+      const seen = cos.filter(c => c.visitSeen === true && c.lastSeenAt).sort(byDate).slice(0, 10);
+      const row = (c, isNew) => '<div style="padding:10px;margin-bottom:8px;border:1px solid var(--border);border-radius:12px;"><div style="font-weight:800;overflow-wrap:anywhere;">' + (coLogoMini(c) || '🏢') + ' ' + escHtml(c.companyName || c.code) + '</div>'
+        + '<div class="sub" style="font-size:12.5px;margin:3px 0 0;">📞 ' + escHtml(c.companyPhone || c.companyWhatsapp || '—') + (c.companyAddress ? ' · 📍 ' + escHtml(c.companyAddress) : '') + '</div>'
+        + '<div class="sub" style="font-size:12.5px;margin:2px 0 0;">🕒 Dernière visite : ' + escHtml(window.stsFmtDT(c.lastSeenAt)) + (c.subEndsAt ? ' · Abonnement jusqu\'au ' + escHtml(new Date(c.subEndsAt).toLocaleDateString('fr-FR')) : '') + '</div>'
+        + '<button type="button" class="miniBtn" data-visit-to="' + (isNew ? '1' : '0') + '" data-visit-code="' + escHtml(c.code) + '" style="margin-top:8px;">' + (isNew ? '👁️ Vue' : '↩️ Non vue') + '</button></div>';
+      host.innerHTML = foldCardHTML('ownvisits', '#8B5CF6,#EC4899', '🕒', 'Dernière visite', un.length,
+        (un.length ? un.map(c => row(c, true)).join('') : '<p class="sub" style="margin:0 0 8px;">Aucune nouvelle visite. 🎉</p>')
+        + (seen.length ? '<div style="font-weight:800;margin:10px 0 6px;">Déjà vues (' + seen.length + ')</div>' + seen.map(c => row(c, false)).join('') : ''));
+      bindFoldCards(host);
+      host.querySelectorAll('[data-visit-code]').forEach(function(b){
+        b.onclick = async function(){
+          if(b.disabled) return; b.disabled = true; b.innerHTML = '…' + LDOTS;
+          try{ await db.collection('companies').doc(b.dataset.visitCode).set({visitSeen: b.dataset.visitTo === '1'}, {merge: true}); }catch(e){ toast('Échec, réessayez'); }
+          paint();
+        };
+      });
+    };
+    await paint();
+  }catch(e){ try{ host.querySelectorAll('.empty').forEach(el => { el.textContent = 'Impossible de charger pour le moment.'; }); }catch(e2){} }
+};
+
+// ----- Admin : cartes visibles tout de suite avec « Chargement… »
+window.stsOwnerSkeleton = function(view){
+  const lists = {
+    companies: [['🏢 Entreprises', 'rgba(249,115,22,0.6)'], ['📢 Annonces', 'rgba(251,146,60,0.6)'], ['💬 Messages', 'rgba(14,165,233,0.6)']],
+    payments: [['📧 Service Email', 'rgba(14,165,233,0.6)'], ['🔑 Code d\'accès propriétaire', 'rgba(16,185,129,0.6)'], ['💾 Sauvegarde des données', 'rgba(255,122,26,0.6)'], ['💰 Dépôts en attente', 'rgba(244,114,182,0.6)'], ['📝 Inscriptions en attente', 'rgba(219,39,119,0.6)']],
+    settings: [['💬 Mon numéro WhatsApp', 'rgba(16,185,129,0.6)'], ['🖼️ Logo de Sam Trace Store', 'rgba(249,115,22,0.6)'], ['🏷️ Coupon de fête', 'rgba(249,115,22,0.6)'], ['🛍️ Mon catalogue', 'rgba(249,115,22,0.6)']]
+  };
+  return (lists[view] || lists.companies).map(x => window.stsSk(x[0], x[1])).join('');
+};
 
 perfInstall();
 installInit();
