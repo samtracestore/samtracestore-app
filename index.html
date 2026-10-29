@@ -662,6 +662,21 @@ async function registerCompany(companyName, companyPhone, adminName, adminEmail,
   return code;
 }
 
+function stsCoGet(code){
+  try{
+    const j = localStorage.getItem('sts_co_' + code); if(!j) return null;
+    const d = JSON.parse(j); const lg = localStorage.getItem('sts_colo_' + code); if(lg) d.logoUrl = lg;
+    return d;
+  }catch(e){ return null; }
+}
+function stsCoSet(code, d){
+  try{
+    if(!d || !code) return;
+    const c = Object.assign({}, d); const lg = c.logoUrl; delete c.logoUrl;
+    localStorage.setItem('sts_co_' + code, JSON.stringify(c));
+    if(lg){ try{ localStorage.setItem('sts_colo_' + code, lg); }catch(e){} }
+  }catch(e){}
+}
 async function getCompanyByCode(code){
   try{
     const ref = db.collection('companies').doc(code);
@@ -671,8 +686,9 @@ async function getCompanyByCode(code){
     if(d && !d.companyName && !d.regPaymentStatus){
       try{ const sd = await ref.get({source: 'server'}); if(sd.exists) d = sd.data(); }catch(e){}
     }
+    if(d) stsCoSet(code, d);
     return d;
-  }catch(e){ return null; }
+  }catch(e){ return stsCoGet(code); }
 }
 
 async function getAllCompanies(){
@@ -1696,10 +1712,16 @@ async function getPackagesForPhone(phone, typedName){
   if(URL_COMPANY_PUB && !clientLinkCompany){ try{ await resolveClientLinkCompany(); }catch(e){} }
   phone = normalizePhone(phone);
   const digits = phone.replace(/\D/g, ''), last8 = digits.slice(-8);
-  const variants = Array.from(new Set([phone, digits, last8, '509' + last8, '+509' + last8, '00509' + last8].filter(Boolean)));
-  let failed = 0; const byId = {};
-  const snaps = await Promise.all(variants.map(v => db.collection('packages').where('phone','==',v).get().catch(()=>{ failed++; return null; })));
-  if(failed === variants.length) throw new Error('offline');
+  const variants = Array.from(new Set([phone, digits, last8, '509' + last8, '+509' + last8].filter(Boolean)));
+  const withTimeout = (p, ms) => Promise.race([p, new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), ms))]);
+  let snaps = null;
+  for(let attempt = 0; attempt < 3 && !snaps; attempt++){
+    let failed = 0;
+    const r = await Promise.all(variants.map(v => withTimeout(db.collection('packages').where('phone', '==', v).get(), 15000).catch(()=>{ failed++; return null; })));
+    if(failed < variants.length) snaps = r; else await new Promise(res => setTimeout(res, 900));
+  }
+  if(!snaps) throw new Error('offline');
+  const byId = {};
   snaps.forEach(sn => { if(sn) sn.forEach(doc => { const d = doc.data(); if(d && d.trackingId && stsSamePhone(d.phone, phone)) byId[d.trackingId] = d; }); });
   let pkgs = Object.keys(byId).map(k => byId[k]);
   pkgs.sort((a,b)=> new Date(b.updatedAt) - new Date(a.updatedAt));
@@ -3817,7 +3839,7 @@ async function openGiftAdmin(code, name){
     const gcode = await ensureGiftCode(company);
     const st = computeGiftState(company, pkgs, gs, pay);
     const excluded = company.giftExcluded || [];
-    const clientsHTML = st.clients.length ? st.clients.map(c => '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;padding:7px 0;border-bottom:1px solid var(--border);font-size:13px;"><div style="min-width:0;overflow-wrap:anywhere;"><b>' + escHtml(c.name || '—') + '</b> · ' + escHtml(c.phone) + '<div class="sub" style="font-size:11.5px;margin:0;">Colis #' + escHtml(c.tid) + (c.at ? ' · ' + escHtml(new Date(c.at).toLocaleDateString('fr-FR')) : '') + '</div></div><button type="button" class="miniBtn" data-gex="' + escHtml(c.tid) + '" style="flex:0 0 auto;color:var(--danger);border-color:rgba(239,93,93,0.4);">Retirer</button></div>').join('') : '<p class="sub" style="margin:0;">Aucun client compté pour le moment.</p>';
+    const clientsHTML = st.clients.length ? st.clients.map(c => '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;padding:7px 0;border-bottom:1px solid var(--border);font-size:13px;"><div style="min-width:0;overflow-wrap:anywhere;"><b>' + escHtml(c.name || '—') + '</b> · ' + escHtml(c.phone) + '<div class="sub" style="font-size:11.5px;margin:0;">Colis #' + escHtml(c.tid) + (c.at ? ' · ' + escHtml(new Date(c.at).toLocaleDateString('fr-FR')) : '') + '</div>' + (() => { const pk = pkgs.find(x => x.trackingId === c.tid); if(!pk || !pk.rating) return '<div class=\"sub\" style=\"font-size:11.5px;margin:2px 0 0;\">Pas encore de note</div>'; const r = parseInt(pk.rating, 10) || 0; return '<div style=\"margin-top:3px;\"><b style=\"color:#F5B93D;\">' + '★'.repeat(r) + '☆'.repeat(5 - r) + '</b> (' + r + '/5)' + (pk.ratingComment ? '<div class=\"sub\" style=\"margin:2px 0 0;\">💬 « ' + escHtml(pk.ratingComment) + ' »</div>' : '') + (pk.ratingReply ? '<div class=\"sub\" style=\"margin:2px 0 0;\">↩️ « ' + escHtml(pk.ratingReply) + ' »</div>' : '') + '</div>'; })() + '</div><button type="button" class="miniBtn" data-gex="' + escHtml(c.tid) + '" style="flex:0 0 auto;color:var(--danger);border-color:rgba(239,93,93,0.4);">Retirer</button></div>').join('') : '<p class="sub" style="margin:0;">Aucun client compté pour le moment.</p>';
     const exHTML = excluded.length ? '<p class="sub" style="margin:10px 0 4px;">Colis retirés du comptage :</p>' + excluded.map(t => '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;padding:5px 0;font-size:13px;"><span>#' + escHtml(t) + '</span><button type="button" class="miniBtn" data-gin="' + escHtml(t) + '" style="flex:0 0 auto;">Remettre</button></div>').join('') : '';
     const led = ledger.length ? ledger.map(x => '<div style="display:flex;justify-content:space-between;gap:8px;padding:5px 0;border-bottom:1px solid var(--border);font-size:12.5px;"><span style="min-width:0;overflow-wrap:anywhere;">' + escHtml(x.note || x.kind) + ' · ' + escHtml(new Date(x.at).toLocaleDateString('fr-FR')) + '</span><b style="flex:0 0 auto;">' + (x.htg ? (x.htg > 0 ? '+' : '') + giftFmt(x.htg) + ' HTG ' : '') + (x.days ? (x.days > 0 ? '+' : '') + x.days + ' j' : '') + '</b></div>').join('') : '<p class="sub" style="margin:0;">Aucun mouvement.</p>';
     ov.firstChild.innerHTML = '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:10px;"><div style="font-weight:900;font-size:16px;overflow-wrap:anywhere;">🎁 ' + escHtml(name) + '</div><button type="button" class="ghost" id="gaClose" style="width:auto;padding:6px 14px;">Fermer</button></div>'
@@ -4982,6 +5004,7 @@ async function renderAdminPkgList(pkgs){
   list.querySelectorAll('[data-edit-btn]').forEach(b => {
     b.onclick = (e) => {
       e.stopPropagation();
+      if(b.disabled) return; b.disabled = true; b.innerHTML = 'Ouverture' + LDOTS;
       editingTrackingId = b.dataset.editBtn;
       pendingScrollToForm = true;
       renderAdmin();
@@ -4992,6 +5015,7 @@ async function renderAdminPkgList(pkgs){
       e.stopPropagation();
       const p = byId[b.dataset.newFor];
       if(!p) return;
+      if(b.disabled) return; b.disabled = true; b.innerHTML = 'Ouverture' + LDOTS;
       pendingNewColis = {name: p.name, phone: p.phone, destCountry: p.destCountry, destDepartment: p.destDepartment, destCommune: p.destCommune};
       editingTrackingId = null;
       renderAdmin();
@@ -7721,7 +7745,7 @@ async function renderClient(){
         hostF.innerHTML = '<div style="margin:0 0 12px;padding:14px;border-radius:16px;border:1px solid var(--border);background:rgba(255,255,255,0.04);text-align:center;">' + (co.logoUrl ? logoBoxHTML(co, 110, '20px', 'border:3px solid var(--accent);box-shadow:0 0 18px rgba(249,115,22,0.35);') : '') + '<div style="font-weight:900;font-size:18px;margin-top:6px;overflow-wrap:anywhere;">' + escHtml(co.companyName || '') + '</div>' + (co.verified === true ? '<div style="color:#60A5FA;font-weight:800;font-size:13px;">✔ Entreprise vérifiée</div>' : '') + (co.companyAddress ? '<div class="sub" style="margin-top:2px;overflow-wrap:anywhere;">📍 ' + escHtml(co.companyAddress) + '</div>' : '') + (bd ? '<div style="margin-top:6px;color:#F5B93D;font-weight:800;">⭐ ' + bd.avg + '/5 (' + bd.count + ' avis)</div>' : '') + (wa ? '<div><a href="https://wa.me/' + wa + '" target="_blank" rel="noopener" style="display:inline-block;margin-top:10px;padding:8px 16px;border-radius:12px;background:#25D366;color:#06210F;font-weight:800;text-decoration:none;">💬 Contacter l\'entreprise</a></div>' : '') + '</div>';
         db.collection('catalogs').doc(co.code).get().then(d => {
           const items = d.exists ? (d.data().items || []) : []; if(!items.length) return;
-          hostF.firstChild.insertAdjacentHTML('beforeend', '<div style="font-weight:800;margin:14px 0 6px;text-align:left;">🛍️ Nos produits</div><div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">' + items.map(it => '<div style="border:1px solid var(--border);border-radius:12px;overflow:hidden;text-align:left;">' + (it.img ? '<img src="' + it.img + '" alt="" style="width:100%;aspect-ratio:1/1;object-fit:cover;">' : '') + '<div style="padding:6px 8px;"><div style="font-weight:800;font-size:13px;overflow-wrap:anywhere;">' + escHtml(it.n) + '</div><div class="sub" style="font-size:12px;">' + escHtml(it.pr || '') + '</div></div></div>').join('') + '</div>');
+          hostF.insertAdjacentHTML('beforeend', '<div style="margin:0 0 12px;padding:14px;border-radius:16px;border:1px solid var(--border);background:rgba(255,255,255,0.04);"><div style="font-weight:800;margin:0 0 8px;text-align:left;">🛍️ Nos produits</div><div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">' + items.map(it => '<div style="border:1px solid var(--border);border-radius:12px;overflow:hidden;text-align:left;">' + (it.img ? '<img src="' + it.img + '" alt="" style="width:100%;aspect-ratio:1/1;object-fit:cover;">' : '') + '<div style="padding:6px 8px;"><div style="font-weight:800;font-size:13px;overflow-wrap:anywhere;">' + escHtml(it.n) + '</div><div class="sub" style="font-size:12px;">' + escHtml(it.pr || '') + '</div></div></div>').join('') + '</div></div>');
         }).catch(() => {});
       }).catch(() => {});
     }
@@ -8417,7 +8441,8 @@ async function fillCoStats(host){
       '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px;">' + box('Colis au total', pk.length) + box('Livrés', liv.length + (pk.length ? ' (' + Math.round(liv.length / pk.length * 100) + '%)' : '')) + box('Délai moyen Expédié → Livré', avgD !== null ? avgD + ' j' : '—') + box('Note des clients', avgR !== null ? avgR + '/5 (' + rated.length + ')' : '—') + '</div><p class="sub" style="font-size:12px;margin:0 0 10px;">Délai moyen = nombre de jours entre le statut Expédié et le statut Livré, en moyenne sur vos colis livrés.</p><div style="font-weight:800;margin-bottom:6px;">Colis ajoutés par semaine (6 dernières semaines)</div><div style="display:flex;gap:4px;">' + bars + '</div><p class="sub" style="font-size:12px;margin:6px 0 0;">Cette sem. = les 7 derniers jours ; −1 sem. = les 7 jours d\'avant ; et ainsi de suite jusqu\'à −5 sem.</p>');
     host.innerHTML += foldCardHTML('coreviews', '#F59E0B,#EF4444', '⭐', 'Avis de mes clients', rated.length, reviewsBlock);
     bindFoldCards(host);
-  }catch(e){}
+    try{ localStorage.setItem('sts_hst_' + companySession.code + '_stats', host.innerHTML); }catch(e2){}
+  }catch(e){ try{ if(host && host.innerHTML.indexOf('ldots') >= 0) host.querySelectorAll('.empty').forEach(el => { el.textContent = 'Impossible de charger pour le moment.'; }); }catch(e3){} }
 }
 async function fillCoRef(){
   const host = document.getElementById('coRefHost'); if(!host || !companySession) return;
@@ -8717,7 +8742,8 @@ async function renderOwnerPackages(){
     ${foldCardHTML('colis', '#F59E0B,#EC4899', '📦', 'Tous les colis', 0, `
       <input type="search" id="adminSearch" placeholder="🔍 Rechercher un client, un téléphone ou un n° de suivi" value="${escHtml(adminSearchQ)}" style="margin-bottom:12px;">
       <button type="button" class="ghost" id="btnPrintList" style="width:100%;margin-bottom:12px;color:#fff;border-color:var(--accent);">🖨️ Imprimer / enregistrer la liste en PDF</button>
-      <div id="adminList"><div class="empty">Chargement<span class="ldots"><i></i><i></i><i></i></span></div></div>`)}`;
+      <div id="adminList"><div class="empty">Chargement<span class="ldots"><i></i><i></i><i></i></span></div></div>`)}
+    <div id="ownStatsHost"></div>`;
   initLocationFields('','','');
   initColisNumField(isEditing);
   bindCarrierField();
@@ -8725,7 +8751,7 @@ async function renderOwnerPackages(){
 
   if(isEditing){
     try{
-      const existing = await getPackage(editingTrackingId);
+      const existing = (adminPkgsAll || []).find(x => x && x.trackingId === editingTrackingId) || await getPackage(editingTrackingId);
       if(existing){
         document.getElementById('pTrack').value = existing.trackingId;
         document.getElementById('pName').value = existing.name || '';
@@ -9386,7 +9412,7 @@ async function renderAdminCore(){
     return;
   }
 
-  const gateCompany = await getCompanyByCode(adminSession.code);
+  const gateCompany = await getCompanyFast(adminSession.code, ()=>{ if(adminSession && !adminSession.isOwner && (mode === 'admin' || (mode === 'company' && companyScreen === 'colis'))) window.softRender(); });
   const regPaymentStatus = gateCompany ? (gateCompany.regPaymentStatus || 'active') : 'active';
   if(regPaymentStatus !== 'active'){
     await renderRegistrationGate(main, gateCompany, regPaymentStatus);
@@ -9487,7 +9513,7 @@ async function renderAdminCore(){
 
   if(isEditing){
     try{
-      const existing = await getPackage(editingTrackingId);
+      const existing = (adminPkgsAll || []).find(x => x && x.trackingId === editingTrackingId) || await getPackage(editingTrackingId);
       if(existing){
         document.getElementById('pTrack').value = existing.trackingId;
         document.getElementById('pName').value = existing.name || '';
@@ -10073,11 +10099,11 @@ async function renderCompanySettings(main){
   setTimeout(fillCoRef, 0);
   setTimeout(fillCoCatalog, 0);
   main.innerHTML = `
-    <div id="annCoHost"></div>
-    <div id="coRulesHost"></div>
-    <div id="coCouponHost"></div>
-    <div id="coRefHost"></div>
-    <div id="coCatalogHost"></div>
+    <div id="annCoHost">${window.stsSk('📢 Annonces de STS', 'rgba(251,146,60,0.6)')}</div>
+    <div id="coRulesHost">${window.stsSk('📋 Règles à respecter par les entreprises', 'rgba(239,68,68,0.6)')}</div>
+    <div id="coCouponHost">${window.stsSk('🏷️ Coupon de fête pour mes clients', 'rgba(249,115,22,0.6)')}</div>
+    <div id="coRefHost">${window.stsSk('🤝 Parrainage', 'rgba(16,185,129,0.6)')}</div>
+    <div id="coCatalogHost">${window.stsSk('🛍️ Mon catalogue', 'rgba(249,115,22,0.6)')}</div>
     ${coEmailCardHTML(gsQuota, company && company.companyName)}
     <div class="card">
       <h2>🔔 Notifications · historique</h2>
@@ -10309,15 +10335,18 @@ const ownerCompactOpen = {};
 const coScreenCache = {};
 async function getCompanyFast(code, onChange){
   const c = companyHomeCache[code];
-  if(c && Date.now() - c.t < 300000){
+  const refresh = (prev) => {
     getCompanyByCode(code).then(fresh => {
+      if(!fresh) return;
       companyHomeCache[code] = {co: fresh, t: Date.now()};
-      if(onChange && fresh && window.stsStable(fresh) !== window.stsStable(c.co)) onChange();
+      if(onChange && window.stsStable(fresh) !== window.stsStable(prev)) onChange();
     }).catch(()=>{});
-    return c.co;
-  }
+  };
+  if(c && c.co && Date.now() - c.t < 300000){ refresh(c.co); return c.co; }
+  const saved = (c && c.co) || stsCoGet(code);
+  if(saved){ companyHomeCache[code] = {co: saved, t: Date.now() - 295000}; refresh(saved); return saved; }
   const co = await getCompanyByCode(code);
-  companyHomeCache[code] = {co: co, t: Date.now()};
+  if(co) companyHomeCache[code] = {co: co, t: Date.now()};
   return co;
 }
 async function renderCompany(){
@@ -10328,7 +10357,12 @@ async function renderCompany(){
     const old = document.getElementById('coSurveyHost'); if(old) old.remove();
     const host = document.createElement('div'); host.id = 'coSurveyHost'; main.insertBefore(host, main.firstChild);
     renderSurveyHost(host, 'company', companySession.code, companySession.companyName || '');
-    { const o1 = document.getElementById('coStatsHost'); if(o1) o1.remove(); } const hst = document.createElement('div'); hst.id = 'coStatsHost'; main.appendChild(hst); fillCoStats(hst);
+    { const o1 = document.getElementById('coStatsHost'); if(o1) o1.remove(); } const hst = document.createElement('div'); hst.id = 'coStatsHost'; main.appendChild(hst);
+    { let pre = ''; try{ pre = localStorage.getItem('sts_hst_' + companySession.code + '_stats') || ''; }catch(e){}
+      hst.innerHTML = pre || (foldCardHTML('costats', '#0EA5E9,#2563EB', '📈', 'Mes statistiques', '…', '<div class="empty">Chargement' + LDOTS + '</div>') + foldCardHTML('coreviews', '#F59E0B,#EF4444', '⭐', 'Avis de mes clients', '…', '<div class="empty">Chargement' + LDOTS + '</div>'));
+      bindFoldCards(hst);
+      if(pre) hst.querySelectorAll('button:not([data-fold-head])').forEach(b => { b.disabled = true; }); }
+    fillCoStats(hst);
     { const o2 = document.getElementById('coBadgeHost'); if(o2) o2.remove(); } const hb = document.createElement('div'); hb.id = 'coBadgeHost'; main.insertBefore(hb, main.firstChild);
     const __paintB = (co) => {
       const bd = companyBadge(co); if(!bd){ if(co && co.verified === true) hb.innerHTML = verifiedHeroHTML(co.companyName || ''); return; }
@@ -10419,7 +10453,7 @@ async function renderCompanyCore(){
     adminSession = {code: companySession.code, isOwner:false, companyName: companySession.companyName};
     updateCompanyBar();
     const ckey = companySession.code + ':colis';
-    if(coScreenCache[ckey]){ main.innerHTML = window.STS_LOAD_BANNER + coScreenCache[ckey]; main.style.pointerEvents = 'none'; main.style.opacity = '.55'; } else { main.innerHTML = window.STS_LOAD_BANNER; }
+    main.innerHTML = window.STS_LOAD_BANNER;
     try{ await renderAdminCore(); companyFixLogoutBtn(); }
     finally{ main.style.pointerEvents = ''; main.style.opacity = ''; { const lb = document.getElementById('stsLoadBanner'); if(lb) lb.remove(); } if(companySession && companyScreen === 'colis') coScreenCache[ckey] = main.innerHTML; }
     return;
@@ -10439,7 +10473,7 @@ async function renderCompanyCore(){
   if(companyScreen === 'gift'){ await renderCompanyGift(main); return; }
   if(companyScreen === 'settings'){
     const skey = (companySession ? companySession.code : '') + ':settings';
-    if(coScreenCache[skey]){ main.innerHTML = window.STS_LOAD_BANNER + coScreenCache[skey]; main.style.pointerEvents = 'none'; main.style.opacity = '.55'; } else { main.innerHTML = window.STS_LOAD_BANNER; }
+    main.innerHTML = window.STS_LOAD_BANNER;
     try{ await renderCompanySettings(main); }
     finally{ main.style.pointerEvents = ''; main.style.opacity = ''; { const lb = document.getElementById('stsLoadBanner'); if(lb) lb.remove(); } if(companySession && companyScreen === 'settings') coScreenCache[skey] = main.innerHTML; }
     return;
@@ -10469,6 +10503,9 @@ async function renderCompanyCore(){
     ${whatsappBubbleHTML()}`;
   document.getElementById('coBtnColis').onclick = ()=>{ companyScreen = 'colis'; renderCompany(); };
   document.getElementById('coBtnSettings').onclick = ()=>{ companyScreen = 'settings'; renderCompany(); };
+  window.stsHostPersist(document.getElementById('coTodayBox'), 'sts_hst_' + companySession.code + '_today');
+  window.stsHostPersist(document.getElementById('coGiftBox'), 'sts_hst_' + companySession.code + '_gift');
+  { const go0 = document.getElementById('coGiftGo'); if(go0) go0.onclick = ()=>{ companyScreen = 'gift'; renderCompany(); window.scrollTo(0, 0); }; }
   loadCoToday();
   loadCoGift();
   const _ar = document.getElementById('coAddrReminder'); if(_ar) _ar.onclick = ()=>{ companyScreen = 'settings'; renderCompany(); };
@@ -10547,6 +10584,54 @@ window.stsStable = function(o){
     };
   });
 })();
+
+
+// ===== CARTES TOUJOURS PRÉSENTES =====
+window.stsSk = function(title, col){
+  return '<div class="card" style="border:1px solid ' + col + ';"><h2>' + title + '</h2><div class="empty">Chargement' + LDOTS + '</div></div>';
+};
+window.stsHostPersist = function(el, key){
+  if(!el) return;
+  try{ const h = localStorage.getItem(key); if(h && !el.innerHTML.trim()) el.innerHTML = h; }catch(e){}
+  try{
+    new MutationObserver(function(){
+      const h = el.innerHTML.trim();
+      try{ if(h && h.indexOf('ldots') < 0) localStorage.setItem(key, h); else if(!h) localStorage.removeItem(key); }catch(e){}
+    }).observe(el, {childList: true, subtree: true});
+  }catch(e){}
+};
+window.fillOwnStats = async function(host){
+  try{
+    host.innerHTML = foldCardHTML('ownstats', '#0EA5E9,#2563EB', '📈', 'Mes statistiques STS', '…', '<div class="empty">Chargement' + LDOTS + '</div>')
+      + foldCardHTML('ownreviews', '#F59E0B,#EF4444', '⭐', 'Avis de mes clients STS', '…', '<div class="empty">Chargement' + LDOTS + '</div>');
+    bindFoldCards(host);
+    const pk = (await getAllPackages()).filter(p => isOwnPkg(p) && !p.deletedByCompany);
+    const now = Date.now(), W = 7 * 86400000, weeks = [0, 0, 0, 0, 0, 0];
+    const firstOf = p => new Date((p.history && p.history[0] && p.history[0].date) || p.createdAt || p.updatedAt || 0).getTime();
+    pk.forEach(p => { const i = Math.floor((now - firstOf(p)) / W); if(i >= 0 && i < 6) weeks[5 - i]++; });
+    const liv = pk.filter(p => p.status === 'livre'), delays = [];
+    liv.forEach(p => { const h = p.history || [], a = h.find(x => x.status === 'expedie'), b = h.slice().reverse().find(x => x.status === 'livre'); if(a && b){ const d = (new Date(b.date) - new Date(a.date)) / 86400000; if(d >= 0) delays.push(d); } });
+    const avgD = delays.length ? Math.round(delays.reduce((x, y) => x + y, 0) / delays.length * 10) / 10 : null;
+    const rated = pk.filter(p => p.rating);
+    const avgR = rated.length ? Math.round(rated.reduce((x, p) => x + (parseInt(p.rating, 10) || 0), 0) / rated.length * 10) / 10 : null;
+    const mx = Math.max(1, ...weeks);
+    const bars = weeks.map((n, i) => '<div style="flex:1;text-align:center;"><div style="height:70px;display:flex;align-items:flex-end;justify-content:center;"><div style="width:70%;height:' + Math.max(4, Math.round(n / mx * 70)) + 'px;background:linear-gradient(180deg,#38BDF8,#2563EB);border-radius:6px 6px 0 0;"></div></div><div style="font-weight:800;font-size:12px;">' + n + '</div><div class="sub" style="font-size:10px;">' + (i === 5 ? 'Cette sem.' : '−' + (5 - i) + ' sem.') + '</div></div>').join('');
+    const box = (t, v) => '<div style="flex:1;min-width:120px;padding:9px 10px;border:1px solid var(--border);border-radius:12px;"><div class="sub" style="font-size:11.5px;">' + t + '</div><div style="font-weight:900;font-size:17px;">' + v + '</div></div>';
+    const reviews = rated.length ? rated.slice().sort((a, b) => String(b.ratedAt || '').localeCompare(String(a.ratedAt || ''))).map(p => '<div style="font-size:13px;padding:6px 0;border-top:1px solid var(--border);overflow-wrap:anywhere;"><b style="color:#F5B93D;">' + '★'.repeat(parseInt(p.rating, 10) || 0) + '☆'.repeat(5 - (parseInt(p.rating, 10) || 0)) + '</b> · ' + escHtml(p.name || 'Client') + (p.ratingComment ? '<div class="sub" style="margin-top:2px;">💬 « ' + escHtml(p.ratingComment) + ' »</div>' : '') + (p.ratingReply ? '<div class="sub" style="margin-top:2px;">↩️ Réponse : « ' + escHtml(p.ratingReply) + ' »</div>' : '') + '</div>').join('') : '<p class="sub" style="margin:0;">Aucun avis pour le moment.</p>';
+    host.innerHTML = foldCardHTML('ownstats', '#0EA5E9,#2563EB', '📈', 'Mes statistiques STS', pk.length,
+        '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px;">' + box('Colis au total', pk.length) + box('Livrés', liv.length + (pk.length ? ' (' + Math.round(liv.length / pk.length * 100) + '%)' : '')) + box('Délai moyen Expédié → Livré', avgD !== null ? avgD + ' j' : '—') + box('Note des clients', avgR !== null ? avgR + '/5 (' + rated.length + ')' : '—') + '</div><div style="font-weight:800;margin-bottom:6px;">Colis ajoutés par semaine (6 dernières semaines)</div><div style="display:flex;gap:4px;">' + bars + '</div>')
+      + foldCardHTML('ownreviews', '#F59E0B,#EF4444', '⭐', 'Avis de mes clients STS', rated.length, (avgR !== null ? '<div style="font-weight:800;margin-bottom:4px;">⭐ ' + avgR + '/5 (' + rated.length + ' avis)</div>' : '') + reviews);
+    bindFoldCards(host);
+  }catch(e){ try{ host.querySelectorAll('.empty').forEach(el => { el.textContent = 'Impossible de charger pour le moment.'; }); }catch(e2){} }
+};
+(function(){
+  const main = document.getElementById('main'); if(!main) return;
+  new MutationObserver(function(){
+    const h = document.getElementById('ownStatsHost');
+    if(h && !h.dataset.filled && !h.firstChild){ h.dataset.filled = '1'; window.fillOwnStats(h); }
+  }).observe(main, {childList: true, subtree: true});
+})();
+
 
 perfInstall();
 installInit();
