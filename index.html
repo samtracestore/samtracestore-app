@@ -1746,7 +1746,7 @@ function clientScopeCode(){
   if(mode === 'client'){
     if(clientLinkCompany) return clientLinkCompany.code;
     if(URL_COMPANY_PUB) return '__none__';
-    return '__owner__';
+    return null;
   }
   return null;
 }
@@ -2605,7 +2605,7 @@ async function renderClientCore(){
       ${window.stsCoNoPhoneCard()}
       <div class="card">
         <h2>Suivez vos colis</h2>
-        <p class="sub">Entrez vos informations pour retrouver uniquement vos colis chez ${clientLinkCompany ? clientLinkCompany.companyName : 'Sam Trace Store'}.</p>
+        <p class="sub">${clientLinkCompany ? 'Entrez vos informations pour retrouver uniquement vos colis chez ' + clientLinkCompany.companyName + '.' : 'Entrez vos informations pour retrouver vos colis (Sam Trace Store et entreprises partenaires), sur n\'importe quel appareil.'}</p>
         <label>Nom complet <span style="color:var(--muted);font-weight:400;">(prénom et nom, comme sur votre colis)</span></label>
         <input id="regName" placeholder="Votre nom">
         <label>Adresse email <span style="color:var(--danger);">* obligatoire / obligatwa</span></label>
@@ -2769,7 +2769,7 @@ async function renderClientCore(){
     const pkgs = allPkgs.filter(p => !p.hiddenByClient).sort((a, b) => pkgCreatedAt(a) - pkgCreatedAt(b));
     const list = document.getElementById('pkgList');
     if(pkgs.length===0){
-      list.innerHTML = `<div class="card"><div class="empty"><div class="big">📦</div>Vous n'avez pas de colis chez ${escHtml(clientLinkCompany ? clientLinkCompany.companyName : 'Sam Trace Store')} pour le moment.<br><span class="sub" style="font-size:12.5px;">Vérifiez que le nom et le numéro sont exactement ceux de votre colis.</span></div></div>`;
+      list.innerHTML = `<div class="card"><div class="empty"><div class="big">📦</div>${clientLinkCompany ? "Vous n'avez pas de colis chez " + escHtml(clientLinkCompany.companyName) + ' pour le moment.' : 'Aucun colis trouvé avec ce nom et ce numéro pour le moment. Écrivez le nom et le numéro exactement comme sur votre colis.'}<br><span class="sub" style="font-size:12.5px;">Vérifiez que le nom et le numéro sont exactement ceux de votre colis.</span></div></div>`;
     } else {
       list.innerHTML = pkgs.map(p => {
         const n = nums[p.trackingId];
@@ -5447,7 +5447,7 @@ async function renderOwnerPanel(main){
       </button>
       <button id="btnOwnerSettings" class="${ownerView==='settings'?'active':''}" style="flex:1;font-size:12.5px;padding-left:2px;padding-right:2px;">Paramètres</button>
     </div>
-    ${ownerView === 'companies' ? '<div id="ownExpiryHost"></div><div id="ownVisitsHost"></div><div id="ownReviewsHost"></div>' : ''}<div id="ownerContent"></div>
+    ${ownerView === 'companies' ? '<div id="ownExpiryHost"></div><div id="ownDupHost"></div><div id="ownVisitsHost"></div><div id="ownReviewsHost"></div>' : ''}<div id="ownerContent"></div>
     ${whatsappBubbleHTML()}`;
   document.getElementById('btnAdminLogout').onclick = ()=>{ adminSession=null; stopPendingListener(); renderAdmin(); };
   document.getElementById('btnTestSound').onclick = ()=>{ unlockNotifAudio(); playNotificationSound(); toast("🔊 Test du son envoyé"); };
@@ -5749,6 +5749,8 @@ async function renderOwnerPayments(){
         </div>
       </div>`;
 
+    let bkCfg = {}; try{ const bd0 = await db.collection('settings').doc('backup').get(); bkCfg = bd0.exists ? (bd0.data() || {}) : {}; }catch(e){}
+    if(!bkCfg.email){ try{ bkCfg.email = localStorage.getItem('sts_backup_email') || ''; }catch(e){} }
     const backupCard = `<div class="card" style="padding:0;overflow:hidden;">
         <div style="background:linear-gradient(135deg,#FF7A1A,#F59E0B);padding:14px 16px;display:flex;align-items:center;gap:10px;">
           <span style="font-size:22px;">💾</span>
@@ -5758,6 +5760,14 @@ async function renderOwnerPayments(){
           ${backupReminderHTML()}
           <p class="sub">Télécharge une copie de toutes tes entreprises et de tous tes colis, au cas où.</p>
           <button class="primary" id="btnExportBackup" style="margin-top:6px;">📥 Exporter mes données</button>
+          <div style="margin-top:14px;padding-top:12px;border-top:1px solid var(--border);">
+            <label>📧 Email pour recevoir la sauvegarde automatique</label>
+            <input id="backupEmailInput" type="email" placeholder="exemple@gmail.com" value="${escHtml(bkCfg.email || '')}">
+            <label style="display:flex;gap:8px;align-items:center;margin-top:8px;font-weight:600;"><input type="checkbox" id="backupAutoChk" ${bkCfg.auto === false ? '' : 'checked'} style="width:auto;margin:0;"> Envoyer automatiquement chaque semaine (à l'ouverture de l'Admin)</label>
+            <button class="primary" id="btnSaveBackupEmail" style="margin-top:10px;">💾 Enregistrer</button>
+            <button class="ghost" id="btnSendBackupNow" style="margin-top:8px;">📧 Envoyer une sauvegarde maintenant</button>
+            <p class="sub" id="backupEmailMsg" style="margin:8px 0 0;font-size:12.5px;">${bkCfg.lastAutoBackupAt ? 'Dernier envoi : ' + escHtml(new Date(bkCfg.lastAutoBackupAt).toLocaleString('fr-FR')) : 'Aucun envoi pour le moment.'}</p>
+          </div>
           <button class="primary" id="btnCleanOrphans" style="margin-top:10px;background:linear-gradient(135deg,#F59E0B,#EA580C);">🧹 Nettoyer les colis orphelins</button>
         </div>
       </div>`;
@@ -6104,6 +6114,24 @@ async function renderOwnerPayments(){
         renderAdmin();
       };
     });
+    { const sv = document.getElementById('btnSaveBackupEmail'), snd = document.getElementById('btnSendBackupNow'), msg = document.getElementById('backupEmailMsg');
+      const say = (t, ok) => { if(msg){ msg.style.color = ok ? '#3ECF8E' : '#EF5D5D'; msg.textContent = t; } };
+      if(sv) sv.onclick = async ()=>{
+        const em = (document.getElementById('backupEmailInput').value || '').trim(), auto = document.getElementById('backupAutoChk').checked;
+        if(em && window.stsEmailBad(em)){ say('Adresse email invalide ou mal écrite (ex : nom@gmail.com)', false); return; }
+        sv.disabled = true; sv.innerHTML = 'Enregistrement' + LDOTS;
+        try{ await db.collection('settings').doc('backup').set({email: em, auto: auto}, {merge: true}); try{ localStorage.setItem('sts_backup_email', em); }catch(e){} say(em ? '✅ Enregistré. La sauvegarde sera envoyée à ' + em : '✅ Enregistré (aucun email).', true); }
+        catch(e){ say("Échec de l'enregistrement, réessayez.", false); }
+        sv.disabled = false; sv.textContent = '💾 Enregistrer';
+      };
+      if(snd) snd.onclick = async ()=>{
+        const em = (document.getElementById('backupEmailInput').value || '').trim();
+        if(!em || window.stsEmailBad(em)){ say("Écrivez d'abord une adresse email valide, puis touchez Enregistrer.", false); return; }
+        snd.disabled = true; snd.innerHTML = 'Envoi' + LDOTS;
+        const ok = await window.stsSendBackupEmail(em);
+        say(ok ? '✅ Sauvegarde envoyée à ' + em : "Envoi impossible pour le moment, réessayez plus tard.", ok);
+        snd.disabled = false; snd.textContent = '📧 Envoyer une sauvegarde maintenant';
+      }; }
     document.getElementById('btnExportBackup').onclick = async ()=>{
       try{
         toast("Préparation de l'export...");
@@ -10375,7 +10403,8 @@ async function getCompanyFast(code, onChange){
   const c = companyHomeCache[code];
   const refresh = (prev) => {
     getCompanyByCode(code).then(fresh => {
-      if(!fresh) return;
+      if(!fresh){ window.stsCompanyGone(code); return; }
+      if(fresh.blocked === true && companySession && companySession.code === code){ window.stsForceView('🚫', 'Vous avez été temporairement bloqué par SamTraceStore. Veuillez contacter le support.', fresh.blockedReason, code); return; }
       companyHomeCache[code] = {co: fresh, t: Date.now()};
       if(onChange && window.stsStable(fresh) !== window.stsStable(prev)) onChange();
     }).catch(()=>{});
@@ -10459,6 +10488,13 @@ async function renderCompanyCore(){
           company = cd.exists ? cd.data() : null;
         }catch(e){ restoreBtn(); toast("Problème de connexion internet. Réessayez : ce n'est pas compté comme une erreur de code."); return; }
         if(!company){
+          try{
+            const tb = await db.collection('companyTombstones').doc(code).get();
+            if(tb.exists){
+              main.innerHTML = `<div class="card"><div class="warnBox" style="color:var(--danger);border-color:rgba(239,93,93,0.3);background:rgba(239,93,93,0.1);">🗑️ Ce compte a été supprimé par SamTraceStore.<div style="margin-top:8px;overflow-wrap:anywhere;white-space:pre-wrap;">📝 <b>Motif :</b> ${escHtml(tb.data().reason || '')}</div></div></div>${whatsappBubbleHTML()}`;
+              return;
+            }
+          }catch(e){}
           registerFailedLogin('company');
           toast("Code invalide. Inscrivez d'abord votre entreprise avec le bouton Admin.");
           renderCompany();
@@ -10668,7 +10704,7 @@ window.fillOwnStats = async function(host){
 (function(){
   const main = document.getElementById('main'); if(!main) return;
   new MutationObserver(function(){
-    [['ownStatsHost', 'fillOwnStats'], ['ownVisitsHost', 'fillOwnVisits'], ['ownReviewsHost', 'fillOwnReviews'], ['ownTrackHost', 'fillOwnTrack'], ['ownExpiryHost', 'fillOwnExpiry'], ['ownTopProdHost', 'fillOwnTop']].forEach(function(x){
+    [['ownStatsHost', 'fillOwnStats'], ['ownVisitsHost', 'fillOwnVisits'], ['ownReviewsHost', 'fillOwnReviews'], ['ownTrackHost', 'fillOwnTrack'], ['ownExpiryHost', 'fillOwnExpiry'], ['ownDupHost', 'fillOwnDup'], ['ownTopProdHost', 'fillOwnTop']].forEach(function(x){
       const h = document.getElementById(x[0]);
       if(h && !h.dataset.filled && !h.firstChild){ h.dataset.filled = '1'; window[x[1]](h); }
     });
@@ -11593,6 +11629,148 @@ window.stsDoBackup = async function(){
     row.insertAdjacentHTML('beforebegin', '<div id="ownBackupBar" style="margin-bottom:10px;padding:10px 12px;border-radius:12px;background:rgba(245,158,11,0.15);border:1px solid rgba(245,158,11,0.5);color:#FBBF24;font-weight:700;font-size:13px;">' + (days === null ? '⏰ Aucune sauvegarde faite sur cet appareil.' : '⏰ Dernière sauvegarde il y a ' + days + ' jours.') + '<div style="margin-top:8px;"><button type="button" class="primary" id="ownBackupNow" style="width:auto;padding:8px 14px;">💾 Sauvegarder maintenant</button></div></div>');
     const b = document.getElementById('ownBackupNow'); if(b) b.onclick = function(){ b.disabled = true; b.innerHTML = 'Sauvegarde' + LDOTS; window.stsDoBackup(); };
   }).observe(document.body, {childList: true, subtree: true});
+})();
+
+
+// ===== V9 : gestion des doublons d'identités =====
+window.STS_DUP_REASON = 'Vous ne pouvez pas avoir deux comptes.';
+window.stsForceView = function(icon, title, reason, code){
+  try{
+    const main = document.getElementById('main'); if(!main) return;
+    companySession = null; if(adminSession && !adminSession.isOwner) adminSession = null; companyScreen = 'home';
+    try{ localStorage.removeItem('sts_co_' + code); localStorage.removeItem('sts_colo_' + code); }catch(e){}
+    try{ delete companyHomeCache[code]; }catch(e){}
+    main.innerHTML = '<div class="card"><div class="warnBox" style="color:var(--danger);border-color:rgba(239,93,93,0.3);background:rgba(239,93,93,0.1);">' + icon + ' ' + escHtml(title) + (reason ? '<div style="margin-top:8px;overflow-wrap:anywhere;white-space:pre-wrap;">📝 <b>Motif :</b> ' + escHtml(reason) + '</div>' : '') + '</div><button type="button" class="primary" id="accMsgOk" style="margin-top:12px;">OK</button></div>';
+    const ok = document.getElementById('accMsgOk'); if(ok) ok.onclick = function(){ renderCompany(); };
+    if(typeof updateCompanyBar === 'function') updateCompanyBar();
+  }catch(e){}
+};
+window.stsCompanyGone = async function(code){
+  try{
+    const mine = (companySession && companySession.code === code) || (adminSession && !adminSession.isOwner && adminSession.code === code);
+    if(!mine) return;
+    const tb = await db.collection('companyTombstones').doc(code).get();
+    if(tb.exists) window.stsForceView('🗑️', 'Ce compte a été supprimé par SamTraceStore.', tb.data().reason || '', code);
+  }catch(e){}
+};
+window.fillOwnDup = async function(host){
+  try{
+    const TITLE = 'Gestion des doublons d\'identités des entreprises';
+    host.innerHTML = foldCardHTML('owndup', '#DC2626,#7C3AED', '🧬', TITLE, '…', '<div class="empty">Chargement' + LDOTS + '</div>'); bindFoldCards(host);
+    const paint = async function(){
+      const cos = await getAllCompanies();
+      const nkey = t => String(t || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]/g, '');
+      const groups = [], seenSets = {};
+      const add = function(label, members){
+        if(members.length < 2 || !members.some(c => c.dupConfirmed !== true)) return;
+        const id = members.map(c => c.code).sort().join('|'); if(seenSets[id]) return; seenSets[id] = 1;
+        groups.push({label: label, members: members});
+      };
+      const byName = {}, byPhone = {};
+      cos.forEach(c => {
+        const nk = nkey(c.companyName); if(nk) (byName[nk] = byName[nk] || []).push(c);
+        const pk = String(normalizePhone(c.companyPhone || '')).replace(/\D/g, '').slice(-8); if(pk.length >= 8) (byPhone[pk] = byPhone[pk] || []).push(c);
+      });
+      Object.keys(byName).forEach(k => add('Même nom : « ' + (byName[k][0].companyName || k) + ' »', byName[k]));
+      Object.keys(byPhone).forEach(k => add('Même téléphone : ' + (byPhone[k][0].companyPhone || k), byPhone[k]));
+      const row = c => '<div style="padding:10px;margin-top:8px;border:1px solid var(--border);border-radius:12px;"><div style="font-weight:800;overflow-wrap:anywhere;display:flex;align-items:center;flex-wrap:wrap;gap:4px;">' + (coLogoMini(c) || '🏢') + '<span>' + escHtml(c.companyName || c.code) + '</span>'
+        + (c.blocked ? '<span style="padding:2px 8px;border-radius:10px;font-size:11px;background:rgba(239,93,93,0.2);color:#FF8A8A;">🚫 Bloquée</span>' : '') + (c.dupConfirmed === true ? '<span style="padding:2px 8px;border-radius:10px;font-size:11px;background:rgba(62,207,142,0.2);color:#3ECF8E;">✅ Confirmée</span>' : '') + '</div>'
+        + '<div class="sub" style="font-size:12.5px;margin:3px 0 0;">📞 ' + escHtml(c.companyPhone || '—') + ' · 🔑 code ' + escHtml(c.code) + '</div>'
+        + '<div class="sub" style="font-size:12.5px;margin:2px 0 0;">📅 Inscrite le ' + escHtml(c.registeredAt ? new Date(c.registeredAt).toLocaleDateString('fr-FR') : '—') + (c.adminName ? ' · 👤 ' + escHtml(c.adminName) : '') + '</div>'
+        + '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px;">'
+        + (c.dupConfirmed === true ? '' : '<button type="button" class="miniBtn" data-dup-op="ok" data-dup-code="' + escHtml(c.code) + '" style="color:#3ECF8E;border-color:rgba(62,207,142,0.5);">✅ Confirmer</button>')
+        + (c.blocked ? '' : '<button type="button" class="miniBtn" data-dup-op="block" data-dup-code="' + escHtml(c.code) + '" style="color:#F5B93D;border-color:rgba(245,185,61,0.5);">🚫 Bloquer</button>')
+        + '<button type="button" class="miniBtn" data-dup-op="del" data-dup-code="' + escHtml(c.code) + '" style="color:var(--danger);border-color:rgba(239,93,93,0.4);">🗑️ Supprimer</button></div></div>';
+      const body = '<p class="sub" style="margin:0 0 8px;">Entreprises qui ont le même nom ou le même téléphone. <b>Confirmer</b> = ce sont bien deux entreprises différentes. <b>Bloquer</b> ou <b>Supprimer</b> = l\'entreprise voit le motif « ' + escHtml(window.STS_DUP_REASON) + ' ».</p>'
+        + (groups.length ? groups.map(g => '<div style="margin-bottom:14px;"><div style="font-weight:900;color:#F5B93D;">⚠️ ' + escHtml(g.label) + ' (' + g.members.length + ')</div>' + g.members.map(row).join('') + '</div>').join('') : '<p class="sub" style="margin:0;">Aucun doublon pour le moment. 🎉</p>');
+      host.innerHTML = foldCardHTML('owndup', '#DC2626,#7C3AED', '🧬', TITLE, groups.length, body);
+      bindFoldCards(host);
+      host.querySelectorAll('[data-dup-op]').forEach(function(b){
+        b.onclick = async function(){
+          if(b.disabled) return;
+          const code = b.dataset.dupCode, op = b.dataset.dupOp, co = cos.find(x => x.code === code) || {code: code};
+          const nm = co.companyName || code;
+          if(op === 'block' && !confirm('Bloquer « ' + nm + ' » ?\nMotif affiché : ' + window.STS_DUP_REASON)) return;
+          if(op === 'del' && !confirm('Supprimer définitivement « ' + nm + ' » (code ' + code + ') et ses colis ?\nMotif affiché : ' + window.STS_DUP_REASON)) return;
+          b.disabled = true; b.innerHTML = '…' + LDOTS;
+          try{
+            if(op === 'ok') await db.collection('companies').doc(code).set({dupConfirmed: true}, {merge: true});
+            else if(op === 'block') await setCompanyBlocked(code, true, window.STS_DUP_REASON);
+            else if(op === 'del'){
+              await db.collection('companyTombstones').doc(code).set({reason: window.STS_DUP_REASON, name: nm, at: new Date().toISOString()});
+              await deleteCompany(code);
+            }
+            toast(op === 'ok' ? '✅ Confirmée' : (op === 'block' ? '🚫 Bloquée' : '🗑️ Supprimée'));
+          }catch(e){ toast('Échec, réessayez'); }
+          paint();
+        };
+      });
+    };
+    await paint();
+  }catch(e){ try{ host.querySelectorAll('.empty').forEach(el => { el.textContent = 'Impossible de charger pour le moment.'; }); }catch(e2){} }
+};
+
+
+// ===== V10 : sauvegarde par email + mise à jour de l'app =====
+window.STS_BUILD = '20261030-c';
+window.stsSendBackupEmail = async function(email){
+  try{
+    const cos = await getAllCompanies(), pk = await getAllPackages();
+    const d = n => n ? new Date(n).toLocaleDateString('fr-FR') : '—';
+    const nameOf = {}; cos.forEach(c => { nameOf[c.code] = c.companyName || c.code; });
+    let t = 'SAUVEGARDE AUTOMATIQUE — Sam Trace Store\nDate : ' + new Date().toLocaleString('fr-FR') + '\nEntreprises : ' + cos.length + ' · Colis : ' + pk.length + '\n\n== ENTREPRISES ==\n';
+    t += cos.slice(0, 300).map(c => (c.companyName || c.code) + ' | code ' + c.code + ' | tel ' + (c.companyPhone || '—') + ' | ' + (c.blocked ? 'bloquée' : (c.paymentStatus || '—')) + ' | fin abonnement ' + d(c.subEndsAt)).join('\n');
+    t += '\n\n== COLIS (plus récents d\'abord) ==\n';
+    t += pk.slice().sort((a, b) => new Date(b.updatedAt || 0) - new Date(a.updatedAt || 0)).slice(0, 500).map(p => p.trackingId + ' | ' + (p.name || '') + ' | ' + (p.phone || '') + ' | ' + (STATUS_LABEL[p.status] || p.status || '') + ' | ' + (nameOf[p.companyCode] || 'Sam Trace Store')).join('\n');
+    t += '\n\n(Pour la copie complète en fichier, utilisez « Exporter mes données » dans Admin > Paiements.)';
+    let sent = false;
+    if(appsScriptReady){
+      try{ const res = await fetch(APPS_SCRIPT_URL, {method: 'POST', headers: {'Content-Type': 'text/plain'}, body: JSON.stringify({to_email: email, name: 'Sam Trace Store', message: t.slice(0, 90000), email: email, company_name: 'Sauvegarde automatique STS'})}); if(!(res && res.ok === false)) sent = true; }catch(e){}
+    }
+    if(!sent && emailjsReady){
+      try{ await emailjs.send(EMAILJS_SERVICE_ID, EMAILJS_TEMPLATE_ID, {to_email: email, name: 'Sam Trace Store', message: t.slice(0, 40000), email: email, company_name: 'Sauvegarde automatique STS'}); sent = true; }catch(e){}
+    }
+    if(sent){ try{ await db.collection('settings').doc('backup').set({lastAutoBackupAt: new Date().toISOString()}, {merge: true}); }catch(e){} try{ markBackupDone(); }catch(e){} }
+    return sent;
+  }catch(e){ return false; }
+};
+(function(){
+  let done = false;
+  new MutationObserver(async function(){
+    if(done || !document.getElementById('btnOwnerCompanies')) return;
+    done = true;
+    try{
+      const bd = await db.collection('settings').doc('backup').get(); const c = bd.exists ? (bd.data() || {}) : {};
+      if(!c.email || c.auto === false) return;
+      if(c.lastAutoBackupAt && (Date.now() - new Date(c.lastAutoBackupAt).getTime()) < 7 * 86400000) return;
+      await window.stsSendBackupEmail(c.email);
+    }catch(e){}
+  }).observe(document.body, {childList: true, subtree: true});
+})();
+
+// nouvelle version disponible
+(function(){
+  let shown = false;
+  async function check(){
+    if(shown) return;
+    try{
+      const r = await fetch(location.pathname + '?_chk=' + Date.now(), {cache: 'no-store'}); if(!r.ok) return;
+      const txt = await r.text(); const m = txt.match(/window\.STS_BUILD = '([^']+)'/);
+      if(!m || m[1] === window.STS_BUILD) return;
+      shown = true;
+      const b = document.createElement('div');
+      b.style.cssText = 'position:fixed;left:10px;right:10px;bottom:76px;z-index:460;padding:12px 14px;border-radius:14px;background:#1D4ED8;color:#fff;font-weight:800;font-size:14px;display:flex;align-items:center;gap:10px;box-shadow:0 6px 20px rgba(0,0,0,0.5);';
+      b.innerHTML = '<span style="flex:1;">🔄 Nouvelle version de l\'application disponible</span><button type="button" id="stsUpdBtn" style="padding:8px 12px;border-radius:10px;border:none;background:#fff;color:#1D4ED8;font-weight:900;">Mettre à jour</button>';
+      document.body.appendChild(b);
+      document.getElementById('stsUpdBtn').onclick = async function(){
+        try{ if(navigator.serviceWorker){ (await navigator.serviceWorker.getRegistrations()).forEach(x => x.unregister()); } }catch(e){}
+        try{ if(window.caches){ (await caches.keys()).forEach(k => caches.delete(k)); } }catch(e){}
+        location.reload();
+      };
+    }catch(e){}
+  }
+  setTimeout(check, 4000); setInterval(check, 10 * 60 * 1000);
+  document.addEventListener('visibilitychange', function(){ if(!document.hidden) check(); });
 })();
 
 perfInstall();
