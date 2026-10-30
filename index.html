@@ -2885,7 +2885,7 @@ async function loadRelanceSettings(){
     if(doc.exists){
       const d = doc.data() || {};
       if(d.days >= 1 && d.days <= 365){ try{ localStorage.setItem(RELANCE_DAYS_KEY, String(d.days)); }catch(e){} }
-      if(d.lang === 'ht' || d.lang === 'fr'){ try{ localStorage.setItem(RELANCE_LANG_KEY, d.lang); }catch(e){} }
+      if((d.lang === 'ht' || d.lang === 'fr') && (parseInt(d.langAt || 0, 10) >= parseInt((function(){ try{ return localStorage.getItem('sts_relance_lang_at') || '0'; }catch(e){ return '0'; } })(), 10))){ try{ localStorage.setItem(RELANCE_LANG_KEY, d.lang); localStorage.setItem('sts_relance_lang_at', String(d.langAt || 0)); }catch(e){} }
       if(typeof d.msgHt === 'string' && d.msgHt.trim()){ try{ localStorage.setItem(RELANCE_MSG_KEYS.ht, d.msgHt); }catch(e){} }
       if(typeof d.msgFr === 'string' && d.msgFr.trim()){ try{ localStorage.setItem(RELANCE_MSG_KEYS.fr, d.msgFr); }catch(e){} }
     } else {
@@ -4796,8 +4796,8 @@ function offerStatusWhatsApp(p, status){
     document.getElementById('waLangFr').style.cssText += (lang === 'fr' ? on : off);
     document.getElementById('waLangHt').style.cssText += (lang === 'ht' ? on : off);
   }
-  document.getElementById('waLangFr').onclick = ()=>{ lang = 'fr'; try{ localStorage.setItem(RELANCE_LANG_KEY, 'fr'); }catch(e){} paint(); };
-  document.getElementById('waLangHt').onclick = ()=>{ lang = 'ht'; try{ localStorage.setItem(RELANCE_LANG_KEY, 'ht'); }catch(e){} paint(); };
+  document.getElementById('waLangFr').onclick = ()=>{ lang = 'fr'; window.stsSetRelanceLang('fr'); paint(); };
+  document.getElementById('waLangHt').onclick = ()=>{ lang = 'ht'; window.stsSetRelanceLang('ht'); paint(); };
   document.getElementById('waStatusSend').onclick = ()=>{
     window.open('https://wa.me/' + digits + '?text=' + encodeURIComponent(ta.value), '_blank');
     ov.remove();
@@ -5387,8 +5387,7 @@ async function renderRelanceCard(pkgs){
     }
     document.getElementById('relMsgText').oninput = relPreview;
     function pickRelLang(lang){
-      try{ localStorage.setItem(RELANCE_LANG_KEY, lang); }catch(e){}
-      saveRelanceCloud({lang: lang});
+      window.stsSetRelanceLang(lang);
       drawList();
       paintMsgCard();
     }
@@ -7754,7 +7753,7 @@ async function renderClient(){
         hostF.innerHTML = '<div style="margin:0 0 12px;padding:14px;border-radius:16px;border:1px solid var(--border);background:rgba(255,255,255,0.04);text-align:center;">' + (co.logoUrl ? logoBoxHTML(co, 110, '20px', 'border:3px solid var(--accent);box-shadow:0 0 18px rgba(249,115,22,0.35);') : '') + '<div style="font-weight:900;font-size:18px;margin-top:6px;overflow-wrap:anywhere;">' + escHtml(co.companyName || '') + '</div>' + (co.verified === true ? '<div style="color:#60A5FA;font-weight:800;font-size:13px;display:flex;align-items:center;justify-content:center;gap:5px;">' + window.STS_SHIELD_SVG(16) + ' Entreprise vérifiée</div>' : '') + (co.companyAddress ? '<div class="sub" style="margin-top:2px;overflow-wrap:anywhere;">📍 ' + escHtml(co.companyAddress) + '</div>' : '') + (bd ? '<div style="margin-top:6px;color:#F5B93D;font-weight:800;">⭐ ' + bd.avg + '/5 (' + bd.count + ' avis)</div>' : '') + (wa ? '<div><a href="https://wa.me/' + wa + '" target="_blank" rel="noopener" style="display:inline-block;margin-top:10px;padding:8px 16px;border-radius:12px;background:#25D366;color:#06210F;font-weight:800;text-decoration:none;">💬 Contacter l\'entreprise</a></div>' : '') + '</div>';
         db.collection('catalogs').doc(co.code).get().then(d => {
           const items = d.exists ? (d.data().items || []) : []; if(!items.length) return;
-          hostF.insertAdjacentHTML('beforeend', catalogCardHTML(items, '🛍️ Nos produits', {phone: co.companyWhatsapp || co.companyPhone, name: co.companyName}));
+          hostF.insertAdjacentHTML('beforeend', catalogCardHTML(items, '🛍️ Nos produits', {phone: co.companyWhatsapp || co.companyPhone, name: co.companyName, pub: co.pubId}));
         }).catch(() => {});
       }).catch(() => {});
     }
@@ -8282,10 +8281,10 @@ function addBadgeHost(main, extraCodes){
       if(clientLinkCompany && clientLinkCompany.code === c) continue;
       try{
         const cd2 = await db.collection('catalogs').doc(c).get(); const it2 = cd2.exists ? (cd2.data().items || []) : [];
-        if(it2.length){ const co2 = await getCompanyByCode(c); host.insertAdjacentHTML('beforeend', catalogCardHTML(it2, '🛍️ Nos produits · ' + ((co2 && co2.companyName) || ''), {phone: co2 && (co2.companyWhatsapp || co2.companyPhone), name: co2 && co2.companyName})); }
+        if(it2.length){ const co2 = await getCompanyByCode(c); host.insertAdjacentHTML('beforeend', catalogCardHTML(it2, '🛍️ Nos produits · ' + ((co2 && co2.companyName) || ''), {phone: co2 && (co2.companyWhatsapp || co2.companyPhone), name: co2 && co2.companyName, pub: co2 && co2.pubId})); }
       }catch(e){}
     }
-    if(hasOwn){ try{ const cd = await db.collection('catalogs').doc('sts').get(); const items = cd.exists ? (cd.data().items || []) : []; if(items.length) host.insertAdjacentHTML('beforeend', catalogCardHTML(items, '🛍️ Nos produits · Sam Trace Store', {phone: WHATSAPP_NUMBER, name: 'Sam Trace Store'})); }catch(e){} }
+    if(hasOwn){ try{ const cd = await db.collection('catalogs').doc('sts').get(); const items = cd.exists ? (cd.data().items || []) : []; if(items.length) host.insertAdjacentHTML('beforeend', catalogCardHTML(items, '🛍️ Nos produits · Sam Trace Store', {phone: WHATSAPP_NUMBER, name: 'Sam Trace Store', pub: 'sts'})); }catch(e){} }
   })();
 }
 
@@ -11290,7 +11289,7 @@ window.fillOwnVisits = async function(host){
         return '<div style="padding:10px;margin-bottom:8px;border:1px solid var(--border);border-radius:12px;"><div style="font-weight:800;overflow-wrap:anywhere;display:flex;align-items:center;">' + (coLogoMini(c) || '🏢') + '<span style="margin-left:4px;">' + escHtml(c.companyName || c.code) + '</span></div>'
           + '<div class="sub" style="font-size:12.5px;margin:3px 0 0;">📞 ' + escHtml(c.companyPhone || c.companyWhatsapp || '—') + (c.companyAddress ? ' · 📍 ' + escHtml(c.companyAddress) : '') + '</div>'
           + '<div class="sub" style="font-size:12.5px;margin:2px 0 0;">🕒 Visite : ' + escHtml(window.stsFmtDT(it.at)) + (c.subEndsAt ? ' · Abonnement jusqu\'au ' + escHtml(new Date(c.subEndsAt).toLocaleDateString('fr-FR')) : '') + '</div>'
-          + '<button type="button" class="miniBtn" data-vis-op="' + (isNew ? 'seen' : 'unseen') + '" data-vis-kind="' + it.kind + '" data-vis-id="' + escHtml(it.id) + '" style="margin-top:8px;">' + (isNew ? '👁️ Vue' : '↩️ Non vue') + '</button>'
+          + (isNew ? '<button type="button" class="miniBtn" data-vis-op="seen" data-vis-kind="' + it.kind + '" data-vis-id="' + escHtml(it.id) + '" style="margin-top:8px;">👁️ Vue</button>' : '<span style="display:inline-block;margin-top:8px;padding:7px 12px;border-radius:10px;border:1px solid #10B981;color:#10B981;font-weight:800;font-size:13px;">✅ Vue</span>')
           + (isNew ? '' : '<button type="button" class="miniBtn" data-vis-op="hide" data-vis-kind="' + it.kind + '" data-vis-id="' + escHtml(it.id) + '" style="margin-top:8px;margin-left:8px;color:var(--danger);border-color:rgba(239,93,93,0.4);">🗑️ Supprimer</button>') + '</div>';
       };
       host.innerHTML = foldCardHTML('ownvisits', '#8B5CF6,#EC4899', '🕒', 'Dernière visite', un.length,
@@ -11388,8 +11387,9 @@ window.catalogCardHTML = function(items, title, wa){
   const num = (wa && wa.phone) ? waPhone(wa.phone) : '';
   const nm = (wa && wa.name) ? wa.name : '';
   return '<div style="margin:0 0 14px;padding:12px;border-radius:16px;border:1px solid var(--border);background:rgba(255,255,255,0.04);"><div style="font-weight:800;margin-bottom:8px;">' + title + '</div><div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">'
-    + items.map(function(it){
-      const msg = 'Bonjour' + (nm ? ' ' + nm : '') + ', je suis intéressé(e) par : ' + (it.n || '') + (it.pr ? ' (' + it.pr + ')' : '') + '. Est-il disponible ?';
+    + items.map(function(it, ix){
+      const link = (wa && wa.pub) ? (appBaseUrl() + '?prod=' + encodeURIComponent(wa.pub) + '&i=' + ix) : '';
+      const msg = 'Bonjour' + (nm ? ' ' + nm : '') + ', je suis intéressé(e) par : ' + (it.n || '') + (it.pr ? ' (' + it.pr + ')' : '') + '. Est-il disponible ?' + (link ? '\nVoir la photo du produit : ' + link : '');
       return '<div style="border:1px solid var(--border);border-radius:12px;overflow:hidden;text-align:left;">'
         + (it.img ? '<img src="' + it.img + '" alt="" style="width:100%;aspect-ratio:1/1;object-fit:cover;">' : '')
         + '<div style="padding:6px 8px;"><div style="font-weight:800;font-size:13px;overflow-wrap:anywhere;">' + escHtml(it.n) + '</div><div class="sub" style="font-size:12px;">' + escHtml(it.pr || '') + '</div></div>'
@@ -11397,6 +11397,45 @@ window.catalogCardHTML = function(items, title, wa){
         + '</div>';
     }).join('') + '</div></div>';
 };
+
+
+// ===== V7 : langue qui reste, lien produit =====
+window.stsSetRelanceLang = function(lang){
+  const at = Date.now();
+  try{ localStorage.setItem(RELANCE_LANG_KEY, lang); localStorage.setItem('sts_relance_lang_at', String(at)); }catch(e){}
+  try{ saveRelanceCloud({lang: lang, langAt: at}); }catch(e){}
+};
+window.stsOpenProductLink = async function(tries){
+  tries = tries || 0;
+  try{
+    const q = new URLSearchParams(location.search), pub = q.get('prod'), ix = parseInt(q.get('i'), 10);
+    if(!pub || isNaN(ix)) return;
+    if(typeof db === 'undefined' || !db){ if(tries < 30) setTimeout(function(){ window.stsOpenProductLink(tries + 1); }, 500); return; }
+    let code = '', name = '', wa = '';
+    if(pub === 'sts'){ code = 'sts'; name = 'Sam Trace Store'; wa = WHATSAPP_NUMBER; }
+    else{
+      const sn = await db.collection('companies').where('pubId', '==', pub).limit(1).get();
+      if(sn.empty) return;
+      const co = sn.docs[0].data() || {}; code = sn.docs[0].id; name = co.companyName || ''; wa = co.companyWhatsapp || co.companyPhone || '';
+    }
+    const cd = await db.collection('catalogs').doc(code).get();
+    const it = (cd.exists ? (cd.data().items || []) : [])[ix]; if(!it) return;
+    const ov = document.createElement('div');
+    ov.style.cssText = 'position:fixed;inset:0;z-index:400;background:rgba(0,0,0,0.85);overflow-y:auto;padding:14px;';
+    ov.innerHTML = '<div style="max-width:440px;margin:20px auto;background:var(--panel);border:1px solid var(--border);border-radius:20px;padding:14px;">'
+      + '<div class="sub" style="margin:0 0 8px;">🛍️ Produit · ' + escHtml(name) + '</div>'
+      + (it.img ? '<img src="' + it.img + '" alt="" style="width:100%;border-radius:14px;object-fit:contain;max-height:70vh;background:#fff;">' : '')
+      + '<div style="font-weight:900;font-size:20px;margin-top:10px;overflow-wrap:anywhere;">' + escHtml(it.n || '') + '</div>'
+      + '<div style="font-weight:800;font-size:17px;color:var(--accent2);margin:2px 0 12px;">' + escHtml(it.pr || '') + '</div>'
+      + '<button type="button" id="prodClose" class="primary" style="width:100%;">Fermer</button></div>';
+    document.body.appendChild(ov);
+    document.getElementById('prodClose').onclick = function(){
+      ov.remove();
+      try{ q.delete('prod'); q.delete('i'); history.replaceState(null, '', location.pathname + (q.toString() ? '?' + q.toString() : '')); }catch(e){}
+    };
+  }catch(e){}
+};
+setTimeout(function(){ window.stsOpenProductLink(0); }, 400);
 
 perfInstall();
 installInit();
