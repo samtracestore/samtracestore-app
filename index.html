@@ -2473,7 +2473,7 @@ document.addEventListener('click', async (e)=>{
 }, true);
 function companyBadge(co){
   const c = parseInt(co && co.ratingCount, 10) || 0, sum = Number(co && co.ratingSum) || 0;
-  if(!c) return null;
+  if(!c) return (co && co.badge === true) ? {avg: 0, count: 0, top: true, eligible: false} : null;
   const avg = sum / c;
   return {avg: Math.round(avg * 10) / 10, count: c, top: !!(co && co.badge === true), eligible: c >= 3 && avg >= 4.5 && !(co && co.badge === true)};
 }
@@ -2559,6 +2559,7 @@ function pkgCardHTML(p, label){
       <span class="badge ${p.status}">${STATUS_LABEL[p.status]||p.status}</span>
     </div>
     ${courierStripHTML(p)}
+    ${p.status === 'livraison' ? '<div data-delivery-code="' + escHtml(p.trackingId) + '" data-co="' + escHtml(p.companyCode || '') + '"></div>' : ''}
     ${hist ? `<div style="margin-top:8px;border-top:1px solid var(--border);padding-top:8px;">${hist}</div>` : ''}
     ${p.photoCount > 0 ? `<div class="photosWrap" data-photos-wrap-for="${escHtml(p.trackingId)}" style="margin-top:10px;"><button type="button" data-photos-for="${escHtml(p.trackingId)}" style="width:100%;background:rgba(255,122,26,0.12);border:1px solid var(--accent);color:var(--accent2);border-radius:10px;padding:10px;font-size:13px;font-weight:700;cursor:pointer;">📷 Voir les photos de mon colis (${p.photoCount})</button><div class="photosBox" style="display:none;"></div></div>` : ''}
     ${p.hasProof ? clientViewDeliveryProofHTML(p) : clientNoDeliveryProofHTML()}
@@ -4769,7 +4770,8 @@ function statusWaMessage(p, status, lang){
   const body = (STATUS_WA_TEXT[lang] && STATUS_WA_TEXT[lang][status] || '').replace('#ID', '#' + p.trackingId);
   const hello = lang === 'ht' ? 'Bonjou ' : 'Bonjour ';
   const follow = lang === 'ht' ? ' Swiv li la a : ' : ' Suivez-le ici : ';
-  return hello + name + ', ' + body + follow + APP_PUBLIC_URL;
+  const ask = status === 'livre' ? (lang === 'ht' ? ' Tanpri ban nou yon avi sou livrezon an (zetwal + kòmantè) nan aplikasyon an.' : ' Donnez-nous votre avis sur la livraison (étoiles + commentaire) dans l\'application.') : '';
+  return hello + name + ', ' + body + ask + follow + APP_PUBLIC_URL;
 }
 function offerStatusWhatsApp(p, status){
   let digits = String(p.phone || '').replace(/\D/g, '');
@@ -5447,7 +5449,7 @@ async function renderOwnerPanel(main){
       </button>
       <button id="btnOwnerSettings" class="${ownerView==='settings'?'active':''}" style="flex:1;font-size:12.5px;padding-left:2px;padding-right:2px;">Paramètres</button>
     </div>
-    ${ownerView === 'companies' ? '<div id="ownExpiryHost"></div><div id="ownDupHost"></div><div id="ownVisitsHost"></div><div id="ownReviewsHost"></div>' : ''}<div id="ownerContent"></div>
+    ${ownerView === 'companies' ? '<div style="margin-bottom:10px;"><input id="ownCardSearch" type="search" placeholder="🔎 Rechercher une carte (ex : visite, doublons, badge…)" autocomplete="off"></div><div id="ownMonthHost"></div><div id="ownExpiryHost"></div><div id="ownDupHost"></div><div id="ownVisitsHost"></div><div id="ownReviewsHost"></div>' : ''}<div id="ownerContent"></div>
     ${whatsappBubbleHTML()}`;
   document.getElementById('btnAdminLogout').onclick = ()=>{ adminSession=null; stopPendingListener(); renderAdmin(); };
   document.getElementById('btnTestSound').onclick = ()=>{ unlockNotifAudio(); playNotificationSound(); toast("🔊 Test du son envoyé"); };
@@ -5503,6 +5505,7 @@ async function renderOwnerSettings(){
     <div id="ownLogoHost"></div>
     <div id="ownCouponHost">${window.stsSk('🏷️ Coupon de fête', 'rgba(249,115,22,0.6)')}</div>
     <div id="ownCatalogHost">${window.stsSk('🛍️ Mon catalogue', 'rgba(249,115,22,0.6)')}</div>
+    <div id="ownFeaturesHost">${window.stsSk('📷 Livraison par code / QR', 'rgba(59,130,246,0.6)')}</div>
     <div class="card">
       <h2>📱 Code QR du lien de l'application</h2>
       <p class="sub">Vos clients scannent ce code et ouvrent l'application Sam Trace Store. Imprimez-le ou affichez-le sur un autre écran : un téléphone ne peut pas scanner son propre écran. Pour un client à distance, envoyez plutôt le lien.</p>
@@ -7783,6 +7786,7 @@ async function renderClient(){
     const oldS = document.getElementById('clSurveyHost'); if(oldS) oldS.remove();
     const oldC = document.getElementById('clCouponHost'); if(oldC) oldC.remove();
     const hostC = document.createElement('div'); hostC.id = 'clCouponHost'; main.insertBefore(hostC, main.firstChild);
+    { const fo = document.getElementById('clFavHost'); if(fo) fo.remove(); const fh = document.createElement('div'); fh.id = 'clFavHost'; main.insertBefore(fh, main.firstChild); window.stsFillFavs(fh); }
     clientCouponsHTML().then(h => { if(h) hostC.innerHTML = h; }).catch(()=>{});
     if(clientLinkCompany && clientLinkCompany.code){
       const hostF = document.createElement('div'); hostF.id = 'clFicheHost'; main.insertBefore(hostF, main.firstChild);
@@ -7792,7 +7796,7 @@ async function renderClient(){
         hostF.innerHTML = '<div style="margin:0 0 12px;padding:14px;border-radius:16px;border:1px solid var(--border);background:rgba(255,255,255,0.04);text-align:center;">' + (co.logoUrl ? logoBoxHTML(co, 110, '20px', 'border:3px solid var(--accent);box-shadow:0 0 18px rgba(249,115,22,0.35);') : '') + '<div style="font-weight:900;font-size:18px;margin-top:6px;overflow-wrap:anywhere;">' + escHtml(co.companyName || '') + '</div>' + (co.verified === true ? '<div style="color:#60A5FA;font-weight:800;font-size:13px;display:flex;align-items:center;justify-content:center;gap:5px;">' + window.STS_SHIELD_SVG(16) + ' Entreprise vérifiée</div>' : '') + (co.companyAddress ? '<div class="sub" style="margin-top:2px;overflow-wrap:anywhere;">📍 ' + escHtml(co.companyAddress) + '</div>' : '') + (bd ? '<div style="margin-top:6px;color:#F5B93D;font-weight:800;">⭐ ' + bd.avg + '/5 (' + bd.count + ' avis)</div>' : '') + (wa ? '<div><a href="https://wa.me/' + wa + '" target="_blank" rel="noopener" style="display:inline-block;margin-top:10px;padding:8px 16px;border-radius:12px;background:#25D366;color:#06210F;font-weight:800;text-decoration:none;">💬 Contacter l\'entreprise</a></div>' : '') + '</div>';
         db.collection('catalogs').doc(co.code).get().then(d => {
           const items = d.exists ? (d.data().items || []) : []; if(!items.length) return;
-          hostF.insertAdjacentHTML('beforeend', catalogCardHTML(items, '🛍️ Nos produits', {phone: co.companyWhatsapp || co.companyPhone, name: co.companyName, pub: co.pubId, code: co.code}));
+          hostF.insertAdjacentHTML('beforeend', window.stsFavBtnHTML(co.pubId, co.companyName) + catalogCardHTML(items, '🛍️ Nos produits', {phone: co.companyWhatsapp || co.companyPhone, name: co.companyName, pub: co.pubId, code: co.code}));
         }).catch(() => {});
       }).catch(() => {});
     }
@@ -8315,12 +8319,12 @@ function addBadgeHost(main, extraCodes){
     await fillBadgeHost(host, Array.from(codes), hasOwn);
     try{
       const lg = [];
-      if(hasOwn){ const u = await stsLogoUrl(); if(u) lg.push(['Sam Trace Store', u]); }
+      if(hasOwn){ const u = await stsLogoUrl(); if(u) lg.push(['Sam Trace Store', u, 'sts']); }
       for(const c of Array.from(codes)){
         if(clientLinkCompany && clientLinkCompany.code === c) continue;
-        const co = await getCompanyByCode(c); if(co && co.logoUrl) lg.push([co.companyName || '', co.logoUrl]);
+        const co = await getCompanyByCode(c); if(co && co.logoUrl) lg.push([co.companyName || '', co.logoUrl, co.pubId || '']);
       }
-      host.insertAdjacentHTML('beforeend', lg.map(x => '<div style="margin:0 0 12px;padding:14px;border-radius:20px;border:1px solid var(--border);background:var(--panel);display:flex;align-items:center;justify-content:space-between;gap:12px;"><div style="min-width:0;"><div class="sub" style="font-size:13px;margin:0;">Entreprise</div><div style="font-weight:900;font-size:19px;overflow-wrap:anywhere;">' + escHtml(x[0]) + '</div></div>' + logoBoxHTML({logoUrl: x[1]}, 120, '20px', 'border:3px solid var(--accent);box-shadow:0 6px 18px rgba(255,106,0,0.35);') + '</div>').join(''));
+      host.insertAdjacentHTML('beforeend', lg.map(x => (x[2] ? window.stsFavBtnHTML(x[2], x[0]) : '') + '<div style="margin:0 0 12px;padding:14px;border-radius:20px;border:1px solid var(--border);background:var(--panel);display:flex;align-items:center;justify-content:space-between;gap:12px;"><div style="min-width:0;"><div class="sub" style="font-size:13px;margin:0;">Entreprise</div><div style="font-weight:900;font-size:19px;overflow-wrap:anywhere;">' + escHtml(x[0]) + '</div></div>' + logoBoxHTML({logoUrl: x[1]}, 120, '20px', 'border:3px solid var(--accent);box-shadow:0 6px 18px rgba(255,106,0,0.35);') + '</div>').join(''));
     }catch(e){}
     for(const c of Array.from(codes)){
       if(clientLinkCompany && clientLinkCompany.code === c) continue;
@@ -8849,6 +8853,7 @@ async function renderOwnerPackages(){
     const name = document.getElementById('pName').value.trim();
     const phone = document.getElementById('pPhone').value.trim();
     const status = document.getElementById('pStatus').value;
+    if(status === 'livre'){ const okq = await window.stsDeliveryGate(trackingId); if(!okq) return; }
     const carrier = readCarrier();
     const destCountry = getDestCountryValue();
     if(destCountry === null){ toast("Écrivez le nom du pays"); return; }
@@ -9491,6 +9496,7 @@ async function renderAdminCore(){
 
   const gateCompany = await getCompanyFast(adminSession.code, ()=>{ if(adminSession && !adminSession.isOwner && (mode === 'admin' || (mode === 'company' && companyScreen === 'colis'))) window.softRender(); });
   const regPaymentStatus = gateCompany ? (gateCompany.regPaymentStatus || 'active') : 'active';
+  if(regPaymentStatus !== 'active' && adminSession && adminSession.staff){ main.innerHTML = '<div class="card"><div class="empty">⛔ Le compte de l\'entreprise n\'est pas encore actif. Contactez le responsable.</div></div>'; return; }
   if(regPaymentStatus !== 'active'){
     await renderRegistrationGate(main, gateCompany, regPaymentStatus);
     return;
@@ -9499,6 +9505,7 @@ async function renderAdminCore(){
   const paymentStatus = gateCompany ? (gateCompany.paymentStatus || 'active') : 'active';
   const inTrial = gateCompany && gateCompany.trialEndsAt && new Date(gateCompany.trialEndsAt) > new Date();
 
+  if(paymentStatus !== 'active' && !inTrial && adminSession && adminSession.staff){ main.innerHTML = '<div class="card"><div class="empty">⛔ L\'abonnement de l\'entreprise est terminé. Contactez le responsable.</div></div>'; return; }
   if(paymentStatus !== 'active' && !inTrial){
     await renderPaymentGate(main, gateCompany, paymentStatus);
     return;
@@ -9615,6 +9622,7 @@ async function renderAdminCore(){
     const name = document.getElementById('pName').value.trim();
     const phone = document.getElementById('pPhone').value.trim();
     const status = document.getElementById('pStatus').value;
+    if(status === 'livre'){ const okq = await window.stsDeliveryGate(trackingId); if(!okq) return; }
     const carrier = readCarrier();
     const destCountry = getDestCountryValue();
     if(destCountry === null){ toast("Écrivez le nom du pays"); return; }
@@ -10181,6 +10189,7 @@ async function renderCompanySettings(main){
     <div id="coCouponHost">${window.stsSk('🏷️ Coupon de fête pour mes clients', 'rgba(249,115,22,0.6)')}</div>
     <div id="coRefHost">${window.stsSk('🤝 Parrainage', 'rgba(16,185,129,0.6)')}</div>
     <div id="coCatalogHost">${window.stsSk('🛍️ Mon catalogue', 'rgba(249,115,22,0.6)')}</div>
+    <div id="coStaffHost">${window.stsSk('👥 Employés', 'rgba(59,130,246,0.6)')}</div>
     ${coEmailCardHTML(gsQuota, company && company.companyName)}
     <div class="card">
       <h2>🔔 Notifications · historique</h2>
@@ -10430,7 +10439,7 @@ async function getCompanyFast(code, onChange){
 async function renderCompany(){
   await renderCompanyCore();
   try{
-    if(mode !== 'company' || !companySession || companyScreen !== 'home') return;
+    if(mode !== 'company' || !companySession || companySession.staff || companyScreen !== 'home') return;
     const main = document.getElementById('main'); if(!main) return;
     const old = document.getElementById('coSurveyHost'); if(old) old.remove();
     const host = document.createElement('div'); host.id = 'coSurveyHost'; main.insertBefore(host, main.firstChild);
@@ -10499,6 +10508,7 @@ async function renderCompanyCore(){
           company = cd.exists ? cd.data() : null;
         }catch(e){ restoreBtn(); toast("Problème de connexion internet. Réessayez : ce n'est pas compté comme une erreur de code."); return; }
         if(!company){
+          if(await window.stsStaffLogin(code)) return;
           try{
             const tb = await db.collection('companyTombstones').doc(code).get();
             if(tb.exists){
@@ -10535,8 +10545,9 @@ async function renderCompanyCore(){
     return;
   }
 
+  { const mm0 = document.getElementById('main'); if(mm0) mm0.classList.toggle('staffMode', !!(companySession && companySession.staff)); if(companySession && companySession.staff && ['settings', 'gift', 'payment', 'messages'].indexOf(companyScreen) >= 0) companyScreen = 'home'; }
   if(companyScreen === 'colis'){
-    adminSession = {code: companySession.code, isOwner:false, companyName: companySession.companyName};
+    adminSession = {code: companySession.code, isOwner:false, companyName: companySession.companyName, staff: !!companySession.staff};
     updateCompanyBar();
     const ckey = companySession.code + ':colis';
     main.innerHTML = window.STS_LOAD_BANNER;
@@ -10579,7 +10590,7 @@ async function renderCompanyCore(){
       <button class="ghost" id="btnCompanyLogout" style="flex:0 0 auto;padding:8px 12px;font-size:13px;">Déconnexion</button>
       <button type="button" id="coTrackBtn" style="margin-left:auto;display:flex;flex-direction:column;align-items:center;gap:3px;background:none;border:none;padding:0;cursor:pointer;"><span style="font-size:11.5px;font-weight:900;color:#FB923C;letter-spacing:.5px;">Suivi</span><span style="width:50px;height:50px;border-radius:50%;background:linear-gradient(135deg,#F59E0B,#EA580C);display:flex;align-items:center;justify-content:center;box-shadow:0 4px 14px rgba(234,88,12,0.5);">${window.STS_TRUCK_SVG}</span></button>
     </div>
-    ${subscriptionBannerHTML(co)}
+    ${(companySession && companySession.staff) ? '<div class="sub" style="margin:0 0 12px;padding:10px 12px;border-radius:12px;border:1px solid var(--border);">👤 Compte employé : ' + escHtml(companySession.staffName || '') + '</div>' : subscriptionBannerHTML(co)}
     <div id="coTodayBox"></div>
     <div id="coGiftBox"></div>
     ${(co && !co.companyAddress) ? '<div id="coAddrReminder" style="cursor:pointer;margin:0 0 12px;padding:12px 14px;border-radius:12px;background:rgba(245,158,11,0.15);border:1px solid rgba(245,158,11,0.55);color:#FBBF24;font-weight:700;font-size:13.5px;line-height:1.4;">📍 Ajoutez l\'adresse de votre entreprise (touchez ici). SamTraceStore a besoin de savoir où vous êtes.</div>' : ''}
@@ -10715,7 +10726,7 @@ window.fillOwnStats = async function(host){
 (function(){
   const main = document.getElementById('main'); if(!main) return;
   new MutationObserver(function(){
-    [['ownStatsHost', 'fillOwnStats'], ['ownVisitsHost', 'fillOwnVisits'], ['ownReviewsHost', 'fillOwnReviews'], ['ownTrackHost', 'fillOwnTrack'], ['ownExpiryHost', 'fillOwnExpiry'], ['ownDupHost', 'fillOwnDup'], ['ownTopProdHost', 'fillOwnTop']].forEach(function(x){
+    [['ownStatsHost', 'fillOwnStats'], ['ownVisitsHost', 'fillOwnVisits'], ['ownReviewsHost', 'fillOwnReviews'], ['ownTrackHost', 'fillOwnTrack'], ['ownExpiryHost', 'fillOwnExpiry'], ['ownDupHost', 'fillOwnDup'], ['ownMonthHost', 'fillOwnMonth'], ['coStaffHost', 'fillCoStaff'], ['ownFeaturesHost', 'fillOwnFeatures'], ['ownTopProdHost', 'fillOwnTop']].forEach(function(x){
       const h = document.getElementById(x[0]);
       if(h && !h.dataset.filled && !h.firstChild){ h.dataset.filled = '1'; window[x[1]](h); }
     });
@@ -11793,6 +11804,199 @@ window.stsSendBackupEmail = async function(email){
     try{ await db.collection('settings').doc('backup').set({lastAutoBackupAt: new Date().toISOString()}, {merge: true}); }catch(e){}
     return true;
   }catch(e){ return false; }
+};
+
+
+// ===== V12 : recherche de cartes, employés, livraison par code, favoris, tableau du mois =====
+(function(){
+  const st = document.createElement('style');
+  st.textContent = '.staffMode #coBtnSettings,.staffMode #coBtnMsgs,.staffMode #coTrackBtn,.staffMode #coAddrReminder,.staffMode .grpDelBtn,.staffMode #adminList [data-id].miniBtn{display:none!important;} .staffMode #coLogoBtn{cursor:default!important;} .staffMode #coLogoBtn > span[style*="position:absolute"]{display:none!important;}';
+  document.head.appendChild(st);
+})();
+// ---- recherche de cartes
+window.stsFilterCards = function(q){
+  const nz = t => String(t || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+  q = nz(q).trim();
+  document.querySelectorAll('#main [data-fold-head]').forEach(function(h){
+    const card = h.parentElement; if(!card) return;
+    card.style.display = (!q || nz(h.textContent).indexOf(q) >= 0) ? '' : 'none';
+  });
+};
+document.addEventListener('input', function(e){ if(e.target && e.target.id === 'ownCardSearch') window.stsFilterCards(e.target.value); });
+(function(){
+  let busy = false;
+  new MutationObserver(function(){
+    const i = document.getElementById('ownCardSearch'); if(!i || !i.value || busy) return;
+    busy = true; setTimeout(function(){ busy = false; window.stsFilterCards(i.value); }, 150);
+  }).observe(document.body, {childList: true, subtree: true});
+})();
+
+// ---- employés
+window.stsStaffLogin = async function(code){
+  try{
+    const sq = await db.collection('companies').where('staffCodes', 'array-contains', code).limit(1).get();
+    if(sq.empty) return false;
+    const pc = sq.docs[0].data() || {}, pcode = sq.docs[0].id;
+    if(pc.blocked){ toast('🚫 Ce compte est bloqué. Contactez le responsable.'); renderCompany(); return true; }
+    const me = (pc.staff || []).find(x => x.code === code) || {};
+    clearLoginLockout('company');
+    companySession = {code: pcode, companyName: pc.companyName, phone: pc.companyPhone, pubId: pc.pubId, staff: true, staffName: me.name || 'Employé'};
+    companyScreen = 'home'; renderCompany();
+    return true;
+  }catch(e){ return false; }
+};
+window.fillCoStaff = async function(host){
+  try{
+    if(!companySession || companySession.staff){ host.innerHTML = ''; return; }
+    const code = companySession.code;
+    const paint = async function(){
+      const co = await getCompanyByCode(code); const list = (co && co.staff) || [];
+      host.innerHTML = '<div class="card" style="border:1px solid rgba(59,130,246,0.6);"><h2 style="color:#60A5FA;">👥 Employés</h2>'
+        + '<p class="sub">Donnez un code à un employé (vendeur, livreur…). Avec son code il peut <b>ajouter et modifier des colis</b>, mais il <b>ne voit ni les paiements, ni l\'abonnement, ni les paramètres</b>, et il ne peut pas supprimer de colis. Vous pouvez créer jusqu\'à 3 employés.</p>'
+        + (list.length ? list.map(function(x, i){ return '<div style="padding:10px;margin-bottom:8px;border:1px solid var(--border);border-radius:12px;"><div style="font-weight:800;">👤 ' + escHtml(x.name) + '</div>' + payFieldHTML('Code employé', x.code) + '<button type="button" class="miniBtn" data-staff-del="' + i + '" style="margin-top:6px;color:var(--danger);border-color:rgba(239,93,93,0.4);">🗑️ Retirer cet employé</button></div>'; }).join('') : '<p class="sub">Aucun employé pour le moment.</p>')
+        + (list.length < 3 ? '<label>Nom de l\'employé</label><input id="staffName" placeholder="Ex : Jean (vendeur)"><button type="button" class="primary" id="staffAdd" style="margin-top:8px;">➕ Créer un code employé</button>' : '')
+        + '<p class="sub" id="staffMsg" style="margin:8px 0 0;"></p></div>';
+      host.querySelectorAll('[data-staff-del]').forEach(function(b){ b.onclick = async function(){
+        if(!confirm('Retirer cet employé ? Son code ne fonctionnera plus.')) return;
+        const n = list.slice(); n.splice(parseInt(b.dataset.staffDel, 10), 1);
+        try{ await db.collection('companies').doc(code).set({staff: n, staffCodes: n.map(x => x.code)}, {merge: true}); }catch(e){ toast('Échec, réessayez'); }
+        paint();
+      }; });
+      const add = host.querySelector('#staffAdd');
+      if(add) add.onclick = async function(){
+        const nm = (host.querySelector('#staffName').value || '').trim(), msg = host.querySelector('#staffMsg');
+        if(!nm){ msg.style.color = '#EF5D5D'; msg.textContent = 'Écrivez le nom de l\'employé.'; return; }
+        add.disabled = true; add.innerHTML = 'Création' + LDOTS;
+        try{
+          let c = '';
+          for(let t = 0; t < 12; t++){
+            c = String(1000 + Math.floor(Math.random() * 9000));
+            const ex = await db.collection('companies').doc(c).get(); if(ex.exists) continue;
+            const sq = await db.collection('companies').where('staffCodes', 'array-contains', c).limit(1).get(); if(!sq.empty) continue;
+            break;
+          }
+          const n = list.concat([{name: nm, code: c}]);
+          await db.collection('companies').doc(code).set({staff: n, staffCodes: n.map(x => x.code)}, {merge: true});
+          toast('✅ Code employé créé : ' + c);
+        }catch(e){ toast('Échec, réessayez'); }
+        paint();
+      };
+    };
+    await paint();
+  }catch(e){}
+};
+
+// ---- livraison par code / QR : activée seulement par l'admin (désactivée au départ)
+window.STS_FEATURES = window.STS_FEATURES || {qrDelivery: false, qrCompanies: []};
+window.stsLoadFeatures = async function(force){
+  if(window._stsFeatLoaded && !force) return window.STS_FEATURES;
+  try{ const d = await db.collection('settings').doc('features').get(); const v = d.exists ? (d.data() || {}) : {}; window.STS_FEATURES = {qrDelivery: v.qrDelivery === true, qrCompanies: Array.isArray(v.qrCompanies) ? v.qrCompanies : []}; window._stsFeatLoaded = true; }catch(e){}
+  return window.STS_FEATURES;
+};
+window.stsQrOn = function(coCode){ const f = window.STS_FEATURES || {}; return f.qrDelivery === true || (f.qrCompanies || []).indexOf(coCode || '') >= 0; };
+window.stsDeliveryCode = function(tid){ let h = 7; const t = String(tid || '') + '|STS-LIVRAISON'; for(let i = 0; i < t.length; i++) h = (h * 31 + t.charCodeAt(i)) >>> 0; return String(100000 + (h % 900000)); };
+window.stsDeliveryGate = async function(tid){
+  try{
+    if(!tid) return true;
+    await window.stsLoadFeatures();
+    const prev = (typeof adminPkgsAll !== 'undefined' ? adminPkgsAll : []).find(x => x && x.trackingId === tid);
+    if(prev && prev.status === 'livre') return true;
+    let co = prev ? prev.companyCode : (adminSession && !adminSession.isOwner ? adminSession.code : '');
+    if(!window.stsQrOn(co)) return true;
+    const c = window.prompt('📷 Livraison par code activée.\nDemandez au client son code de livraison (6 chiffres, affiché dans son application) et écrivez-le ici :');
+    if(c === null) return false;
+    if(String(c).replace(/\D/g, '') === window.stsDeliveryCode(tid)) return true;
+    toast('❌ Code de livraison incorrect'); return false;
+  }catch(e){ return true; }
+};
+(function(){
+  new MutationObserver(function(){
+    document.querySelectorAll('[data-delivery-code]:not([data-filled])').forEach(async function(el){
+      el.dataset.filled = '1';
+      await window.stsLoadFeatures();
+      if(!window.stsQrOn(el.dataset.co)) return;
+      const tid = el.dataset.deliveryCode, code = window.stsDeliveryCode(tid);
+      el.innerHTML = '<div style="margin-top:10px;padding:12px;border:1px dashed var(--accent);border-radius:14px;text-align:center;"><div style="font-weight:800;margin-bottom:6px;">🔐 Code de livraison</div><canvas data-qr-c width="180" height="180" style="width:150px;height:150px;border-radius:10px;background:#fff;"></canvas><div style="font-weight:900;font-size:26px;letter-spacing:4px;margin-top:6px;">' + code + '</div><div class="sub" style="font-size:12px;margin-top:4px;">Montrez ce code au livreur. Il le demandera pour confirmer la livraison.</div></div>';
+      try{ qrDrawCanvas(el.querySelector('[data-qr-c]'), 'STS:' + tid + ':' + code, 180); }catch(e){}
+    });
+  }).observe(document.body, {childList: true, subtree: true});
+})();
+window.fillOwnFeatures = async function(host){
+  try{
+    const paint = async function(){
+      const f = await window.stsLoadFeatures(true);
+      const cos = await getAllCompanies();
+      host.innerHTML = '<div class="card" style="border:1px solid rgba(59,130,246,0.6);"><h2 style="color:#60A5FA;">📷 Livraison par code / QR</h2>'
+        + '<p class="sub">Quand c\'est activé, le client voit un <b>code de livraison</b> (avec QR) quand son colis est « En cours de livraison ». Pour passer le colis en « Livré », il faut écrire ce code. <b>Désactivé au départ : c\'est vous qui décidez.</b></p>'
+        + '<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;padding:10px;border:1px solid var(--border);border-radius:12px;margin-bottom:10px;"><b>Pour toutes les entreprises</b><button type="button" class="miniBtn" id="featAll">' + (f.qrDelivery ? '✅ Activé' : '⛔ Désactivé') + '</button></div>'
+        + '<div class="sub" style="margin-bottom:6px;">Ou activez seulement pour certaines entreprises :</div>'
+        + (cos.length ? cos.map(c => '<label style="display:flex;align-items:center;gap:8px;padding:6px 0;font-weight:600;"><input type="checkbox" data-feat-co="' + escHtml(c.code) + '" ' + (f.qrCompanies.indexOf(c.code) >= 0 ? 'checked' : '') + ' style="width:auto;margin:0;"> ' + escHtml(c.companyName || c.code) + '</label>').join('') : '<p class="sub">Aucune entreprise.</p>')
+        + '<button type="button" class="primary" id="featSave" style="margin-top:10px;">💾 Enregistrer</button><p class="sub" id="featMsg" style="margin:8px 0 0;"></p></div>';
+      let allOn = f.qrDelivery;
+      host.querySelector('#featAll').onclick = function(){ allOn = !allOn; this.textContent = allOn ? '✅ Activé' : '⛔ Désactivé'; };
+      host.querySelector('#featSave').onclick = async function(){
+        const sel = Array.from(host.querySelectorAll('[data-feat-co]')).filter(x => x.checked).map(x => x.dataset.featCo), msg = host.querySelector('#featMsg');
+        this.disabled = true;
+        try{ await db.collection('settings').doc('features').set({qrDelivery: allOn, qrCompanies: sel}, {merge: true}); await window.stsLoadFeatures(true); msg.style.color = '#3ECF8E'; msg.textContent = '✅ Enregistré'; }
+        catch(e){ msg.style.color = '#EF5D5D'; msg.textContent = 'Échec, réessayez.'; }
+        this.disabled = false;
+      };
+    };
+    await paint();
+  }catch(e){}
+};
+setTimeout(function(){ try{ window.stsLoadFeatures(); }catch(e){} }, 1500);
+
+// ---- favoris
+window.stsFavs = function(){ try{ return JSON.parse(localStorage.getItem('sts_favs') || '[]'); }catch(e){ return []; } };
+window.stsFavBtnHTML = function(pub, name){
+  if(!pub) return '';
+  const on = window.stsFavs().some(f => f.pub === pub);
+  return '<div style="margin:0 0 8px;text-align:right;"><button type="button" data-fav-pub="' + escHtml(pub) + '" data-fav-name="' + escHtml(name || '') + '" style="padding:6px 12px;border-radius:12px;border:1px solid #EC4899;background:' + (on ? 'rgba(236,72,153,0.2)' : 'transparent') + ';color:#F472B6;font-weight:800;font-size:13px;cursor:pointer;">' + (on ? '❤️ Dans mes favoris' : '🤍 Ajouter aux favoris') + '</button></div>';
+};
+window.stsFillFavs = function(host){
+  const favs = window.stsFavs();
+  if(!favs.length){ host.innerHTML = ''; return; }
+  host.innerHTML = foldCardHTML('clfav', '#EC4899,#BE185D', '❤️', 'Mes entreprises favorites', favs.length, favs.map(f => '<a href="' + (f.pub === 'sts' ? appBaseUrl() : appBaseUrl() + '?c=' + encodeURIComponent(f.pub)) + '" style="display:block;padding:10px;margin-bottom:6px;border:1px solid var(--border);border-radius:12px;color:var(--text);text-decoration:none;font-weight:800;">🏢 ' + escHtml(f.name || f.pub) + ' <span class="sub" style="font-weight:500;">· voir les produits ›</span></a>').join(''));
+  bindFoldCards(host);
+};
+document.addEventListener('click', function(e){
+  const b = e.target && e.target.closest && e.target.closest('[data-fav-pub]'); if(!b) return;
+  e.stopPropagation();
+  let favs = window.stsFavs(); const pub = b.dataset.favPub;
+  if(favs.some(f => f.pub === pub)) favs = favs.filter(f => f.pub !== pub); else favs.push({pub: pub, name: b.dataset.favName || ''});
+  try{ localStorage.setItem('sts_favs', JSON.stringify(favs)); }catch(err){}
+  const on = favs.some(f => f.pub === pub);
+  document.querySelectorAll('[data-fav-pub="' + pub + '"]').forEach(function(x){ x.textContent = on ? '❤️ Dans mes favoris' : '🤍 Ajouter aux favoris'; x.style.background = on ? 'rgba(236,72,153,0.2)' : 'transparent'; });
+  const fh = document.getElementById('clFavHost'); if(fh) window.stsFillFavs(fh);
+}, true);
+
+// ---- tableau de bord du mois
+window.fillOwnMonth = async function(host){
+  try{
+    host.innerHTML = foldCardHTML('ownmonth', '#6366F1,#3730A3', '📅', 'Tableau de bord du mois', '…', '<div class="empty">Chargement' + LDOTS + '</div>'); bindFoldCards(host);
+    const r = await Promise.all([getAllPackages().catch(() => []), getAllCompanies().catch(() => []), db.collection('reviews').get().then(sn => { const a = []; sn.forEach(d => a.push(d.data())); return a; }).catch(() => [])]);
+    const pk = r[0], cos = r[1], rv = r[2];
+    const now = new Date(), m0 = new Date(now.getFullYear(), now.getMonth(), 1).getTime(), m1 = new Date(now.getFullYear(), now.getMonth() - 1, 1).getTime();
+    const inM = (t, a, b) => t >= a && t < b;
+    const T = x => new Date(x || 0).getTime();
+    const cnt = (arr, f) => [arr.filter(x => inM(f(x), m0, 8.64e15)).length, arr.filter(x => inM(f(x), m1, m0)).length];
+    const lastDate = p => { const h = (p.history || []).slice().reverse().find(x => x.status === 'livre'); return T(h && h.date); };
+    const rows = [
+      ['📦 Colis ajoutés', cnt(pk.filter(p => !p.deletedByCompany), p => pkgCreatedAt(p))],
+      ['✅ Colis livrés', cnt(pk.filter(p => p.status === 'livre'), lastDate)],
+      ['🏢 Nouvelles entreprises', cnt(cos, c => T(c.registeredAt))],
+      ['💰 Paiements confirmés', cnt(cos.filter(c => c.subPaidAt), c => T(c.subPaidAt))],
+      ['⭐ Avis reçus', cnt(rv, x => T(x.at))]
+    ];
+    const avg = (a, b) => { const l = rv.filter(x => inM(T(x.at), a, b) && x.stars); return l.length ? Math.round(l.reduce((s2, x) => s2 + (parseInt(x.stars, 10) || 0), 0) / l.length * 10) / 10 : null; };
+    const row = (t, v) => { const d = v[0] - v[1]; return '<div style="display:flex;justify-content:space-between;gap:8px;padding:9px 0;border-top:1px solid var(--border);"><span>' + t + '</span><span><b style="font-size:17px;">' + v[0] + '</b> <span style="font-size:12px;font-weight:800;color:' + (d > 0 ? '#3ECF8E' : d < 0 ? '#EF5D5D' : 'var(--muted)') + ';">' + (d > 0 ? '▲ +' + d : d < 0 ? '▼ ' + d : '＝') + '</span> <span class="sub" style="font-size:11.5px;">(mois dernier : ' + v[1] + ')</span></span></div>'; };
+    const a1 = avg(m0, 8.64e15), a0 = avg(m1, m0);
+    host.innerHTML = foldCardHTML('ownmonth', '#6366F1,#3730A3', '📅', 'Tableau de bord du mois', now.toLocaleDateString('fr-FR', {month: 'short'}),
+      '<p class="sub" style="margin:0 0 6px;">Ce mois-ci comparé au mois dernier.</p>' + rows.map(x => row(x[0], x[1])).join('')
+      + '<div style="display:flex;justify-content:space-between;gap:8px;padding:9px 0;border-top:1px solid var(--border);"><span>🌟 Note moyenne des avis</span><span><b style="font-size:17px;">' + (a1 !== null ? a1 + '/5' : '—') + '</b> <span class="sub" style="font-size:11.5px;">(mois dernier : ' + (a0 !== null ? a0 + '/5' : '—') + ')</span></span></div>');
+    bindFoldCards(host);
+  }catch(e){ try{ host.querySelectorAll('.empty').forEach(el => { el.textContent = 'Impossible de charger pour le moment.'; }); }catch(e2){} }
 };
 
 perfInstall();
