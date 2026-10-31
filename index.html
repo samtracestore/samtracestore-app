@@ -5547,6 +5547,7 @@ async function renderOwnerSettings(){
         <div style="font-weight:800;margin-bottom:6px;">✉️ Sauvegarde par email</div>
         <input type="email" id="bkMail" placeholder="Votre email pour recevoir la sauvegarde" style="width:100%;margin-bottom:8px;">
         <label style="display:flex;align-items:center;gap:10px;margin:0 0 8px;font-size:13px;cursor:pointer;"><input type="checkbox" id="bkAuto" style="width:22px;height:22px;margin:0;flex:0 0 auto;"><span>Envoyer automatiquement chaque semaine (quand j'ouvre l'Admin)</span></label>
+        <button class="primary" id="btnBkSave" style="width:100%;margin-bottom:8px;">💾 Enregistrer</button>
         <button class="ghost" id="btnBkMail" style="width:100%;color:#fff;border-color:var(--accent);">✉️ Envoyer la sauvegarde maintenant</button>
       </div>
       <div id="backupMsg" class="sub" style="margin-top:10px;font-weight:700;"></div>
@@ -5601,6 +5602,17 @@ async function renderOwnerSettings(){
   };
   try{ document.getElementById('bkMail').value = localStorage.getItem('sts_backup_email') || ''; document.getElementById('bkAuto').checked = localStorage.getItem('sts_backup_auto') === '1'; }catch(e){}
   document.getElementById('bkAuto').onchange = ()=>{ try{ localStorage.setItem('sts_backup_auto', document.getElementById('bkAuto').checked ? '1' : '0'); localStorage.setItem('sts_backup_email', document.getElementById('bkMail').value.trim()); }catch(e){} };
+  { const mailEl = document.getElementById('bkMail'), autoEl = document.getElementById('bkAuto');
+    mailEl.addEventListener('input', ()=>{ try{ localStorage.setItem('sts_backup_email', mailEl.value.trim()); }catch(e){} });
+    db.collection('settings').doc('backup').get().then(d => { if(d.exists){ const c = d.data() || {}; if(c.email) mailEl.value = c.email; if(typeof c.auto === 'boolean') autoEl.checked = c.auto; } }).catch(()=>{});
+    document.getElementById('btnBkSave').onclick = async ()=>{
+      const em = mailEl.value.trim();
+      if(em && window.stsEmailBad(em)){ bmsg('Adresse email invalide ou mal écrite (ex : nom@gmail.com)', false); return; }
+      try{ localStorage.setItem('sts_backup_email', em); localStorage.setItem('sts_backup_auto', autoEl.checked ? '1' : '0'); }catch(e){}
+      bmsg('⏳ Enregistrement…');
+      try{ await db.collection('settings').doc('backup').set({email: em, auto: autoEl.checked}, {merge: true}); bmsg('✅ Enregistré : ' + (em || 'aucun email'), true); }
+      catch(e){ bmsg("❌ Impossible d'enregistrer. Vérifiez votre connexion.", false); }
+    }; }
   document.getElementById('btnBkMail').onclick = async ()=>{
     const to = document.getElementById('bkMail').value.trim();
     if(!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(to)){ bmsg('Entrez une adresse email valide', false); return; }
@@ -5760,14 +5772,7 @@ async function renderOwnerPayments(){
           ${backupReminderHTML()}
           <p class="sub">Télécharge une copie de toutes tes entreprises et de tous tes colis, au cas où.</p>
           <button class="primary" id="btnExportBackup" style="margin-top:6px;">📥 Exporter mes données</button>
-          <div style="margin-top:14px;padding-top:12px;border-top:1px solid var(--border);">
-            <label>📧 Email pour recevoir la sauvegarde automatique</label>
-            <input id="backupEmailInput" type="email" placeholder="exemple@gmail.com" value="${escHtml(bkCfg.email || '')}">
-            <label style="display:flex;gap:8px;align-items:center;margin-top:8px;font-weight:600;"><input type="checkbox" id="backupAutoChk" ${bkCfg.auto === false ? '' : 'checked'} style="width:auto;margin:0;"> Envoyer automatiquement chaque semaine (à l'ouverture de l'Admin)</label>
-            <button class="primary" id="btnSaveBackupEmail" style="margin-top:10px;">💾 Enregistrer</button>
-            <button class="ghost" id="btnSendBackupNow" style="margin-top:8px;">📧 Envoyer une sauvegarde maintenant</button>
-            <p class="sub" id="backupEmailMsg" style="margin:8px 0 0;font-size:12.5px;">${bkCfg.lastAutoBackupAt ? 'Dernier envoi : ' + escHtml(new Date(bkCfg.lastAutoBackupAt).toLocaleString('fr-FR')) : 'Aucun envoi pour le moment.'}</p>
-          </div>
+          
           <button class="primary" id="btnCleanOrphans" style="margin-top:10px;background:linear-gradient(135deg,#F59E0B,#EA580C);">🧹 Nettoyer les colis orphelins</button>
         </div>
       </div>`;
@@ -6776,7 +6781,7 @@ function companyRowHTML(c){
                     <option value="free" ${c.isFree ? 'selected' : ''}>Gratuit</option>
                   </select>
                 </div>
-                <div class="name">Code : ${c.code} · ${c.companyPhone}</div>
+                <div class="name">🔑 Code : ${c.code} · ${c.companyPhone}</div>
                 ${coAddrHTML(c)}
                 ${coDatesHTML(c)}
                 ${c.codeChangedAt ? `<div class="name" style="color:var(--accent2);">🔑 Code modifié le ${new Date(c.codeChangedAt).toLocaleDateString('fr-FR',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'})}</div>` : ''}
@@ -8261,7 +8266,12 @@ async function buildBackupObject(){
   return out;
 }
 async function sendBackupByEmail(to){
-  if(!receiptMailUrl) throw new Error("Réglez d'abord le script (carte Envoi des reçus par email).");
+  if(!receiptMailUrl){
+    const okTxt = await window.stsSendBackupText(to);
+    if(!okTxt) throw new Error("Envoi impossible pour le moment. Réessayez plus tard.");
+    markBackupDone(); try{ localStorage.setItem('sts_last_auto_backup', String(Date.now())); }catch(e){}
+    return;
+  }
   const out = await buildBackupObject();
   const b64 = btoa(unescape(encodeURIComponent(JSON.stringify(out))));
   const day = new Date().toISOString().slice(0, 10);
@@ -8272,6 +8282,7 @@ async function sendBackupByEmail(to){
   try{ localStorage.setItem('sts_last_auto_backup', String(Date.now())); }catch(e){}
 }
 async function autoBackupCheck(){
+  return; // remplacé par l'envoi automatique enregistré en ligne
   if(window._autoBackupTried) return; window._autoBackupTried = true;
   let on = '', to = '', last = 0;
   try{ on = localStorage.getItem('sts_backup_auto'); to = localStorage.getItem('sts_backup_email') || ''; last = parseInt(localStorage.getItem('sts_last_auto_backup') || '0', 10) || 0; }catch(e){}
@@ -10963,7 +10974,7 @@ window.fillOwnVisits = async function(host){
       const un = cos.filter(c => c.visitSeen === false && c.lastSeenAt).sort(byDate);
       const seen = cos.filter(c => c.visitSeen === true && c.lastSeenAt).sort(byDate).slice(0, 10);
       const row = (c, isNew) => '<div style="padding:10px;margin-bottom:8px;border:1px solid var(--border);border-radius:12px;"><div style="font-weight:800;overflow-wrap:anywhere;">' + (coLogoMini(c) || '🏢') + ' ' + escHtml(c.companyName || c.code) + '</div>'
-        + '<div class="sub" style="font-size:12.5px;margin:3px 0 0;">📞 ' + escHtml(c.companyPhone || c.companyWhatsapp || '—') + (c.companyAddress ? ' · 📍 ' + escHtml(c.companyAddress) : '') + '</div>'
+        + '<div class="sub" style="font-size:12.5px;margin:3px 0 0;">📞 ' + escHtml(c.companyPhone || c.companyWhatsapp || '—') + ' · 🔑 code ' + escHtml(c.code) + (c.companyAddress ? ' · 📍 ' + escHtml(c.companyAddress) : '') + '</div>'
         + '<div class="sub" style="font-size:12.5px;margin:2px 0 0;">🕒 Dernière visite : ' + escHtml(window.stsFmtDT(c.lastSeenAt)) + (c.subEndsAt ? ' · Abonnement jusqu\'au ' + escHtml(new Date(c.subEndsAt).toLocaleDateString('fr-FR')) : '') + '</div>'
         + '<button type="button" class="miniBtn" data-visit-to="' + (isNew ? '1' : '0') + '" data-visit-code="' + escHtml(c.code) + '" style="margin-top:8px;">' + (isNew ? '👁️ Vue' : '↩️ Non vue') + '</button>' + (isNew ? '' : '<button type="button" class="miniBtn" data-visit-del="' + escHtml(c.code) + '" style="margin-top:8px;margin-left:8px;color:var(--danger);border-color:rgba(239,93,93,0.4);">🗑️ Supprimer</button>') + '</div>';
       host.innerHTML = foldCardHTML('ownvisits', '#8B5CF6,#EC4899', '🕒', 'Dernière visite', un.length,
@@ -11092,7 +11103,7 @@ window.fillOwnTrack = async function(host){
       const tc = c.transferCode || '';
       return '<div style="padding:10px;margin-bottom:8px;border:1px solid var(--border);border-radius:14px;">'
         + '<div style="display:flex;align-items:center;gap:8px;"><div style="flex:1;min-width:0;"><div style="font-weight:800;overflow-wrap:anywhere;display:flex;align-items:center;">' + (kind === 'pending' ? '<span style="margin-right:8px;font-weight:900;color:#F59E0B;">#' + pos + '</span>' : '') + (coLogoMini(c) || '') + '<span>' + escHtml(c.companyName || c.code) + '</span></div>'
-        + '<div class="sub" style="font-size:12.5px;margin:2px 0 0;">' + escHtml(svc || 'Dépôt') + ' · ' + escHtml(window.stsFmtDT(at)) + '</div>'
+        + '<div class="sub" style="font-size:12.5px;margin:2px 0 0;">' + escHtml(svc || 'Dépôt') + ' · ' + escHtml(window.stsFmtDT(at)) + ' · 🔑 code ' + escHtml(c.code) + '</div>'
         + '<div class="sub" style="font-size:12.5px;margin:2px 0 0;">🎫 Ticket : <b>' + (tc ? escHtml(tc) : '—') + '</b></div>' + (c.alertSeen === false ? '<div style="margin-top:4px;"><span style="color:#EF4444;font-weight:800;font-size:12.5px;">🔔 Alerte reçue ' + escHtml(window.stsFmtDT(c.lastAlertAt)) + '</span> <button type="button" class="miniBtn" data-alert-seen="' + escHtml(c.code) + '">Vu</button></div>' : '') + '</div>'
         + (tc ? '<button type="button" data-copy="' + escHtml(tc) + '" aria-label="Copier" style="flex:0 0 auto;width:40px;height:40px;border:none;background:transparent;cursor:pointer;display:flex;align-items:center;justify-content:center;">' + copyIconSVG() + '</button>' : '')
         + '<button type="button" data-trk-open="' + escHtml(c.code + ':' + kind) + '" aria-label="Voir les étapes" style="flex:0 0 auto;width:46px;height:46px;border-radius:50%;border:none;background:linear-gradient(135deg,#F59E0B,#EA580C);display:flex;align-items:center;justify-content:center;cursor:pointer;">' + window.STS_TRUCK_SVG + '</button></div>'
@@ -11341,7 +11352,7 @@ window.fillOwnVisits = async function(host){
       const row = (it, isNew) => {
         const c = cos[it.code] || {code: it.code, companyName: it.code};
         return '<div style="padding:10px;margin-bottom:8px;border:1px solid var(--border);border-radius:12px;"><div style="font-weight:800;overflow-wrap:anywhere;display:flex;align-items:center;">' + (coLogoMini(c) || '🏢') + '<span style="margin-left:4px;">' + escHtml(c.companyName || c.code) + '</span></div>'
-          + '<div class="sub" style="font-size:12.5px;margin:3px 0 0;">📞 ' + escHtml(c.companyPhone || c.companyWhatsapp || '—') + (c.companyAddress ? ' · 📍 ' + escHtml(c.companyAddress) : '') + '</div>'
+          + '<div class="sub" style="font-size:12.5px;margin:3px 0 0;">📞 ' + escHtml(c.companyPhone || c.companyWhatsapp || '—') + ' · 🔑 code ' + escHtml(c.code) + (c.companyAddress ? ' · 📍 ' + escHtml(c.companyAddress) : '') + '</div>'
           + '<div class="sub" style="font-size:12.5px;margin:2px 0 0;">🕒 Visite : ' + escHtml(window.stsFmtDT(it.at)) + (c.subEndsAt ? ' · Abonnement jusqu\'au ' + escHtml(new Date(c.subEndsAt).toLocaleDateString('fr-FR')) : '') + '</div>'
           + (isNew ? '<button type="button" class="miniBtn" data-vis-op="seen" data-vis-kind="' + it.kind + '" data-vis-id="' + escHtml(it.id) + '" style="margin-top:8px;">👁️ Vue</button>' : '<span style="display:inline-block;margin-top:8px;padding:7px 12px;border-radius:10px;border:1px solid #10B981;color:#10B981;font-weight:800;font-size:13px;">✅ Vue</span>')
           + (isNew ? '' : '<button type="button" class="miniBtn" data-vis-op="hide" data-vis-kind="' + it.kind + '" data-vis-id="' + escHtml(it.id) + '" style="margin-top:8px;margin-left:8px;color:var(--danger);border-color:rgba(239,93,93,0.4);">🗑️ Supprimer</button>') + '</div>';
@@ -11513,7 +11524,7 @@ window.fillOwnExpiry = async function(host){
       const nm = x.c.companyName || x.c.code, d = x.end.toLocaleDateString('fr-FR');
       const when = x.left > 0 ? 'se termine dans ' + x.left + ' jour' + (x.left > 1 ? 's' : '') + ' (le ' + d + ')' : (x.left === 0 ? 'se termine aujourd\'hui' : 'est terminé depuis ' + (-x.left) + ' jour' + (x.left < -1 ? 's' : '') + ' (le ' + d + ')');
       const msg = 'Bonjour ' + nm + ', ici Sam Trace Store. Votre abonnement ' + when + '. Pensez à renouveler pour garder votre accès. Merci !';
-      return '<div style="padding:10px;margin-bottom:8px;border:1px solid var(--border);border-radius:12px;"><div style="font-weight:800;overflow-wrap:anywhere;display:flex;align-items:center;">' + (coLogoMini(x.c) || '🏢') + '<span style="margin-left:4px;">' + escHtml(nm) + '</span></div><div style="font-size:13px;margin-top:3px;color:' + (x.left <= 0 ? '#EF5D5D' : '#F5B93D') + ';font-weight:700;">⏳ ' + escHtml(when.charAt(0).toUpperCase() + when.slice(1)) + '</div><div style="margin-top:8px;">' + waChatBtn(x.c.companyWhatsapp || x.c.companyPhone, msg) + '</div></div>';
+      return '<div style="padding:10px;margin-bottom:8px;border:1px solid var(--border);border-radius:12px;"><div style="font-weight:800;overflow-wrap:anywhere;display:flex;align-items:center;">' + (coLogoMini(x.c) || '🏢') + '<span style="margin-left:4px;">' + escHtml(nm) + '</span></div><div class="sub" style="font-size:12.5px;margin:2px 0 0;">🔑 code ' + escHtml(x.c.code) + '</div><div style="font-size:13px;margin-top:3px;color:' + (x.left <= 0 ? '#EF5D5D' : '#F5B93D') + ';font-weight:700;">⏳ ' + escHtml(when.charAt(0).toUpperCase() + when.slice(1)) + '</div><div style="margin-top:8px;">' + waChatBtn(x.c.companyWhatsapp || x.c.companyPhone, msg) + '</div></div>';
     }).join('');
     host.innerHTML = foldCardHTML('ownexpiry', '#EF4444,#F59E0B', '⏰', 'Abonnements bientôt terminés', list.length, '<p class="sub" style="margin:0 0 8px;">Entreprises dont l\'abonnement se termine dans 3 jours ou moins. Touchez le bouton WhatsApp pour les rappeler (le message est déjà écrit).</p>' + (rows || '<p class="sub" style="margin:0;">Aucun abonnement ne se termine dans les 3 prochains jours. 🎉</p>'));
     bindFoldCards(host);
@@ -11656,7 +11667,7 @@ window.stsCompanyGone = async function(code){
 window.fillOwnDup = async function(host){
   try{
     const TITLE = 'Gestion des doublons d\'identités des entreprises';
-    host.innerHTML = foldCardHTML('owndup', '#DC2626,#7C3AED', '🧬', TITLE, '…', '<div class="empty">Chargement' + LDOTS + '</div>'); bindFoldCards(host);
+    host.innerHTML = foldCardHTML('owndup', '#84CC16,#3F6212', '🧬', TITLE, '…', '<div class="empty">Chargement' + LDOTS + '</div>'); bindFoldCards(host);
     const paint = async function(){
       const cos = await getAllCompanies();
       const nkey = t => String(t || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]/g, '');
@@ -11682,8 +11693,8 @@ window.fillOwnDup = async function(host){
         + (c.blocked ? '' : '<button type="button" class="miniBtn" data-dup-op="block" data-dup-code="' + escHtml(c.code) + '" style="color:#F5B93D;border-color:rgba(245,185,61,0.5);">🚫 Bloquer</button>')
         + '<button type="button" class="miniBtn" data-dup-op="del" data-dup-code="' + escHtml(c.code) + '" style="color:var(--danger);border-color:rgba(239,93,93,0.4);">🗑️ Supprimer</button></div></div>';
       const body = '<p class="sub" style="margin:0 0 8px;">Entreprises qui ont le même nom ou le même téléphone. <b>Confirmer</b> = ce sont bien deux entreprises différentes. <b>Bloquer</b> ou <b>Supprimer</b> = l\'entreprise voit le motif « ' + escHtml(window.STS_DUP_REASON) + ' ».</p>'
-        + (groups.length ? groups.map(g => '<div style="margin-bottom:14px;"><div style="font-weight:900;color:#F5B93D;">⚠️ ' + escHtml(g.label) + ' (' + g.members.length + ')</div>' + g.members.map(row).join('') + '</div>').join('') : '<p class="sub" style="margin:0;">Aucun doublon pour le moment. 🎉</p>');
-      host.innerHTML = foldCardHTML('owndup', '#DC2626,#7C3AED', '🧬', TITLE, groups.length, body);
+        + (groups.length ? groups.map(g => '<div style="margin-bottom:14px;"><div style="font-weight:900;color:#F5B93D;">⚠️ ' + escHtml(g.label) + ' (' + g.members.filter(c => c.dupConfirmed !== true).length + ' à vérifier)</div>' + g.members.filter(c => c.dupConfirmed !== true).map(row).join('') + '</div>').join('') : '<p class="sub" style="margin:0;">Aucun doublon pour le moment. 🎉</p>');
+      host.innerHTML = foldCardHTML('owndup', '#84CC16,#3F6212', '🧬', TITLE, groups.length, body);
       bindFoldCards(host);
       host.querySelectorAll('[data-dup-op]').forEach(function(b){
         b.onclick = async function(){
@@ -11713,7 +11724,7 @@ window.fillOwnDup = async function(host){
 
 // ===== V10 : sauvegarde par email + mise à jour de l'app =====
 window.STS_BUILD = '20261030-c';
-window.stsSendBackupEmail = async function(email){
+window.stsSendBackupText = async function(email){
   try{
     const cos = await getAllCompanies(), pk = await getAllPackages();
     const d = n => n ? new Date(n).toLocaleDateString('fr-FR') : '—';
@@ -11772,6 +11783,17 @@ window.stsSendBackupEmail = async function(email){
   setTimeout(check, 4000); setInterval(check, 10 * 60 * 1000);
   document.addEventListener('visibilitychange', function(){ if(!document.hidden) check(); });
 })();
+
+
+// ===== V11 : envoi de la sauvegarde (script « reçus » si réglé, sinon texte) =====
+window.stsSendBackupEmail = async function(email){
+  try{
+    if(receiptMailUrl) await sendBackupByEmail(email);
+    else if(!(await window.stsSendBackupText(email))) return false;
+    try{ await db.collection('settings').doc('backup').set({lastAutoBackupAt: new Date().toISOString()}, {merge: true}); }catch(e){}
+    return true;
+  }catch(e){ return false; }
+};
 
 perfInstall();
 installInit();
