@@ -3864,7 +3864,7 @@ async function openGiftAdmin(code, name){
       + '<div style="height:10px;"></div>' + foldCardHTML('gaclients', '#10B981,#059669', '👥', 'Clients comptés', st.clients.length, clientsHTML + exHTML)
       + '<h3 style="margin:14px 0 6px;">Ajouter ou retirer à la carte</h3>'
       + '<div style="display:flex;gap:8px;margin-bottom:8px;"><select id="gaKind" style="flex:1;"><option value="htg">Argent (HTG)</option><option value="usd">Argent (USD)</option><option value="days">Jours</option></select><input id="gaVal" type="number" step="1" placeholder="Ex : 100 ou -50" style="flex:1;"></div>'
-      + '<input id="gaNote" placeholder="Note (ex : Saint-Valentin)" style="width:100%;margin-bottom:8px;"><label style="display:flex;align-items:center;gap:8px;margin-bottom:8px;font-weight:700;font-size:13px;"><input type="checkbox" id="gaTop" checked style="width:auto;margin:0;"> 🏆 Si ce sont des jours : ajouter au Top 3 du mois</label><button type="button" class="primary" id="gaAdd">💾 Enregistrer sur la carte</button><div id="gaMsg" class="sub" style="margin-top:6px;font-weight:700;"></div>'
+      + '<input id="gaNote" placeholder="Note (ex : Saint-Valentin)" style="width:100%;margin-bottom:8px;"><button type="button" class="primary" id="gaAdd">💾 Enregistrer sur la carte</button><div id="gaMsg" class="sub" style="margin-top:6px;font-weight:700;"></div>'
       + '<div style="height:12px;"></div>' + foldCardHTML('gifthistadm', '#F59E0B,#EA580C', '📜', 'Historique', ledger.length, led + (ledger.length ? '<button type="button" class="miniBtn" id="gaHistDel" style="width:100%;margin-top:10px;color:var(--danger);border-color:rgba(239,93,93,0.4);">🗑️ Supprimer l\'historique</button>' : ''));
     document.getElementById('gaClose').onclick = closeGiftAdmin;
     giftAnimateBars(ov); bindFoldCards(ov);
@@ -3888,7 +3888,6 @@ async function openGiftAdmin(code, name){
         else { lh = Math.round(v * st.ratio); upd = {giftAdjustUSD: inc(v), giftAdjustHTG: inc(lh)}; }
         await db.collection('companies').doc(code).set(upd, {merge: true});
         await giftLedgerAdd(code, 'adjust', lh, ld, note || 'Ajustement');
-        { const tc = document.getElementById('gaTop'); if(kind === 'days' && ld > 0 && tc && tc.checked){ try{ await window.stsTopAddWinner(code, ld); }catch(e3){} } }
         openGiftAdmin(code, name);
       }catch(e){ m.style.color = 'var(--danger)'; m.textContent = '❌ Impossible d\'enregistrer'; }
     };
@@ -5450,7 +5449,7 @@ async function renderOwnerPanel(main){
       </button>
       <button id="btnOwnerSettings" class="${ownerView==='settings'?'active':''}" style="flex:1;font-size:12.5px;padding-left:2px;padding-right:2px;">Paramètres</button>
     </div>
-    ${ownerView === 'companies' ? '<div style="margin-bottom:10px;"><input id="ownCardSearch" type="search" placeholder="🔎 Rechercher une carte (ex : visite, doublons, badge…)" autocomplete="off"></div><div id="ownCardResults"></div><div id="ownMonthHost"></div><div id="ownTop3Host"></div><div id="ownExpiryHost"></div><div id="ownDupHost"></div><div id="ownStaffHost"></div><div id="ownVisitsHost"></div><div id="ownReviewsHost"></div>' : ''}<div id="ownerContent"></div>
+    ${ownerView === 'companies' ? '<div style="margin-bottom:10px;"><input id="ownCardSearch" type="search" placeholder="🔎 Rechercher une carte (ex : visite, doublons, badge…)" autocomplete="off"></div><div id="ownCardResults"></div><div id="ownMonthHost"></div><div id="ownExpiryHost"></div><div id="ownDupHost"></div><div id="ownStaffHost"></div><div id="ownFavHost"></div><div id="ownVisitsHost"></div><div id="ownReviewsHost"></div>' : ''}<div id="ownerContent"></div>
     ${whatsappBubbleHTML()}`;
   document.getElementById('btnAdminLogout').onclick = ()=>{ adminSession=null; stopPendingListener(); renderAdmin(); };
   document.getElementById('btnTestSound').onclick = ()=>{ unlockNotifAudio(); playNotificationSound(); toast("🔊 Test du son envoyé"); };
@@ -7961,10 +7960,15 @@ function renderCouponEditor(host, cp, who, title, saveFn, offFn, showAud){
     <label>Sur quoi ?</label><select id="cpKind" style="width:100%;"><option value="articles"${sel('articles')}>🛍️ Les articles</option><option value="delivery"${sel('delivery')}>🚚 Les frais de livraison</option><option value="both"${sel('both')}>🛍️ + 🚚 Articles et livraison</option></select>
     <label>Valable jusqu'au</label><input id="cpEnd" type="date" value="${escHtml(cp.endAt || '')}" style="width:100%;">
     ${showAud ? `<label>Qui peut voir ce coupon ?</label><select id="cpAud" style="width:100%;"><option value="selected"${(cp.audience || 'selected') === 'selected' ? ' selected' : ''}>Seulement les clients à qui je le donne (recommandé)</option><option value="all"${cp.audience === 'all' ? ' selected' : ''}>Tous mes clients</option></select>` : ''}
+    ${showAud ? `<div style="margin-top:10px;padding:10px;border:1px dashed #FB923C;border-radius:12px;"><div style="font-weight:800;margin-bottom:6px;">👥 Donner ce coupon à des clients précis</div><input id="cpCliName" placeholder="Nom du client" style="margin-bottom:6px;"><input id="cpCliPhone" inputmode="tel" placeholder="Numéro du client" style="margin-bottom:6px;"><button type="button" class="ghost" id="cpCliAdd">➕ Ajouter ce client à la liste</button><div id="cpCliList" style="margin-top:8px;"></div></div>` : ''}
     <button type="button" class="primary" id="btnCpSave" style="margin-top:10px;">💾 Publier le coupon</button>
     ${cp.on ? '<button type="button" class="ghost" id="btnCpOff" style="width:100%;margin-top:8px;color:var(--danger);border-color:rgba(239,93,93,0.4);">🗑️ Retirer le coupon</button>' : ''}
     <div id="cpMsg" class="sub" style="margin-top:8px;font-weight:700;overflow-wrap:anywhere;"></div></div>`;
   const q = id => host.querySelector(id), msg = q('#cpMsg');
+  host._cpClients = [];
+  const drawCli = ()=>{ const l = q('#cpCliList'); if(!l) return; l.innerHTML = host._cpClients.map((c, i) => '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;padding:6px 8px;margin-bottom:4px;border:1px solid var(--border);border-radius:10px;font-size:13px;"><span style="overflow-wrap:anywhere;">👤 <b>' + escHtml(c.name) + '</b> · ' + escHtml(c.phone) + '</span><button type="button" data-cli-del="' + i + '" style="border:none;background:transparent;color:var(--danger);font-size:16px;">✕</button></div>').join(''); l.querySelectorAll('[data-cli-del]').forEach(b => { b.onclick = ()=>{ host._cpClients.splice(parseInt(b.dataset.cliDel, 10), 1); drawCli(); }; }); };
+  const addCli = q('#cpCliAdd');
+  if(addCli) addCli.onclick = ()=>{ const nm = (q('#cpCliName').value || '').trim(), ph = (q('#cpCliPhone').value || '').trim(); if(!nm || String(ph).replace(/\D/g, '').length < 8){ msg.style.color = 'var(--danger)'; msg.textContent = 'Écrivez le nom du client et son numéro (8 chiffres).'; return; } host._cpClients.push({name: nm, phone: ph}); q('#cpCliName').value = ''; q('#cpCliPhone').value = ''; msg.textContent = ''; drawCli(); };
   const read = ()=>({on: true, title: q('#cpTitle').value.trim(), value: q('#cpValue').value.trim(), code: q('#cpCode').value.trim().toUpperCase(), kind: q('#cpKind').value, endAt: q('#cpEnd').value, audience: showAud ? q('#cpAud').value : 'all', updatedAt: new Date().toISOString()});
   const pv = ()=>{
     const v = read(), end = new Date(); end.setDate(end.getDate() + 14);
@@ -7976,7 +7980,7 @@ function renderCouponEditor(host, cp, who, title, saveFn, offFn, showAud){
     const v = read();
     if(!v.title || !v.value){ msg.style.color = 'var(--danger)'; msg.textContent = 'Écrivez le nom du coupon et le rabais.'; return; }
     if(!v.endAt || new Date(v.endAt + 'T23:59:59') < new Date()){ msg.style.color = 'var(--danger)'; msg.textContent = 'Choisissez une date de fin à venir.'; return; }
-    try{ await saveFn(v); toast('✅ Coupon publié'); }
+    try{ const cliList = (host._cpClients || []).slice(); await saveFn(v); if(cliList.length) await window.stsGrantCouponTo(host.dataset.cpOwner, v.updatedAt, cliList); toast('✅ Coupon publié' + (cliList.length ? ' pour ' + cliList.length + ' client' + (cliList.length > 1 ? 's' : '') : '')); }
     catch(e){ msg.style.color = 'var(--danger)'; msg.textContent = '❌ Impossible de publier, réessayez.'; }
   };
   const off = q('#btnCpOff');
@@ -7989,6 +7993,7 @@ async function fillCoCoupon(){
   const host = document.getElementById('coCouponHost'); if(!host || !companySession) return;
   const co = await getCompanyByCode(companySession.code), cp = (co && co.coupon) || {};
   const ref = db.collection('companies').doc(companySession.code);
+  host.dataset.cpOwner = 'co:' + companySession.code;
   renderCouponEditor(host, cp, (co && co.companyName) || companySession.name || '', '🏷️ Coupon de fête pour mes clients',
     async v => { await ref.set({coupon: v}, {merge: true}); delete companyHomeCache[companySession.code]; fillCoCoupon(); },
     async ()=>{ await ref.set({coupon: null}, {merge: true}); delete companyHomeCache[companySession.code]; fillCoCoupon(); }, true);
@@ -7998,6 +8003,7 @@ async function fillOwnerCoupon(){
   const host = document.getElementById('ownCouponHost'); if(!host) return;
   let cp = {}; try{ const d = await db.collection('settings').doc('coupon').get(); if(d.exists) cp = d.data() || {}; }catch(e){}
   const ref = db.collection('settings').doc('coupon');
+  host.dataset.cpOwner = 'sts';
   renderCouponEditor(host, cp, 'Sam Trace Store', '🏷️ Coupon de fête STS',
     async v => { await ref.set(v); fillOwnerCoupon(); },
     async ()=>{ await ref.delete(); fillOwnerCoupon(); }, true);
@@ -8455,12 +8461,15 @@ async function top3AdminHTML(companies){
     const coBy = {}; (companies || []).forEach(c => { coBy[c.code] = c; });
     const top = Object.keys(g).filter(k => coBy[k]).map(k => ({c: coBy[k], avg: Math.round(g[k].sum / g[k].n * 10) / 10, n: g[k].n})).sort((a, b) => b.avg - a.avg || b.n - a.n).slice(0, 3);
     let given = null; try{ const d = await db.collection('settings').doc('top3_' + ym).get(); if(d.exists) given = d.data(); }catch(e){}
+    let tp = {before: '', after: '', share: true, hide: {}}; try{ tp = await window.stsTopLoad(); }catch(e){}
+    const hidCodes = (tp.hide && tp.hide.ym === ym) ? (tp.hide.codes || []) : [];
     const medal = ['🥇', '🥈', '🥉'];
-    const rows = top.map((t, i) => '<div style="padding:9px 10px;margin-bottom:8px;border:1px solid var(--border);border-radius:12px;"><div style="font-weight:800;overflow-wrap:anywhere;">' + medal[i] + ' ' + coLogoMini(t.c) + escHtml(t.c.companyName || t.c.code) + '</div><div class="sub" style="font-size:12.5px;">⭐ ' + t.avg + '/5 (' + t.n + ' avis ce mois-ci)</div>' + (i === 0 ? (given ? '<div style="margin-top:6px;color:var(--ok);font-weight:700;font-size:12.5px;">✅ Bonus déjà donné ce mois-ci (' + given.days + ' jours à ' + escHtml(given.companyName || '') + ')</div>' : '<div style="display:flex;gap:8px;align-items:center;margin-top:8px;"><input type="number" id="topDays" min="1" step="1" value="3" style="width:80px;margin:0;"><button type="button" class="primary" data-top-bonus="' + escHtml(t.c.code) + '" style="width:auto;padding:8px 14px;">🎁 Donner les jours bonus</button></div>') : '') + '</div>').join('') || '<p class="sub" style="margin:0;">Aucune note ce mois-ci pour le moment.</p>';
-    return foldCardHTML('top3', '#F59E0B,#EF4444', '🏆', 'Top 3 du mois', top.length, '<p class="sub" style="margin-top:0;">Classement des entreprises selon la moyenne des étoiles reçues ce mois-ci. Vous pouvez offrir des jours bonus à la première (une fois par mois).</p>' + rows);
+    const rows = top.map((t, i) => '<div style="padding:9px 10px;margin-bottom:8px;border:1px solid var(--border);border-radius:12px;"><div style="font-weight:800;overflow-wrap:anywhere;">' + medal[i] + ' ' + coLogoMini(t.c) + escHtml(t.c.companyName || t.c.code) + '</div><div class="sub" style="font-size:12.5px;">⭐ ' + t.avg + '/5 (' + t.n + ' avis ce mois-ci)</div>' + (i === 0 ? (given ? '<div style="margin-top:6px;color:var(--ok);font-weight:700;font-size:12.5px;">✅ Bonus déjà donné ce mois-ci (' + given.days + ' jours à ' + escHtml(given.companyName || '') + ')' + window.stsBonusLeftHTML(given) + '</div>' : '<div style="display:flex;gap:8px;align-items:center;margin-top:8px;"><input type="number" id="topDays" min="1" step="1" value="3" style="width:80px;margin:0;"><button type="button" class="primary" data-top-bonus="' + escHtml(t.c.code) + '" style="width:auto;padding:8px 14px;">🎁 Donner les jours bonus</button></div>') : '') + '</div>').join('') || '<p class="sub" style="margin:0;">Aucune note ce mois-ci pour le moment.</p>';
+    return foldCardHTML('top3', '#F59E0B,#EF4444', '🏆', 'Top 3 du mois', top.length, '<p class="sub" style="margin-top:0;">Classement des entreprises selon la moyenne des étoiles reçues ce mois-ci. Vous pouvez offrir des jours bonus à la première (une fois par mois).</p>' + window.stsTop3TopHTML(tp) + '<div style="font-weight:900;margin:12px 0 6px;">2️⃣ Classement du mois (automatique)</div>' + rows + window.stsTop3BottomHTML(top, given, tp, hidCodes));
   }catch(e){ return ''; }
 }
 function bindTop3(root, rerender){
+  window.stsBindTop3Extra(root, rerender);
   const b = root.querySelector('[data-top-bonus]'); if(!b) return;
   b.onclick = async ()=>{
     const days = parseInt((root.querySelector('#topDays') || {}).value, 10) || 0;
@@ -10453,6 +10462,7 @@ async function renderCompany(){
     fillCoStats(hst);
     { const th0 = document.getElementById('coTopProdHost'); if(th0) th0.remove(); const th = document.createElement('div'); th.id = 'coTopProdHost'; main.appendChild(th); window.fillTopProducts(th, companySession.code); }
     { const t3o = document.getElementById('coTop3Host'); if(t3o) t3o.remove(); const t3 = document.createElement('div'); t3.id = 'coTop3Host'; main.appendChild(t3); window.fillCoTop3(t3); }
+    { const fo2 = document.getElementById('coFavHost'); if(fo2) fo2.remove(); const fh2 = document.createElement('div'); fh2.id = 'coFavHost'; main.appendChild(fh2); window.fillCoFav(fh2); }
     { const o2 = document.getElementById('coBadgeHost'); if(o2) o2.remove(); } const hb = document.createElement('div'); hb.id = 'coBadgeHost'; main.insertBefore(hb, main.firstChild);
     const __paintB = (co) => {
       const bd = companyBadge(co); if(!bd){ if(co && co.verified === true) hb.innerHTML = verifiedHeroHTML(co.companyName || ''); return; }
@@ -10728,9 +10738,9 @@ window.fillOwnStats = async function(host){
 (function(){
   const main = document.getElementById('main'); if(!main) return;
   new MutationObserver(function(){
-    [['ownStatsHost', 'fillOwnStats'], ['ownVisitsHost', 'fillOwnVisits'], ['ownReviewsHost', 'fillOwnReviews'], ['ownTrackHost', 'fillOwnTrack'], ['ownExpiryHost', 'fillOwnExpiry'], ['ownDupHost', 'fillOwnDup'], ['ownMonthHost', 'fillOwnMonth'], ['ownTop3Host', 'fillOwnTop3'], ['ownStaffHost', 'fillOwnStaff'], ['coStaffHost', 'fillCoStaff'], ['ownFeaturesHost', 'fillOwnFeatures'], ['ownTopProdHost', 'fillOwnTop']].forEach(function(x){
+    [['ownStatsHost', 'fillOwnStats'], ['ownVisitsHost', 'fillOwnVisits'], ['ownReviewsHost', 'fillOwnReviews'], ['ownTrackHost', 'fillOwnTrack'], ['ownExpiryHost', 'fillOwnExpiry'], ['ownDupHost', 'fillOwnDup'], ['ownMonthHost', 'fillOwnMonth'], ['ownStaffHost', 'fillOwnStaff'], ['ownFavHost', 'fillOwnFav'], ['coStaffHost', 'fillCoStaff'], ['ownFeaturesHost', 'fillOwnFeatures'], ['ownTopProdHost', 'fillOwnTop']].forEach(function(x){
       const h = document.getElementById(x[0]);
-      if(h && !h.dataset.filled && !h.firstChild){ h.dataset.filled = '1'; window[x[1]](h); }
+      if(h && !h.dataset.filled && (!h.firstChild || h.innerHTML.indexOf('ldots') >= 0)){ h.dataset.filled = '1'; window[x[1]](h); }
     });
   }).observe(main, {childList: true, subtree: true});
 })();
@@ -11563,9 +11573,9 @@ window.stsTopProductsBody = async function(code){
 };
 window.fillTopProducts = async function(host, code){
   try{
-    host.innerHTML = foldCardHTML('cotop', '#F97316,#DC2626', '🔥', 'Produits les plus demandés', '…', '<div class="empty">Chargement' + LDOTS + '</div>'); bindFoldCards(host);
+    host.innerHTML = foldCardHTML('cotop', '#06B6D4,#0E7490', '🔥', 'Produits les plus demandés', '…', '<div class="empty">Chargement' + LDOTS + '</div>'); bindFoldCards(host);
     const r = await window.stsTopProductsBody(code);
-    host.innerHTML = foldCardHTML('cotop', '#F97316,#DC2626', '🔥', 'Produits les plus demandés', r.total, '<p class="sub" style="margin:0 0 6px;">Nombre de fois où un client a touché « Commander » sur chaque produit.</p>' + r.html);
+    host.innerHTML = foldCardHTML('cotop', '#06B6D4,#0E7490', '🔥', 'Produits les plus demandés', r.total, '<p class="sub" style="margin:0 0 6px;">Nombre de fois où un client a touché « Commander » sur chaque produit.</p>' + r.html);
     bindFoldCards(host);
   }catch(e){ try{ host.querySelectorAll('.empty').forEach(el => { el.textContent = 'Impossible de charger pour le moment.'; }); }catch(e2){} }
 };
@@ -11963,7 +11973,7 @@ window.stsFillFavs = function(host){
   bindFoldCards(host);
 };
 document.addEventListener('click', function(e){
-  const b = e.target && e.target.closest && e.target.closest('[data-fav-pub]'); if(!b) return;
+  const b = e.target && e.target.closest && e.target.closest('[data-fav-old]'); if(!b) return;
   e.stopPropagation();
   let favs = window.stsFavs(); const pub = b.dataset.favPub;
   if(favs.some(f => f.pub === pub)) favs = favs.filter(f => f.pub !== pub); else favs.push({pub: pub, name: b.dataset.favName || ''});
@@ -12054,19 +12064,19 @@ window.stsTopRowHTML = function(rank, co, w, adminMode){
 };
 window.fillCoTop3 = async function(host){
   try{
-    host.innerHTML = foldCardHTML('cotop3', '#FBBF24,#F97316,#EF4444', '🏆', 'Top 3 entreprises du mois', 0, '<div class="empty">Chargement' + LDOTS + '</div>'); bindFoldCards(host);
+    host.innerHTML = foldCardHTML('cotop3', '#EAB308,#A16207', '🏆', 'Top 3 entreprises du mois', 0, '<div class="empty">Chargement' + LDOTS + '</div>'); bindFoldCards(host);
     const t = await window.stsTopLoad();
     const shown = t.share ? t.winners : [];
     let rows = '';
     for(let i = 0; i < shown.length; i++){ let co = null; try{ co = await getCompanyByCode(shown[i].code); }catch(e){} rows += window.stsTopRowHTML(i + 1, co, shown[i], false); }
-    host.innerHTML = foldCardHTML('cotop3', '#FBBF24,#F97316,#EF4444', '🏆', 'Top 3 entreprises du mois', shown.length,
+    host.innerHTML = foldCardHTML('cotop3', '#EAB308,#A16207', '🏆', 'Top 3 entreprises du mois', shown.length,
       shown.length ? '<p style="font-weight:700;margin:0 0 10px;color:#F5B93D;">' + escHtml(t.before) + '</p>' + rows + '<p style="font-weight:700;margin:10px 0 0;color:#3ECF8E;">' + escHtml(t.after) + '</p>' : '<p class="sub" style="margin:0;">Aucune entreprise pour le moment.</p>');
     bindFoldCards(host);
   }catch(e){ try{ host.querySelectorAll('.empty').forEach(el => { el.textContent = 'Impossible de charger pour le moment.'; }); }catch(e2){} }
 };
 window.fillOwnTop3 = async function(host){
   try{
-    host.innerHTML = foldCardHTML('owntop3', '#FBBF24,#F97316,#EF4444', '🏆', 'Top 3 entreprises du mois', '…', '<div class="empty">Chargement' + LDOTS + '</div>'); bindFoldCards(host);
+    host.innerHTML = foldCardHTML('owntop3', '#EAB308,#A16207', '🏆', 'Top 3 entreprises du mois', '…', '<div class="empty">Chargement' + LDOTS + '</div>'); bindFoldCards(host);
     const cos = await getAllCompanies();
     const paint = async function(){
       const t = await window.stsTopLoad();
@@ -12074,7 +12084,7 @@ window.fillOwnTop3 = async function(host){
       for(let i = 0; i < t.winners.length; i++){ const co = cos.find(c => c.code === t.winners[i].code) || null; rows += window.stsTopRowHTML(i + 1, co, t.winners[i], true); }
       const opts = cos.map(c => '<option value="' + escHtml(c.code) + '">' + escHtml(c.companyName || c.code) + '</option>').join('');
       const ta = 'width:100%;min-height:90px;background:var(--panel2);color:var(--text);border:1px solid var(--border);border-radius:12px;padding:10px;font-family:inherit;';
-      host.innerHTML = foldCardHTML('owntop3', '#FBBF24,#F97316,#EF4444', '🏆', 'Top 3 entreprises du mois', t.winners.length,
+      host.innerHTML = foldCardHTML('owntop3', '#EAB308,#A16207', '🏆', 'Top 3 entreprises du mois', t.winners.length,
         '<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;padding:10px;border:1px solid var(--border);border-radius:12px;margin-bottom:12px;"><div><b>📢 Partager avec les entreprises</b><div class="sub" style="font-size:12.5px;margin:2px 0 0;">' + (t.share ? 'Automatique : les entreprises voient le Top 3 dès qu\'il y a des noms.' : 'Manuel : les entreprises ne voient pas encore le Top 3.') + '</div></div><button type="button" class="miniBtn" id="t3Share" style="min-width:110px;">' + (t.share ? '✅ ON · Automatique' : '⛔ OFF · Manuel') + '</button></div>'
         + '<div style="font-weight:900;margin:6px 0;">1️⃣ Message AVANT (s\'affiche en premier, au-dessus du classement)</div><textarea id="t3Before" style="' + ta + '">' + escHtml(t.before) + '</textarea>'
         + '<div style="font-weight:900;margin:14px 0 6px;">2️⃣ Entreprises gagnantes (classement #1, #2, #3)</div>' + (rows || '<p class="sub" style="margin:0 0 8px;">Aucune entreprise pour le moment (0). Donnez des jours bonus pour en ajouter.</p>')
@@ -12152,6 +12162,184 @@ window.fillOwnStaff = async function(host){
     };
     await paint();
   }catch(e){ try{ host.querySelectorAll('.empty').forEach(el => { el.textContent = 'Impossible de charger pour le moment.'; }); }catch(e2){} }
+};
+
+
+// ===== V14 : recherche ouvrable, Top 3 automatique, favoris en ligne, coupons à des clients =====
+window.stsFilterCards = function(q){
+  const nz = t => String(t || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+  q = nz(q).trim();
+  window._stsFiltering = true;
+  try{
+    (window._stsMoved || []).forEach(function(m){
+      if(m.ph && m.ph.isConnected){ m.ph.replaceWith(m.card); try{ bindFoldCards(m.card.parentElement); }catch(e){} }
+      else if(m.card && m.card.isConnected) m.card.remove();
+    });
+    window._stsMoved = [];
+    const res = document.getElementById('ownCardResults'); if(res) res.innerHTML = '';
+    const matches = [];
+    document.querySelectorAll('#main [data-fold-head]').forEach(function(h){
+      const card = h.parentElement; if(!card) return;
+      const ok = !q || nz(h.textContent).indexOf(q) >= 0;
+      card.style.display = ok ? '' : 'none';
+      if(ok && q && !(res && res.contains(card))) matches.push(card);
+    });
+    if(q && res){
+      matches.forEach(function(card){ const ph = document.createElement('div'); ph.style.display = 'none'; card.replaceWith(ph); res.appendChild(card); window._stsMoved.push({card: card, ph: ph}); });
+      bindFoldCards(res);
+    }
+  }finally{ setTimeout(function(){ window._stsFiltering = false; }, 0); }
+};
+
+// ---- coupons : donner à des clients précis
+window.stsGrantCouponTo = async function(owner, stamp, list){
+  for(const c of list){
+    const ck = bcKey(c.phone); if(!ck) continue;
+    await db.collection('couponGrants').doc('g' + couponClaimId(owner, stamp, ck)).set({ownerKey: owner, stamp: stamp, clientKey: ck, clientName: c.name, clientPhone: c.phone, allowed: true, at: new Date().toISOString()});
+  }
+};
+
+// ---- Top 3 automatique (classement du mois par étoiles) + messages
+window.stsTopLoad = async function(){
+  let v = {}; try{ const d = await db.collection('settings').doc('top3public').get(); v = d.exists ? (d.data() || {}) : {}; }catch(e){}
+  return {before: v.before || window.STS_TOP_BEFORE, after: v.after || window.STS_TOP_AFTER, share: v.share !== false, hide: v.hide || {}};
+};
+window.stsBonusLeft = function(g){
+  if(!g || !g.days) return null;
+  const end = new Date(new Date(g.at || 0).getTime() + g.days * 86400000);
+  return {left: Math.ceil((end - Date.now()) / 86400000), end: end};
+};
+window.stsBonusLeftHTML = function(g){
+  const b = window.stsBonusLeft(g); if(!b) return '';
+  return ' · ' + (b.left > 0 ? '⏳ il reste ' + b.left + ' jour' + (b.left > 1 ? 's' : '') + ' (jusqu\'au ' + b.end.toLocaleDateString('fr-FR', {day: '2-digit', month: 'long', year: 'numeric'}) + ')' : '<b style="color:#EF5D5D;">Fin</b>');
+};
+window.stsTopMonthRanking = async function(){
+  const now = new Date(), start = new Date(now.getFullYear(), now.getMonth(), 1).toISOString(), g = {};
+  try{ const sn = await db.collection('reviews').where('at', '>=', start).get(); sn.forEach(function(d){ const r = d.data() || {}; if(!r.scope || r.scope === '__sts' || !r.stars) return; const o = g[r.scope] = g[r.scope] || {sum: 0, n: 0}; o.sum += parseInt(r.stars, 10) || 0; o.n++; }); }catch(e){}
+  return Object.keys(g).map(k => ({code: k, avg: Math.round(g[k].sum / g[k].n * 10) / 10, n: g[k].n})).sort((a, b) => b.avg - a.avg || b.n - a.n);
+};
+window.stsTopRow2 = function(rank, co, r, given){
+  const medal = ['🥇', '🥈', '🥉'][rank - 1] || '🏅';
+  return '<div style="padding:11px 12px;margin-bottom:8px;border:1px solid rgba(234,179,8,0.5);border-radius:14px;background:rgba(234,179,8,0.07);overflow-wrap:anywhere;">'
+    + '<div style="font-weight:900;display:flex;align-items:center;gap:5px;flex-wrap:wrap;">' + medal + ' <span>#' + rank + '</span> ' + (coLogoMini(co || {}) || '') + '<span>' + escHtml((co && co.companyName) || r.code) + '</span></div>'
+    + '<div style="margin-top:4px;font-size:14px;">— ⭐ ' + r.avg + '/5 (' + r.n + ' avis)' + (given && given.days > 0 ? ' ➜ <b style="color:#F5B93D;">+' + given.days + ' Jours Bonus offerts !</b>' : '') + '</div>'
+    + (given && given.days > 0 ? '<div class="sub" style="font-size:12.5px;margin:3px 0 0;">🎁' + window.stsBonusLeftHTML(given).replace(/^ · /, ' ') + '</div>' : '') + '</div>';
+};
+window.stsTop3TopHTML = function(tp){
+  const ta = 'width:100%;min-height:90px;background:var(--panel2);color:var(--text);border:1px solid var(--border);border-radius:12px;padding:10px;font-family:inherit;';
+  return '<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;padding:10px;border:1px solid var(--border);border-radius:12px;margin:10px 0;"><div><b>📢 Partager avec les entreprises</b><div class="sub" style="font-size:12.5px;margin:2px 0 0;">' + (tp.share ? 'Automatique : le classement apparaît tout seul chez les entreprises.' : 'Manuel : les entreprises ne voient pas le Top 3.') + '</div></div><button type="button" class="miniBtn" id="t3pShare" style="min-width:120px;">' + (tp.share ? '✅ ON · Automatique' : '⛔ OFF · Manuel') + '</button></div>'
+    + '<div style="font-weight:900;margin:8px 0 6px;">1️⃣ Message AVANT (affiché en premier, au-dessus du classement)</div><textarea id="t3pBefore" style="' + ta + '">' + escHtml(tp.before) + '</textarea>';
+};
+window.stsTop3BottomHTML = function(top, given, tp, hidCodes){
+  const ta = 'width:100%;min-height:90px;background:var(--panel2);color:var(--text);border:1px solid var(--border);border-radius:12px;padding:10px;font-family:inherit;';
+  const hideRows = top.length ? top.map(t => '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;padding:6px 0;border-top:1px solid var(--border);font-size:13px;"><span style="overflow-wrap:anywhere;">' + escHtml(t.c.companyName || t.c.code) + (hidCodes.indexOf(t.c.code) >= 0 ? ' <b style="color:#EF5D5D;">(retirée du classement public)</b>' : '') + '</span><button type="button" class="miniBtn" data-t3-hide="' + escHtml(t.c.code) + '">' + (hidCodes.indexOf(t.c.code) >= 0 ? '↩️ Rétablir' : '🙈 Retirer') + '</button></div>').join('') : '';
+  const pv = [], shownTop = top.filter(t => hidCodes.indexOf(t.c.code) < 0);
+  const prev = shownTop.length ? '<p style="font-weight:700;margin:0 0 10px;color:#F5B93D;">' + escHtml(tp.before) + '</p>' + shownTop.map((t, i) => window.stsTopRow2(i + 1, t.c, {code: t.c.code, avg: t.avg, n: t.n}, (given && given.code === t.c.code) ? given : null)).join('') + '<p style="font-weight:700;margin:10px 0 0;color:#3ECF8E;">' + escHtml(tp.after) + '</p>' : '<p class="sub" style="margin:0;">Aucune entreprise pour le moment : la carte des entreprises affiche 0 et aucun message.</p>';
+  return (hideRows ? '<div class="sub" style="font-size:12.5px;margin:8px 0 2px;">Affichage public (vous pouvez retirer un nom du classement des entreprises) :</div>' + hideRows : '')
+    + '<div style="font-weight:900;margin:14px 0 6px;">3️⃣ Message APRÈS (affiché en dernier, sous le classement)</div><textarea id="t3pAfter" style="' + ta + '">' + escHtml(tp.after) + '</textarea>'
+    + '<button type="button" class="primary" id="t3pSave" style="margin-top:10px;">💾 Enregistrer les messages</button><button type="button" class="ghost" id="t3pReset" style="margin-top:8px;">↩️ Remettre les messages d\'origine</button><p class="sub" id="t3pMsg" style="margin:8px 0 0;"></p>'
+    + '<div style="font-weight:900;margin:14px 0 6px;">👀 Aperçu : voici ce que voient les entreprises</div><div style="padding:12px;border:1px solid var(--border);border-radius:14px;">' + (tp.share ? prev : '<p class="sub" style="margin:0;">Le partage est sur OFF : les entreprises voient 0 et aucune entreprise.</p>') + '</div>';
+};
+window.stsBindTop3Extra = function(root, rerender){
+  const q = id => root.querySelector(id); if(!q('#t3pShare')) return;
+  const say = (m, ok) => { const e = q('#t3pMsg'); if(e){ e.style.color = ok ? '#3ECF8E' : '#EF5D5D'; e.textContent = m; } };
+  q('#t3pShare').onclick = async function(){ this.disabled = true; try{ const t = await window.stsTopLoad(); await window.stsTopSave({share: !t.share}); }catch(e){ toast('Échec'); } rerender(); };
+  const sv = q('#t3pSave'); if(sv) sv.onclick = async function(){ try{ await window.stsTopSave({before: (q('#t3pBefore').value || '').trim(), after: (q('#t3pAfter').value || '').trim()}); say('✅ Messages enregistrés', true); }catch(e){ say('Échec, réessayez.', false); } };
+  const rs = q('#t3pReset'); if(rs) rs.onclick = async function(){ if(!confirm('Remettre les deux messages d\'origine ?')) return; try{ await window.stsTopSave({before: window.STS_TOP_BEFORE, after: window.STS_TOP_AFTER}); }catch(e){} rerender(); };
+  root.querySelectorAll('[data-t3-hide]').forEach(function(b){ b.onclick = async function(){
+    b.disabled = true; const ym = new Date().toISOString().slice(0, 7);
+    try{ const t = await window.stsTopLoad(); let codes = (t.hide && t.hide.ym === ym) ? (t.hide.codes || []).slice() : []; const c = b.dataset.t3Hide; const i = codes.indexOf(c); if(i >= 0) codes.splice(i, 1); else codes.push(c); await window.stsTopSave({hide: {ym: ym, codes: codes}}); }catch(e){ toast('Échec'); }
+    rerender();
+  }; });
+};
+window.fillCoTop3 = async function(host){
+  try{
+    const COL = '#EAB308,#A16207';
+    host.innerHTML = foldCardHTML('cotop3', COL, '🏆', 'Top 3 entreprises du mois', 0, '<div class="empty">Chargement' + LDOTS + '</div>'); bindFoldCards(host);
+    const t = await window.stsTopLoad(), ym = new Date().toISOString().slice(0, 7);
+    let given = null; try{ const d = await db.collection('settings').doc('top3_' + ym).get(); if(d.exists) given = d.data(); }catch(e){}
+    const hid = (t.hide && t.hide.ym === ym) ? (t.hide.codes || []) : [];
+    const ranking = t.share ? await window.stsTopMonthRanking() : [];
+    const top = [];
+    for(const r of ranking){ if(hid.indexOf(r.code) >= 0) continue; let co = null; try{ co = await getCompanyByCode(r.code); }catch(e){} if(!co) continue; top.push({r: r, co: co}); if(top.length >= 3) break; }
+    host.innerHTML = foldCardHTML('cotop3', COL, '🏆', 'Top 3 entreprises du mois', top.length,
+      top.length ? '<p style="font-weight:700;margin:0 0 10px;color:#F5B93D;">' + escHtml(t.before) + '</p>' + top.map((x, i) => window.stsTopRow2(i + 1, x.co, x.r, (given && given.code === x.r.code) ? given : null)).join('') + '<p style="font-weight:700;margin:10px 0 0;color:#3ECF8E;">' + escHtml(t.after) + '</p>' : '<p class="sub" style="margin:0;">Aucune entreprise pour le moment.</p>');
+    bindFoldCards(host);
+  }catch(e){ try{ host.querySelectorAll('.empty').forEach(el => { el.textContent = 'Impossible de charger pour le moment.'; }); }catch(e2){} }
+};
+
+// ---- favoris enregistrés en ligne (suivent le client sur tous ses appareils)
+window.stsFavKey = function(){ return (typeof clientPhone !== 'undefined' && clientPhone) ? bcKey(clientPhone) : ''; };
+window.stsFavLoad = async function(force){
+  const key = window.stsFavKey(); if(!key) return [];
+  if(window._stsFavKey === key && window._stsFavList && !force) return window._stsFavList;
+  let list = [];
+  try{ const d = await db.collection('clientFavs').doc(key).get(); list = d.exists ? ((d.data() || {}).favs || []) : []; }catch(e){}
+  window._stsFavKey = key; window._stsFavList = list; return list;
+};
+window.stsFavSet = async function(list){
+  await db.collection('clientFavs').doc(window.stsFavKey()).set({phone: clientPhone, name: (typeof clientName !== 'undefined' ? clientName : '') || '', favs: list, updatedAt: new Date().toISOString()});
+};
+window.stsFavBtnHTML = function(pub, name){
+  if(!pub || !window.stsFavKey()) return '';
+  if(!window._stsFavList || window._stsFavKey !== window.stsFavKey()){ window.stsFavLoad().then(function(){ window.stsFavRefreshAll(); }); }
+  const on = (window._stsFavList || []).some(f => f.pub === pub);
+  return '<div style="margin:0 0 8px;text-align:right;"><button type="button" data-fav-pub="' + escHtml(pub) + '" data-fav-name="' + escHtml(name || '') + '" style="padding:6px 12px;border-radius:12px;border:1px solid #EC4899;background:' + (on ? 'rgba(236,72,153,0.2)' : 'transparent') + ';color:#F472B6;font-weight:800;font-size:13px;cursor:pointer;">' + (on ? '❤️ Dans mes favoris' : '🤍 Ajouter aux favoris') + '</button></div>';
+};
+window.stsFavLink = pub => pub === 'sts' ? appBaseUrl() : appBaseUrl() + '?c=' + encodeURIComponent(pub);
+window.stsFillFavs = async function(host){
+  try{
+    if(!window.stsFavKey()){ host.innerHTML = ''; return; }
+    const mine = await window.stsFavLoad(true);
+    let all = []; try{ const sn = await db.collection('favStats').get(); sn.forEach(d => { const v = d.data() || {}; if((v.count || 0) > 0 && v.pub) all.push(v); }); }catch(e){}
+    all.sort((a, b) => (b.count || 0) - (a.count || 0));
+    const btn = (pub, name, on) => '<button type="button" data-fav-pub="' + escHtml(pub) + '" data-fav-name="' + escHtml(name || '') + '" style="padding:9px 12px;border-radius:10px;border:1px solid #EC4899;background:' + (on ? 'rgba(236,72,153,0.2)' : 'transparent') + ';color:#F472B6;font-weight:800;font-size:13px;cursor:pointer;">' + (on ? '❤️ Retirer' : '🤍 Ajouter aux favoris') + '</button>';
+    const lnk = pub => '<a href="' + window.stsFavLink(pub) + '" style="flex:1;text-align:center;padding:9px;border-radius:10px;background:#BE185D;color:#fff;font-weight:800;text-decoration:underline;">🛍️ Voir les produits</a>';
+    const row = (pub, name, on) => '<div style="padding:10px;margin-bottom:8px;border:1px solid var(--border);border-radius:12px;"><div style="font-weight:800;overflow-wrap:anywhere;">🏢 ' + escHtml(name || pub) + '</div><div style="display:flex;gap:8px;margin-top:8px;">' + lnk(pub) + btn(pub, name, on) + '</div></div>';
+    host.innerHTML = foldCardHTML('clfav', '#EC4899,#9D174D', '❤️', 'Mes entreprises favorites', mine.length, mine.length ? mine.map(f => row(f.pub, f.name, true)).join('') : '<p class="sub" style="margin:0;">Vous n\'avez pas encore de favori. Touchez « 🤍 Ajouter aux favoris » sur une entreprise.</p>')
+      + foldCardHTML('clfavall', '#8B5CF6,#5B21B6', '📋', 'Liste des entreprises favorites', all.length, all.length ? '<p class="sub" style="margin:0 0 8px;">Entreprises que des clients ont mises en favoris. Ouvrez le lien pour voir leurs produits, ou ajoutez-les à vos favoris.</p>' + all.map(f => row(f.pub, f.name, mine.some(m => m.pub === f.pub))).join('') : '<p class="sub" style="margin:0;">Aucune entreprise pour le moment.</p>');
+    bindFoldCards(host);
+  }catch(e){}
+};
+window.stsFavRefreshAll = function(){
+  document.querySelectorAll('[data-fav-pub]').forEach(function(x){ if(x.closest('#clFavHost')) return; const on = (window._stsFavList || []).some(f => f.pub === x.dataset.favPub); x.textContent = on ? '❤️ Dans mes favoris' : '🤍 Ajouter aux favoris'; x.style.background = on ? 'rgba(236,72,153,0.2)' : 'transparent'; });
+  const fh = document.getElementById('clFavHost'); if(fh) window.stsFillFavs(fh);
+};
+document.addEventListener('click', async function(e){
+  const b = e.target && e.target.closest && e.target.closest('[data-fav-pub]'); if(!b) return;
+  e.stopPropagation();
+  if(b.disabled) return;
+  if(!window.stsFavKey()){ toast('Entrez d\'abord vos informations pour utiliser les favoris'); return; }
+  b.disabled = true; const pub = b.dataset.favPub, name = b.dataset.favName || '';
+  try{
+    const list = (await window.stsFavLoad(true)).slice(); const i = list.findIndex(f => f.pub === pub); let on;
+    if(i >= 0){ list.splice(i, 1); on = false; } else { list.push({pub: pub, name: name}); on = true; }
+    await window.stsFavSet(list);
+    await db.collection('favStats').doc(pub).set({pub: pub, name: name, count: firebase.firestore.FieldValue.increment(on ? 1 : -1)}, {merge: true});
+    window._stsFavList = list;
+  }catch(err){ toast('Erreur, réessayez'); }
+  b.disabled = false; window.stsFavRefreshAll();
+}, true);
+window.fillOwnFav = async function(host){
+  try{
+    host.innerHTML = foldCardHTML('ownfav', '#EC4899,#9D174D', '❤️', 'Entreprises mises en favoris', '…', '<div class="empty">Chargement' + LDOTS + '</div>'); bindFoldCards(host);
+    const all = []; const sn = await db.collection('favStats').get(); sn.forEach(d => { const v = d.data() || {}; if((v.count || 0) > 0) all.push(v); });
+    all.sort((a, b) => (b.count || 0) - (a.count || 0));
+    const total = all.reduce((n, x) => n + (x.count || 0), 0);
+    host.innerHTML = foldCardHTML('ownfav', '#EC4899,#9D174D', '❤️', 'Entreprises mises en favoris', all.length,
+      '<p class="sub" style="margin:0 0 8px;">Combien de clients ont mis chaque entreprise en favoris (' + total + ' au total).</p>' + (all.length ? all.map(x => '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;padding:9px 0;border-top:1px solid var(--border);"><span style="font-weight:800;overflow-wrap:anywhere;">🏢 ' + escHtml(x.name || x.pub) + '</span><span style="white-space:nowrap;">❤️ <b>' + x.count + '</b> client' + (x.count > 1 ? 's' : '') + '</span></div>').join('') : '<p class="sub" style="margin:0;">Aucune entreprise pour le moment.</p>'));
+    bindFoldCards(host);
+  }catch(e){ try{ host.querySelectorAll('.empty').forEach(el => { el.textContent = 'Impossible de charger pour le moment.'; }); }catch(e2){} }
+};
+window.fillCoFav = async function(host){
+  try{
+    host.innerHTML = foldCardHTML('cofav', '#EC4899,#9D174D', '❤️', 'Mes favoris', 0, '<div class="empty">Chargement' + LDOTS + '</div>'); bindFoldCards(host);
+    const pub = companySession && companySession.pubId; let n = 0;
+    if(pub){ try{ const d = await db.collection('favStats').doc(pub).get(); n = d.exists ? Math.max(0, (d.data() || {}).count || 0) : 0; }catch(e){} }
+    host.innerHTML = foldCardHTML('cofav', '#EC4899,#9D174D', '❤️', 'Mes favoris', n,
+      n ? '<p style="margin:0;font-weight:800;">❤️ ' + n + ' client' + (n > 1 ? 's' : '') + ' vous ont mis dans leurs favoris.</p><p class="sub" style="margin:6px 0 0;">Votre entreprise apparaît dans la liste des entreprises favorites de tous les clients.</p>' : '<p class="sub" style="margin:0;">Aucun client ne vous a encore mis en favoris (0). Partagez votre lien pour que vos clients vous ajoutent.</p>');
+    bindFoldCards(host);
+  }catch(e){}
 };
 
 perfInstall();
