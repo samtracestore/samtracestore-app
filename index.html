@@ -3864,7 +3864,7 @@ async function openGiftAdmin(code, name){
       + '<div style="height:10px;"></div>' + foldCardHTML('gaclients', '#10B981,#059669', '👥', 'Clients comptés', st.clients.length, clientsHTML + exHTML)
       + '<h3 style="margin:14px 0 6px;">Ajouter ou retirer à la carte</h3>'
       + '<div style="display:flex;gap:8px;margin-bottom:8px;"><select id="gaKind" style="flex:1;"><option value="htg">Argent (HTG)</option><option value="usd">Argent (USD)</option><option value="days">Jours</option></select><input id="gaVal" type="number" step="1" placeholder="Ex : 100 ou -50" style="flex:1;"></div>'
-      + '<input id="gaNote" placeholder="Note (ex : Saint-Valentin)" style="width:100%;margin-bottom:8px;"><button type="button" class="primary" id="gaAdd">💾 Enregistrer sur la carte</button><div id="gaMsg" class="sub" style="margin-top:6px;font-weight:700;"></div>'
+      + '<input id="gaNote" placeholder="Note (ex : Saint-Valentin)" style="width:100%;margin-bottom:8px;"><label style="display:flex;align-items:center;gap:8px;margin-bottom:8px;font-weight:700;font-size:13px;"><input type="checkbox" id="gaTop" checked style="width:auto;margin:0;"> 🏆 Si ce sont des jours : ajouter au Top 3 du mois</label><button type="button" class="primary" id="gaAdd">💾 Enregistrer sur la carte</button><div id="gaMsg" class="sub" style="margin-top:6px;font-weight:700;"></div>'
       + '<div style="height:12px;"></div>' + foldCardHTML('gifthistadm', '#F59E0B,#EA580C', '📜', 'Historique', ledger.length, led + (ledger.length ? '<button type="button" class="miniBtn" id="gaHistDel" style="width:100%;margin-top:10px;color:var(--danger);border-color:rgba(239,93,93,0.4);">🗑️ Supprimer l\'historique</button>' : ''));
     document.getElementById('gaClose').onclick = closeGiftAdmin;
     giftAnimateBars(ov); bindFoldCards(ov);
@@ -3888,6 +3888,7 @@ async function openGiftAdmin(code, name){
         else { lh = Math.round(v * st.ratio); upd = {giftAdjustUSD: inc(v), giftAdjustHTG: inc(lh)}; }
         await db.collection('companies').doc(code).set(upd, {merge: true});
         await giftLedgerAdd(code, 'adjust', lh, ld, note || 'Ajustement');
+        { const tc = document.getElementById('gaTop'); if(kind === 'days' && ld > 0 && tc && tc.checked){ try{ await window.stsTopAddWinner(code, ld); }catch(e3){} } }
         openGiftAdmin(code, name);
       }catch(e){ m.style.color = 'var(--danger)'; m.textContent = '❌ Impossible d\'enregistrer'; }
     };
@@ -5449,7 +5450,7 @@ async function renderOwnerPanel(main){
       </button>
       <button id="btnOwnerSettings" class="${ownerView==='settings'?'active':''}" style="flex:1;font-size:12.5px;padding-left:2px;padding-right:2px;">Paramètres</button>
     </div>
-    ${ownerView === 'companies' ? '<div style="margin-bottom:10px;"><input id="ownCardSearch" type="search" placeholder="🔎 Rechercher une carte (ex : visite, doublons, badge…)" autocomplete="off"></div><div id="ownMonthHost"></div><div id="ownExpiryHost"></div><div id="ownDupHost"></div><div id="ownVisitsHost"></div><div id="ownReviewsHost"></div>' : ''}<div id="ownerContent"></div>
+    ${ownerView === 'companies' ? '<div style="margin-bottom:10px;"><input id="ownCardSearch" type="search" placeholder="🔎 Rechercher une carte (ex : visite, doublons, badge…)" autocomplete="off"></div><div id="ownCardResults"></div><div id="ownMonthHost"></div><div id="ownTop3Host"></div><div id="ownExpiryHost"></div><div id="ownDupHost"></div><div id="ownStaffHost"></div><div id="ownVisitsHost"></div><div id="ownReviewsHost"></div>' : ''}<div id="ownerContent"></div>
     ${whatsappBubbleHTML()}`;
   document.getElementById('btnAdminLogout').onclick = ()=>{ adminSession=null; stopPendingListener(); renderAdmin(); };
   document.getElementById('btnTestSound').onclick = ()=>{ unlockNotifAudio(); playNotificationSound(); toast("🔊 Test du son envoyé"); };
@@ -10451,6 +10452,7 @@ async function renderCompany(){
       if(pre) hst.querySelectorAll('button:not([data-fold-head])').forEach(b => { b.disabled = true; }); }
     fillCoStats(hst);
     { const th0 = document.getElementById('coTopProdHost'); if(th0) th0.remove(); const th = document.createElement('div'); th.id = 'coTopProdHost'; main.appendChild(th); window.fillTopProducts(th, companySession.code); }
+    { const t3o = document.getElementById('coTop3Host'); if(t3o) t3o.remove(); const t3 = document.createElement('div'); t3.id = 'coTop3Host'; main.appendChild(t3); window.fillCoTop3(t3); }
     { const o2 = document.getElementById('coBadgeHost'); if(o2) o2.remove(); } const hb = document.createElement('div'); hb.id = 'coBadgeHost'; main.insertBefore(hb, main.firstChild);
     const __paintB = (co) => {
       const bd = companyBadge(co); if(!bd){ if(co && co.verified === true) hb.innerHTML = verifiedHeroHTML(co.companyName || ''); return; }
@@ -10588,7 +10590,7 @@ async function renderCompanyCore(){
         <span style="position:absolute;right:-6px;bottom:-6px;width:22px;height:22px;border-radius:50%;background:var(--accent);color:#fff;font-size:12px;display:flex;align-items:center;justify-content:center;box-shadow:0 2px 6px rgba(0,0,0,0.4);">✎</span>
       </div>
       <button class="ghost" id="btnCompanyLogout" style="flex:0 0 auto;padding:8px 12px;font-size:13px;">Déconnexion</button>
-      <button type="button" id="coTrackBtn" style="margin-left:auto;display:flex;flex-direction:column;align-items:center;gap:3px;background:none;border:none;padding:0;cursor:pointer;"><span style="font-size:11.5px;font-weight:900;color:#FB923C;letter-spacing:.5px;">Suivi</span><span style="width:50px;height:50px;border-radius:50%;background:linear-gradient(135deg,#F59E0B,#EA580C);display:flex;align-items:center;justify-content:center;box-shadow:0 4px 14px rgba(234,88,12,0.5);">${window.STS_TRUCK_SVG}</span></button>
+      <button type="button" id="coTrackBtn" style="margin-left:auto;display:flex;flex-direction:column;align-items:center;gap:3px;background:none;border:none;padding:0;cursor:pointer;"><span style="width:50px;height:50px;border-radius:50%;background:linear-gradient(135deg,#F59E0B,#EA580C);display:flex;align-items:center;justify-content:center;box-shadow:0 4px 14px rgba(234,88,12,0.5);">${window.STS_TRUCK_SVG}</span><span style="font-size:11.5px;font-weight:900;color:#FB923C;letter-spacing:.5px;">Suivi</span></button>
     </div>
     ${(companySession && companySession.staff) ? '<div class="sub" style="margin:0 0 12px;padding:10px 12px;border-radius:12px;border:1px solid var(--border);">👤 Compte employé : ' + escHtml(companySession.staffName || '') + '</div>' : subscriptionBannerHTML(co)}
     <div id="coTodayBox"></div>
@@ -10726,7 +10728,7 @@ window.fillOwnStats = async function(host){
 (function(){
   const main = document.getElementById('main'); if(!main) return;
   new MutationObserver(function(){
-    [['ownStatsHost', 'fillOwnStats'], ['ownVisitsHost', 'fillOwnVisits'], ['ownReviewsHost', 'fillOwnReviews'], ['ownTrackHost', 'fillOwnTrack'], ['ownExpiryHost', 'fillOwnExpiry'], ['ownDupHost', 'fillOwnDup'], ['ownMonthHost', 'fillOwnMonth'], ['coStaffHost', 'fillCoStaff'], ['ownFeaturesHost', 'fillOwnFeatures'], ['ownTopProdHost', 'fillOwnTop']].forEach(function(x){
+    [['ownStatsHost', 'fillOwnStats'], ['ownVisitsHost', 'fillOwnVisits'], ['ownReviewsHost', 'fillOwnReviews'], ['ownTrackHost', 'fillOwnTrack'], ['ownExpiryHost', 'fillOwnExpiry'], ['ownDupHost', 'fillOwnDup'], ['ownMonthHost', 'fillOwnMonth'], ['ownTop3Host', 'fillOwnTop3'], ['ownStaffHost', 'fillOwnStaff'], ['coStaffHost', 'fillCoStaff'], ['ownFeaturesHost', 'fillOwnFeatures'], ['ownTopProdHost', 'fillOwnTop']].forEach(function(x){
       const h = document.getElementById(x[0]);
       if(h && !h.dataset.filled && !h.firstChild){ h.dataset.filled = '1'; window[x[1]](h); }
     });
@@ -11826,7 +11828,7 @@ document.addEventListener('input', function(e){ if(e.target && e.target.id === '
 (function(){
   let busy = false;
   new MutationObserver(function(){
-    const i = document.getElementById('ownCardSearch'); if(!i || !i.value || busy) return;
+    const i = document.getElementById('ownCardSearch'); if(!i || !i.value || busy || window._stsFiltering) return;
     busy = true; setTimeout(function(){ busy = false; window.stsFilterCards(i.value); }, 150);
   }).observe(document.body, {childList: true, subtree: true});
 })();
@@ -11996,6 +11998,159 @@ window.fillOwnMonth = async function(host){
       '<p class="sub" style="margin:0 0 6px;">Ce mois-ci comparé au mois dernier.</p>' + rows.map(x => row(x[0], x[1])).join('')
       + '<div style="display:flex;justify-content:space-between;gap:8px;padding:9px 0;border-top:1px solid var(--border);"><span>🌟 Note moyenne des avis</span><span><b style="font-size:17px;">' + (a1 !== null ? a1 + '/5' : '—') + '</b> <span class="sub" style="font-size:11.5px;">(mois dernier : ' + (a0 !== null ? a0 + '/5' : '—') + ')</span></span></div>');
     bindFoldCards(host);
+  }catch(e){ try{ host.querySelectorAll('.empty').forEach(el => { el.textContent = 'Impossible de charger pour le moment.'; }); }catch(e2){} }
+};
+
+
+// ===== V13 : recherche qui remonte la carte, Top 3 public, employés (Admin) =====
+window.stsFilterCards = function(q){
+  const nz = t => String(t || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+  q = nz(q).trim();
+  window._stsFiltering = true;
+  try{
+    (window._stsMoved || []).forEach(function(m){ if(m.ph && m.ph.isConnected) m.ph.replaceWith(m.card); else if(m.card && m.card.isConnected) m.card.remove(); });
+    window._stsMoved = [];
+    const res = document.getElementById('ownCardResults'); if(res) res.innerHTML = '';
+    const matches = [];
+    document.querySelectorAll('#main [data-fold-head]').forEach(function(h){
+      const card = h.parentElement; if(!card) return;
+      const ok = !q || nz(h.textContent).indexOf(q) >= 0;
+      card.style.display = ok ? '' : 'none';
+      if(ok && q && !(res && res.contains(card))) matches.push(card);
+    });
+    if(q && res) matches.forEach(function(card){
+      const ph = document.createElement('div'); ph.style.display = 'none';
+      card.replaceWith(ph); res.appendChild(card); window._stsMoved.push({card: card, ph: ph});
+    });
+  }finally{ setTimeout(function(){ window._stsFiltering = false; }, 0); }
+};
+
+// ---- Top 3 entreprises du mois (public)
+window.STS_TOP_BEFORE = 'Félicitations à nos trois lauréats qui ont offert un service client exceptionnel et qui ont remporté le bonus du mois grâce à leurs avis clients ! Faites de même ce mois-ci pour gagner vos jours gratuits.';
+window.STS_TOP_AFTER = 'Bravo à eux ! Donnez le meilleur à vos clients, récoltez un maximum d\'étoiles et gagnez vos jours gratuits le mois prochain !';
+window.stsTopLoad = async function(){
+  let v = {}; try{ const d = await db.collection('settings').doc('top3public').get(); v = d.exists ? (d.data() || {}) : {}; }catch(e){}
+  return {winners: Array.isArray(v.winners) ? v.winners.slice(0, 3) : [], before: v.before || window.STS_TOP_BEFORE, after: v.after || window.STS_TOP_AFTER, share: v.share === true};
+};
+window.stsTopSave = async function(patch){ await db.collection('settings').doc('top3public').set(patch, {merge: true}); };
+window.stsTopAddWinner = async function(code, days){
+  const t = await window.stsTopLoad(); const i = t.winners.findIndex(w => w.code === code);
+  if(i >= 0){ t.winners[i].days = (t.winners[i].days || 0) + days; t.winners[i].at = new Date().toISOString(); }
+  else{ if(t.winners.length >= 3){ toast('Le Top 3 est complet : retirez une entreprise pour en ajouter une autre.'); return false; } t.winners.push({code: code, days: days, at: new Date().toISOString()}); }
+  await window.stsTopSave({winners: t.winners});
+  toast('🏆 Ajoutée au Top 3 du mois');
+  return true;
+};
+window.stsTopRowHTML = function(rank, co, w, adminMode){
+  const medal = ['🥇', '🥈', '🥉'][rank - 1] || '🏅';
+  const n = parseInt(co && co.ratingCount, 10) || 0, sum = Number(co && co.ratingSum) || 0, avg = n ? Math.round(sum / n * 10) / 10 : 0;
+  const end = new Date(new Date(w.at || 0).getTime() + (w.days || 0) * 86400000), left = Math.ceil((end - Date.now()) / 86400000);
+  return '<div style="padding:10px;margin-bottom:8px;border:1px solid var(--border);border-radius:12px;overflow-wrap:anywhere;">'
+    + '<div style="font-weight:800;display:flex;align-items:center;gap:4px;flex-wrap:wrap;">' + medal + ' <b>#' + rank + '</b> ' + (coLogoMini(co || {}) || '') + '<span>' + escHtml((co && co.companyName) || w.code) + '</span></div>'
+    + '<div style="margin-top:4px;font-size:14px;">— ⭐ ' + avg + '/5 (' + n + ' avis)' + (w.days > 0 ? ' ➜ <b style="color:#F5B93D;">+' + w.days + ' Jours Bonus offerts !</b>' : '') + '</div>'
+    + (adminMode ? '<div class="sub" style="font-size:12.5px;margin:3px 0 0;">🔑 code ' + escHtml(w.code) + ' · ' + (left > 0 ? '⏳ Il reste ' + left + ' jour' + (left > 1 ? 's' : '') : '<b style="color:#EF5D5D;">Fin</b>') + '</div>'
+      + '<div style="display:flex;gap:6px;margin-top:8px;"><button type="button" class="miniBtn" data-t3-up="' + (rank - 1) + '">▲</button><button type="button" class="miniBtn" data-t3-down="' + (rank - 1) + '">▼</button><button type="button" class="miniBtn" data-t3-del="' + (rank - 1) + '" style="color:var(--danger);border-color:rgba(239,93,93,0.4);">🗑️ Supprimer</button></div>' : '')
+    + '</div>';
+};
+window.fillCoTop3 = async function(host){
+  try{
+    host.innerHTML = foldCardHTML('cotop3', '#FBBF24,#F97316,#EF4444', '🏆', 'Top 3 entreprises du mois', 0, '<div class="empty">Chargement' + LDOTS + '</div>'); bindFoldCards(host);
+    const t = await window.stsTopLoad();
+    const shown = t.share ? t.winners : [];
+    let rows = '';
+    for(let i = 0; i < shown.length; i++){ let co = null; try{ co = await getCompanyByCode(shown[i].code); }catch(e){} rows += window.stsTopRowHTML(i + 1, co, shown[i], false); }
+    host.innerHTML = foldCardHTML('cotop3', '#FBBF24,#F97316,#EF4444', '🏆', 'Top 3 entreprises du mois', shown.length,
+      shown.length ? '<p style="font-weight:700;margin:0 0 10px;color:#F5B93D;">' + escHtml(t.before) + '</p>' + rows + '<p style="font-weight:700;margin:10px 0 0;color:#3ECF8E;">' + escHtml(t.after) + '</p>' : '<p class="sub" style="margin:0;">Aucune entreprise pour le moment.</p>');
+    bindFoldCards(host);
+  }catch(e){ try{ host.querySelectorAll('.empty').forEach(el => { el.textContent = 'Impossible de charger pour le moment.'; }); }catch(e2){} }
+};
+window.fillOwnTop3 = async function(host){
+  try{
+    host.innerHTML = foldCardHTML('owntop3', '#FBBF24,#F97316,#EF4444', '🏆', 'Top 3 entreprises du mois', '…', '<div class="empty">Chargement' + LDOTS + '</div>'); bindFoldCards(host);
+    const cos = await getAllCompanies();
+    const paint = async function(){
+      const t = await window.stsTopLoad();
+      let rows = '';
+      for(let i = 0; i < t.winners.length; i++){ const co = cos.find(c => c.code === t.winners[i].code) || null; rows += window.stsTopRowHTML(i + 1, co, t.winners[i], true); }
+      const opts = cos.map(c => '<option value="' + escHtml(c.code) + '">' + escHtml(c.companyName || c.code) + '</option>').join('');
+      const ta = 'width:100%;min-height:90px;background:var(--panel2);color:var(--text);border:1px solid var(--border);border-radius:12px;padding:10px;font-family:inherit;';
+      host.innerHTML = foldCardHTML('owntop3', '#FBBF24,#F97316,#EF4444', '🏆', 'Top 3 entreprises du mois', t.winners.length,
+        '<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;padding:10px;border:1px solid var(--border);border-radius:12px;margin-bottom:12px;"><div><b>📢 Partager avec les entreprises</b><div class="sub" style="font-size:12.5px;margin:2px 0 0;">' + (t.share ? 'Automatique : les entreprises voient le Top 3 dès qu\'il y a des noms.' : 'Manuel : les entreprises ne voient pas encore le Top 3.') + '</div></div><button type="button" class="miniBtn" id="t3Share" style="min-width:110px;">' + (t.share ? '✅ ON · Automatique' : '⛔ OFF · Manuel') + '</button></div>'
+        + '<div style="font-weight:900;margin:6px 0;">1️⃣ Message AVANT (s\'affiche en premier, au-dessus du classement)</div><textarea id="t3Before" style="' + ta + '">' + escHtml(t.before) + '</textarea>'
+        + '<div style="font-weight:900;margin:14px 0 6px;">2️⃣ Entreprises gagnantes (classement #1, #2, #3)</div>' + (rows || '<p class="sub" style="margin:0 0 8px;">Aucune entreprise pour le moment (0). Donnez des jours bonus pour en ajouter.</p>')
+        + '<div style="padding:10px;border:1px dashed var(--accent);border-radius:12px;margin:8px 0;"><div style="font-weight:800;margin-bottom:6px;">➕ Donner des jours bonus et ajouter au Top 3</div><select id="t3Co" style="width:100%;margin-bottom:6px;">' + opts + '</select><input id="t3Days" type="number" inputmode="numeric" min="1" placeholder="Nombre de jours bonus (ex : 12)" style="margin-bottom:6px;"><button type="button" class="primary" id="t3Add">🎁 Donner les jours bonus</button></div>'
+        + '<div style="font-weight:900;margin:14px 0 6px;">3️⃣ Message APRÈS (s\'affiche en dernier, sous le classement)</div><textarea id="t3After" style="' + ta + '">' + escHtml(t.after) + '</textarea>'
+        + '<button type="button" class="primary" id="t3Save" style="margin-top:10px;">💾 Enregistrer les messages</button><button type="button" class="ghost" id="t3Reset" style="margin-top:8px;">↩️ Remettre les messages d\'origine</button><p class="sub" id="t3Msg" style="margin:8px 0 0;"></p>'
+        + '<p class="sub" style="font-size:12px;margin-top:8px;">Les messages et les noms ne s\'affichent chez les entreprises que s\'il y a au moins une entreprise dans le classement et que le partage est sur ON.</p>');
+      bindFoldCards(host);
+      const say = (m, ok) => { const e = host.querySelector('#t3Msg'); if(e){ e.style.color = ok ? '#3ECF8E' : '#EF5D5D'; e.textContent = m; } };
+      host.querySelector('#t3Share').onclick = async function(){ this.disabled = true; try{ await window.stsTopSave({share: !t.share}); }catch(e){ toast('Échec'); } paint(); };
+      host.querySelector('#t3Save').onclick = async function(){ try{ await window.stsTopSave({before: host.querySelector('#t3Before').value.trim(), after: host.querySelector('#t3After').value.trim()}); say('✅ Messages enregistrés', true); }catch(e){ say('Échec, réessayez.', false); } };
+      host.querySelector('#t3Reset').onclick = async function(){ if(!confirm('Remettre les deux messages d\'origine ?')) return; try{ await window.stsTopSave({before: window.STS_TOP_BEFORE, after: window.STS_TOP_AFTER}); }catch(e){} paint(); };
+      host.querySelector('#t3Add').onclick = async function(){
+        const code = host.querySelector('#t3Co').value, days = parseInt(host.querySelector('#t3Days').value, 10) || 0;
+        if(days < 1){ say('Entrez le nombre de jours bonus.', false); return; }
+        if(!t.winners.some(w => w.code === code) && t.winners.length >= 3){ say('Le Top 3 est complet : supprimez une entreprise avant d\'en ajouter.', false); return; }
+        if(!confirm('Donner ' + days + ' jour(s) bonus à cette entreprise et l\'ajouter au Top 3 ?')) return;
+        this.disabled = true;
+        try{
+          await db.collection('companies').doc(code).set({giftAdjustDays: firebase.firestore.FieldValue.increment(days)}, {merge: true});
+          await giftLedgerAdd(code, 'event', 0, days, 'Top 3 du mois');
+          try{ await logActivity(code, '🏆', 'Top 3 du mois', 'Bravo ! STS vous offre ' + days + ' jour(s) bonus.'); }catch(e2){}
+          await window.stsTopAddWinner(code, days);
+        }catch(e){ toast('Échec, réessayez'); }
+        paint();
+      };
+      const move = async function(i, d){ const w = t.winners.slice(); const j = i + d; if(j < 0 || j >= w.length) return; const x = w[i]; w[i] = w[j]; w[j] = x; try{ await window.stsTopSave({winners: w}); }catch(e){ toast('Échec'); } paint(); };
+      host.querySelectorAll('[data-t3-up]').forEach(b => { b.onclick = () => move(parseInt(b.dataset.t3Up, 10), -1); });
+      host.querySelectorAll('[data-t3-down]').forEach(b => { b.onclick = () => move(parseInt(b.dataset.t3Down, 10), 1); });
+      host.querySelectorAll('[data-t3-del]').forEach(b => { b.onclick = async function(){
+        const i = parseInt(b.dataset.t3Del, 10); if(!confirm('Retirer cette entreprise du Top 3 ? Son nom disparaît chez les entreprises.')) return;
+        const w = t.winners.slice(); w.splice(i, 1);
+        try{ await window.stsTopSave({winners: w}); }catch(e){ toast('Échec'); } paint();
+      }; });
+    };
+    await paint();
+  }catch(e){ try{ host.querySelectorAll('.empty').forEach(el => { el.textContent = 'Impossible de charger pour le moment.'; }); }catch(e2){} }
+};
+
+// ---- Admin : employés de toutes les entreprises (si une entreprise oublie un code)
+window.fillOwnStaff = async function(host){
+  try{
+    host.innerHTML = foldCardHTML('ownstaff', '#0EA5E9,#0369A1', '👥', 'Employés des entreprises', '…', '<div class="empty">Chargement' + LDOTS + '</div>'); bindFoldCards(host);
+    const paint = async function(){
+      const cos = await getAllCompanies();
+      const withStaff = cos.filter(c => Array.isArray(c.staff) && c.staff.length);
+      const total = withStaff.reduce((n, c) => n + c.staff.length, 0);
+      const opts = cos.map(c => '<option value="' + escHtml(c.code) + '">' + escHtml(c.companyName || c.code) + '</option>').join('');
+      host.innerHTML = foldCardHTML('ownstaff', '#0EA5E9,#0369A1', '👥', 'Employés des entreprises', total,
+        '<p class="sub" style="margin:0 0 8px;">Si une entreprise oublie le code d\'un employé, retrouvez-le ici (touchez l\'icône pour copier). Un employé peut seulement ajouter et modifier des colis.</p>'
+        + (withStaff.length ? withStaff.map(c => '<div style="padding:10px;margin-bottom:10px;border:1px solid var(--border);border-radius:12px;"><div style="font-weight:800;display:flex;align-items:center;gap:4px;">' + (coLogoMini(c) || '🏢') + '<span>' + escHtml(c.companyName || c.code) + '</span></div><div class="sub" style="font-size:12.5px;margin:2px 0 6px;">🔑 code entreprise ' + escHtml(c.code) + '</div>'
+          + c.staff.map((x, i) => '<div style="padding:8px;margin-bottom:6px;border:1px solid var(--border);border-radius:10px;"><div style="font-weight:700;">👤 ' + escHtml(x.name) + '</div>' + payFieldHTML('Code employé', x.code) + '<button type="button" class="miniBtn" data-st-del="' + escHtml(c.code) + '|' + i + '" style="color:var(--danger);border-color:rgba(239,93,93,0.4);">🗑️ Retirer</button></div>').join('') + '</div>').join('') : '<p class="sub" style="margin:0 0 8px;">Aucun employé pour le moment.</p>')
+        + '<div style="padding:10px;border:1px dashed var(--accent);border-radius:12px;"><div style="font-weight:800;margin-bottom:6px;">➕ Ajouter un employé à une entreprise</div><select id="stCo" style="width:100%;margin-bottom:6px;">' + opts + '</select><input id="stName" placeholder="Nom de l\'employé" style="margin-bottom:6px;"><button type="button" class="primary" id="stAdd">Créer le code employé</button></div>');
+      bindFoldCards(host);
+      host.querySelectorAll('[data-st-del]').forEach(b => { b.onclick = async function(){
+        const p = b.dataset.stDel.split('|'), co = cos.find(c => c.code === p[0]); if(!co || !confirm('Retirer cet employé ? Son code ne fonctionnera plus.')) return;
+        const n = co.staff.slice(); n.splice(parseInt(p[1], 10), 1);
+        try{ await db.collection('companies').doc(co.code).set({staff: n, staffCodes: n.map(x => x.code)}, {merge: true}); }catch(e){ toast('Échec'); } paint();
+      }; });
+      const add = host.querySelector('#stAdd');
+      add.onclick = async function(){
+        const code = host.querySelector('#stCo').value, nm = (host.querySelector('#stName').value || '').trim(), co = cos.find(c => c.code === code);
+        if(!co || !nm){ toast('Choisissez l\'entreprise et écrivez le nom'); return; }
+        if((co.staff || []).length >= 3){ toast('3 employés maximum par entreprise'); return; }
+        add.disabled = true; add.innerHTML = 'Création' + LDOTS;
+        try{
+          let c = '';
+          for(let t = 0; t < 12; t++){ c = String(1000 + Math.floor(Math.random() * 9000)); const ex = await db.collection('companies').doc(c).get(); if(ex.exists) continue; const sq = await db.collection('companies').where('staffCodes', 'array-contains', c).limit(1).get(); if(!sq.empty) continue; break; }
+          const n = (co.staff || []).concat([{name: nm, code: c}]);
+          await db.collection('companies').doc(code).set({staff: n, staffCodes: n.map(x => x.code)}, {merge: true});
+          toast('✅ Code employé : ' + c);
+        }catch(e){ toast('Échec, réessayez'); }
+        paint();
+      };
+    };
+    await paint();
   }catch(e){ try{ host.querySelectorAll('.empty').forEach(el => { el.textContent = 'Impossible de charger pour le moment.'; }); }catch(e2){} }
 };
 
