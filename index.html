@@ -8464,7 +8464,7 @@ async function top3AdminHTML(companies){
     let tp = {before: '', after: '', share: true, hide: {}}; try{ tp = await window.stsTopLoad(); }catch(e){}
     const hidCodes = (tp.hide && tp.hide.ym === ym) ? (tp.hide.codes || []) : [];
     const medal = ['🥇', '🥈', '🥉'];
-    const rows = top.map((t, i) => '<div style="padding:9px 10px;margin-bottom:8px;border:1px solid var(--border);border-radius:12px;"><div style="font-weight:800;overflow-wrap:anywhere;">' + medal[i] + ' ' + coLogoMini(t.c) + escHtml(t.c.companyName || t.c.code) + '</div><div class="sub" style="font-size:12.5px;">⭐ ' + t.avg + '/5 (' + t.n + ' avis ce mois-ci)</div>' + (i === 0 ? (given ? '<div style="margin-top:6px;color:var(--ok);font-weight:700;font-size:12.5px;">✅ Bonus déjà donné ce mois-ci (' + given.days + ' jours à ' + escHtml(given.companyName || '') + ')' + window.stsBonusLeftHTML(given) + '</div>' : '<div style="display:flex;gap:8px;align-items:center;margin-top:8px;"><input type="number" id="topDays" min="1" step="1" value="3" style="width:80px;margin:0;"><button type="button" class="primary" data-top-bonus="' + escHtml(t.c.code) + '" style="width:auto;padding:8px 14px;">🎁 Donner les jours bonus</button></div>') : '') + '</div>').join('') || '<p class="sub" style="margin:0;">Aucune note ce mois-ci pour le moment.</p>';
+    const rows = top.map((t, i) => '<div style="padding:9px 10px;margin-bottom:8px;border:1px solid var(--border);border-radius:12px;"><div style="font-weight:800;overflow-wrap:anywhere;">' + medal[i] + ' ' + coLogoMini(t.c) + escHtml(t.c.companyName || t.c.code) + '</div><div class="sub" style="font-size:12.5px;">⭐ ' + t.avg + '/5 (' + t.n + ' avis ce mois-ci)</div>' + (i === 0 ? (given ? '<div style="margin-top:6px;color:var(--ok);font-weight:700;font-size:12.5px;">✅ Bonus déjà donné ce mois-ci (' + given.days + ' jours à ' + escHtml(given.companyName || '') + ')' + window.stsBonusLeftHTML(given) + '</div>' : '<div style="display:flex;gap:8px;align-items:center;margin-top:8px;"><input type="number" id="topDays" min="1" step="1" value="3" style="width:80px;margin:0;"><button type="button" class="primary" data-top-bonus="' + escHtml(t.c.code) + '" style="width:auto;padding:8px 14px;">🎁 Donner les jours bonus</button></div>') : '') + '</div>').join('') || '<p class="sub" style="margin:0;">Nouveau mois : aucune note reçue pour le moment. Dès qu\'un client note une entreprise, elle apparaît ici toute seule avec le champ pour donner les jours bonus.</p>';
     return foldCardHTML('top3', '#F59E0B,#EF4444', '🏆', 'Top 3 du mois', top.length, '<p class="sub" style="margin-top:0;">Classement des entreprises selon la moyenne des étoiles reçues ce mois-ci. Vous pouvez offrir des jours bonus à la première (une fois par mois).</p>' + window.stsTop3TopHTML(tp) + '<div style="font-weight:900;margin:12px 0 6px;">2️⃣ Classement du mois (automatique)</div>' + rows + window.stsTop3BottomHTML(top, given, tp, hidCodes));
   }catch(e){ return ''; }
 }
@@ -8617,7 +8617,6 @@ async function stsBadgeAdminHTML(){
     if((parseInt(st.ratingCount, 10) || 0) !== n || (Number(st.ratingSum) || 0) !== sum){ db.collection('settings').doc('stsBadge').set({ratingSum: sum, ratingCount: n}, {merge: true}).catch(() => {}); }
     const reviews = arr.slice().sort((x, y) => String(y.ratedAt || '').localeCompare(String(x.ratedAt || ''))).slice(0, 8).map(p => '<div style="font-size:13px;padding:6px 0;border-top:1px solid var(--border);overflow-wrap:anywhere;"><b style="color:#F5B93D;">' + '★'.repeat(parseInt(p.rating, 10) || 0) + '☆'.repeat(5 - (parseInt(p.rating, 10) || 0)) + '</b> · ' + escHtml(p.name || 'Client') + (p.ratingComment ? '<div class="sub" style="margin-top:2px;">💬 « ' + escHtml(p.ratingComment) + ' »</div>' : '') + replyBlockHTML(p) + '</div>').join('') || '<p class="sub" style="margin:0;">Aucun avis de vos clients STS pour le moment.</p>';
     const body = '<p class="sub" style="margin-top:0;">C\'est votre propre carte : gratuite, sans conditions. Vos clients STS voient vos badges seulement quand ils entrent les informations de leur colis. Les entreprises qui s\'inscrivent avec votre lien ne les voient pas.</p>'
-      + foldCardHTML('stsreviews', '#F59E0B,#EF4444', '⭐', 'Avis de mes clients STS', n, '<div style="font-weight:800;margin-bottom:4px;">' + (n ? '⭐ ' + avg + '/5 (' + n + ' avis de vos clients STS)' : 'Aucune note pour le moment') + '</div>' + reviews)
       + '<button type="button" class="' + (st.badge === true ? 'ghost' : 'primary') + '" data-sts-badge="' + (st.badge === true ? '0' : '1') + '" style="margin-top:10px;">' + (st.badge === true ? 'Retirer mon badge Entreprise 5 ⭐' : '🏅 Me donner le badge Entreprise 5 ⭐') + '</button>'
       + '<button type="button" class="ghost" data-sts-ver="' + (st.verified === true ? '0' : '1') + '" style="margin-top:8px;color:#60A5FA;border-color:#60A5FA;">' + (st.verified === true ? 'Retirer « Entreprise vérifiée »' : '✔ Me marquer « Entreprise vérifiée »') + '</button>'
       + '<div style="font-weight:800;margin:14px 0 6px;">👀 Aperçu chez vos clients STS</div>' + verifiedHeroHTML('Sam Trace Store') + badgeHeroHTML('Sam Trace Store', avg, n);
@@ -10462,7 +10461,7 @@ async function renderCompany(){
     fillCoStats(hst);
     { const th0 = document.getElementById('coTopProdHost'); if(th0) th0.remove(); const th = document.createElement('div'); th.id = 'coTopProdHost'; main.appendChild(th); window.fillTopProducts(th, companySession.code); }
     { const t3o = document.getElementById('coTop3Host'); if(t3o) t3o.remove(); const t3 = document.createElement('div'); t3.id = 'coTop3Host'; main.appendChild(t3); window.fillCoTop3(t3); }
-    { const fo2 = document.getElementById('coFavHost'); if(fo2) fo2.remove(); const fh2 = document.createElement('div'); fh2.id = 'coFavHost'; main.appendChild(fh2); window.fillCoFav(fh2); }
+    { const fo2 = document.getElementById('coFavHost'); if(fo2) fo2.remove(); const fh2 = document.createElement('div'); fh2.id = 'coFavHost'; main.appendChild(fh2); window.fillCoFav(fh2); window.stsSyncCompanyReviews(companySession.code); }
     { const o2 = document.getElementById('coBadgeHost'); if(o2) o2.remove(); } const hb = document.createElement('div'); hb.id = 'coBadgeHost'; main.insertBefore(hb, main.firstChild);
     const __paintB = (co) => {
       const bd = companyBadge(co); if(!bd){ if(co && co.verified === true) hb.innerHTML = verifiedHeroHTML(co.companyName || ''); return; }
@@ -12234,7 +12233,7 @@ window.stsTop3BottomHTML = function(top, given, tp, hidCodes){
   const ta = 'width:100%;min-height:90px;background:var(--panel2);color:var(--text);border:1px solid var(--border);border-radius:12px;padding:10px;font-family:inherit;';
   const hideRows = top.length ? top.map(t => '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;padding:6px 0;border-top:1px solid var(--border);font-size:13px;"><span style="overflow-wrap:anywhere;">' + escHtml(t.c.companyName || t.c.code) + (hidCodes.indexOf(t.c.code) >= 0 ? ' <b style="color:#EF5D5D;">(retirée du classement public)</b>' : '') + '</span><button type="button" class="miniBtn" data-t3-hide="' + escHtml(t.c.code) + '">' + (hidCodes.indexOf(t.c.code) >= 0 ? '↩️ Rétablir' : '🙈 Retirer') + '</button></div>').join('') : '';
   const pv = [], shownTop = top.filter(t => hidCodes.indexOf(t.c.code) < 0);
-  const prev = shownTop.length ? '<p style="font-weight:700;margin:0 0 10px;color:#F5B93D;">' + escHtml(tp.before) + '</p>' + shownTop.map((t, i) => window.stsTopRow2(i + 1, t.c, {code: t.c.code, avg: t.avg, n: t.n}, (given && given.code === t.c.code) ? given : null)).join('') + '<p style="font-weight:700;margin:10px 0 0;color:#3ECF8E;">' + escHtml(tp.after) + '</p>' : '<p class="sub" style="margin:0;">Aucune entreprise pour le moment : la carte des entreprises affiche 0 et aucun message.</p>';
+  const prev = shownTop.length ? '<p style="font-weight:700;margin:0 0 10px;color:#F5B93D;">' + escHtml(tp.before) + '</p>' + shownTop.map((t, i) => window.stsTopRow2(i + 1, t.c, {code: t.c.code, avg: t.avg, n: t.n}, (given && given.code === t.c.code) ? given : null)).join('') + '<p style="font-weight:700;margin:10px 0 0;color:#3ECF8E;">' + escHtml(tp.after) + '</p>' : window.stsTopDemoHTML(tp);
   return (hideRows ? '<div class="sub" style="font-size:12.5px;margin:8px 0 2px;">Affichage public (vous pouvez retirer un nom du classement des entreprises) :</div>' + hideRows : '')
     + '<div style="font-weight:900;margin:14px 0 6px;">3️⃣ Message APRÈS (affiché en dernier, sous le classement)</div><textarea id="t3pAfter" style="' + ta + '">' + escHtml(tp.after) + '</textarea>'
     + '<button type="button" class="primary" id="t3pSave" style="margin-top:10px;">💾 Enregistrer les messages</button><button type="button" class="ghost" id="t3pReset" style="margin-top:8px;">↩️ Remettre les messages d\'origine</button><p class="sub" id="t3pMsg" style="margin:8px 0 0;"></p>'
@@ -12297,7 +12296,7 @@ window.stsFillFavs = async function(host){
     const lnk = pub => '<a href="' + window.stsFavLink(pub) + '" style="flex:1;text-align:center;padding:9px;border-radius:10px;background:#BE185D;color:#fff;font-weight:800;text-decoration:underline;">🛍️ Voir les produits</a>';
     const row = (pub, name, on) => '<div style="padding:10px;margin-bottom:8px;border:1px solid var(--border);border-radius:12px;"><div style="font-weight:800;overflow-wrap:anywhere;">🏢 ' + escHtml(name || pub) + '</div><div style="display:flex;gap:8px;margin-top:8px;">' + lnk(pub) + btn(pub, name, on) + '</div></div>';
     host.innerHTML = foldCardHTML('clfav', '#EC4899,#9D174D', '❤️', 'Mes entreprises favorites', mine.length, mine.length ? mine.map(f => row(f.pub, f.name, true)).join('') : '<p class="sub" style="margin:0;">Vous n\'avez pas encore de favori. Touchez « 🤍 Ajouter aux favoris » sur une entreprise.</p>')
-      + foldCardHTML('clfavall', '#8B5CF6,#5B21B6', '📋', 'Liste des entreprises favorites', all.length, all.length ? '<p class="sub" style="margin:0 0 8px;">Entreprises que des clients ont mises en favoris. Ouvrez le lien pour voir leurs produits, ou ajoutez-les à vos favoris.</p>' + all.map(f => row(f.pub, f.name, mine.some(m => m.pub === f.pub))).join('') : '<p class="sub" style="margin:0;">Aucune entreprise pour le moment.</p>');
+      + foldCardHTML('clfavall', '#EAB308,#A16207', '📋', 'Liste des entreprises favorites', all.length, all.length ? '<p class="sub" style="margin:0 0 8px;">Entreprises que des clients ont mises en favoris. Ouvrez le lien pour voir leurs produits, ou ajoutez-les à vos favoris.</p>' + all.map(f => row(f.pub, f.name, mine.some(m => m.pub === f.pub))).join('') : '<p class="sub" style="margin:0;">Aucune entreprise pour le moment.</p>');
     bindFoldCards(host);
   }catch(e){}
 };
@@ -12338,6 +12337,100 @@ window.fillCoFav = async function(host){
     if(pub){ try{ const d = await db.collection('favStats').doc(pub).get(); n = d.exists ? Math.max(0, (d.data() || {}).count || 0) : 0; }catch(e){} }
     host.innerHTML = foldCardHTML('cofav', '#EC4899,#9D174D', '❤️', 'Mes favoris', n,
       n ? '<p style="margin:0;font-weight:800;">❤️ ' + n + ' client' + (n > 1 ? 's' : '') + ' vous ont mis dans leurs favoris.</p><p class="sub" style="margin:6px 0 0;">Votre entreprise apparaît dans la liste des entreprises favorites de tous les clients.</p>' : '<p class="sub" style="margin:0;">Aucun client ne vous a encore mis en favoris (0). Partagez votre lien pour que vos clients vous ajoutent.</p>');
+    bindFoldCards(host);
+  }catch(e){}
+};
+
+
+// ===== V15 : avis toujours visibles, Top 3 aperçu, favoris entreprise, carte QR en liste =====
+window.stsSyncCompanyReviews = async function(code){
+  try{ const pk = (await getCompanyPackages(code)).filter(p => p && p.rating && !p.deletedByCompany); for(let i = 0; i < 4; i++) await window.stsSyncReviews(pk); }catch(e){}
+};
+window.stsSyncAllRated = async function(){
+  try{ const pk = (await getAllPackages()).filter(p => p && p.rating && !p.deletedByCompany); for(let i = 0; i < 6; i++) await window.stsSyncReviews(pk); }catch(e){}
+};
+(function(){
+  let done = false;
+  new MutationObserver(function(){
+    if(done || !document.getElementById('btnOwnerCompanies')) return;
+    done = true; setTimeout(function(){ window.stsSyncAllRated(); }, 1500);
+  }).observe(document.body, {childList: true, subtree: true});
+})();
+// la liste des avis ne dépend plus d'une réponse de l'entreprise : on complète avec les colis notés
+window.stsGetReviews = async function(scope, oc){
+  const out = [], seen = {};
+  const add = sn => sn.forEach(d => { const v = d.data(); if(v && v.trackingId && !seen[v.trackingId]){ seen[v.trackingId] = v; out.push(v); } });
+  try{ add(await db.collection('reviews').where('scope', '==', scope).get()); }catch(e){}
+  if(scope === '__sts' && oc){ try{ add(await db.collection('reviews').where('scope', '==', oc).get()); }catch(e){} }
+  let pk = [];
+  try{
+    if(typeof mode !== 'undefined' && mode === 'company' && companySession && (companySession.code === scope || (scope === '__sts' && companySession.code === oc))) pk = await getCompanyPackages(companySession.code);
+    else if(scope === '__sts' && window.stsIsOwnerAdmin()) pk = (await getAllPackages()).filter(isOwnPkg);
+  }catch(e){}
+  pk = pk.concat((window.__clPkgs || []).filter(p => p && window.stsScopeOf(p, oc) === scope));
+  const miss = [];
+  pk.forEach(function(p){
+    if(!p || !p.rating || p.deletedByCompany) return;
+    const ex = seen[p.trackingId];
+    if(ex){ if(typeof p.ratingComment === 'string') ex.comment = p.ratingComment; if(p.ratingReply) ex.reply = p.ratingReply; return; }
+    const r = {trackingId: p.trackingId, scope: scope, name: p.name || 'Client', stars: parseInt(p.rating, 10) || 0, comment: p.ratingComment || '', reply: p.ratingReply || '', at: p.ratedAt || p.updatedAt || ''};
+    seen[p.trackingId] = r; out.push(r); miss.push(p);
+  });
+  if(miss.length) window.stsSyncReviews(miss);
+  out.sort((a, b) => String(b.at || '').localeCompare(String(a.at || '')));
+  return out;
+};
+
+// ---- Top 3 : aperçu d'exemple quand il n'y a pas encore de notes
+window.stsTopDemoHTML = function(tp){
+  const demo = [{companyName: 'Entreprise exemple 1'}, {companyName: 'Entreprise exemple 2'}, {companyName: 'Entreprise exemple 3'}];
+  const r = [{code: 'a', avg: 4.9, n: 50}, {code: 'b', avg: 4.7, n: 42}, {code: 'c', avg: 4.6, n: 35}];
+  return '<p class="sub" style="margin:0 0 8px;font-size:12.5px;">Exemple (aucune note ce mois-ci). Les vrais noms apparaîtront tout seuls :</p>'
+    + '<p style="font-weight:700;margin:0 0 10px;color:#F5B93D;">' + escHtml(tp.before) + '</p>'
+    + demo.map((c, i) => window.stsTopRow2(i + 1, c, r[i], i === 0 ? {days: 12, at: new Date().toISOString()} : null)).join('')
+    + '<p style="font-weight:700;margin:10px 0 0;color:#3ECF8E;">' + escHtml(tp.after) + '</p>';
+};
+
+// ---- carte QR : choisir les entreprises dans une liste déroulante
+window.fillOwnFeatures = async function(host){
+  try{
+    const f = await window.stsLoadFeatures(true), cos = await getAllCompanies();
+    let allOn = f.qrDelivery, sel = f.qrCompanies.slice();
+    const nameOf = c => (cos.find(x => x.code === c) || {}).companyName || c;
+    const draw = function(){
+      const rest = cos.filter(c => sel.indexOf(c.code) < 0);
+      host.innerHTML = '<div class="card" style="border:1px solid rgba(59,130,246,0.6);"><h2 style="color:#60A5FA;">📷 Livraison par code / QR</h2>'
+        + '<p class="sub">Quand c\'est activé, le client voit un <b>code de livraison</b> (avec QR) quand son colis est « En cours de livraison ». Pour passer le colis en « Livré », il faut écrire ce code. <b>Désactivé au départ : c\'est vous qui décidez.</b></p>'
+        + '<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;padding:10px;border:1px solid var(--border);border-radius:12px;margin-bottom:10px;"><b>Pour toutes les entreprises</b><button type="button" class="miniBtn" id="featAll">' + (allOn ? '✅ Activé' : '⛔ Désactivé') + '</button></div>'
+        + '<div class="sub" style="margin-bottom:6px;">Ou seulement pour certaines entreprises :</div>'
+        + (rest.length ? '<div style="display:flex;gap:8px;"><select id="featPick" style="flex:1;min-width:0;">' + rest.map(c => '<option value="' + escHtml(c.code) + '">' + escHtml(c.companyName || c.code) + '</option>').join('') + '</select><button type="button" class="miniBtn" id="featAdd">➕ Activer</button></div>' : '<p class="sub" style="margin:0;">Toutes les entreprises sont déjà dans la liste.</p>')
+        + '<div style="margin-top:10px;">' + (sel.length ? sel.map(c => '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;padding:8px 10px;margin-bottom:6px;border:1px solid rgba(59,130,246,0.5);border-radius:10px;"><span style="font-weight:700;overflow-wrap:anywhere;">📷 ' + escHtml(nameOf(c)) + '</span><button type="button" data-feat-rm="' + escHtml(c) + '" style="border:none;background:transparent;color:var(--danger);font-size:18px;">✕</button></div>').join('') : '<p class="sub" style="margin:0;">Aucune entreprise choisie.</p>') + '</div>'
+        + '<button type="button" class="primary" id="featSave" style="margin-top:10px;">💾 Enregistrer</button><p class="sub" id="featMsg" style="margin:8px 0 0;"></p></div>';
+      host.querySelector('#featAll').onclick = function(){ allOn = !allOn; draw(); };
+      const add = host.querySelector('#featAdd'); if(add) add.onclick = function(){ const v = host.querySelector('#featPick').value; if(v && sel.indexOf(v) < 0) sel.push(v); draw(); };
+      host.querySelectorAll('[data-feat-rm]').forEach(b => { b.onclick = function(){ sel = sel.filter(x => x !== b.dataset.featRm); draw(); }; });
+      host.querySelector('#featSave').onclick = async function(){
+        const msg = host.querySelector('#featMsg'); this.disabled = true;
+        try{ await db.collection('settings').doc('features').set({qrDelivery: allOn, qrCompanies: sel}, {merge: true}); await window.stsLoadFeatures(true); msg.style.color = '#3ECF8E'; msg.textContent = '✅ Enregistré'; }
+        catch(e){ msg.style.color = '#EF5D5D'; msg.textContent = 'Échec, réessayez.'; }
+        this.disabled = false;
+      };
+    };
+    draw();
+  }catch(e){ host.innerHTML = '<div class="card"><div class="empty">Impossible de charger pour le moment.</div></div>'; }
+};
+
+// ---- entreprises : « Mes favoris » + « Liste des entreprises favorites » (jaune)
+window.fillCoFav = async function(host){
+  try{
+    host.innerHTML = foldCardHTML('cofav', '#EC4899,#9D174D', '❤️', 'Mes favoris', 0, '<div class="empty">Chargement' + LDOTS + '</div>'); bindFoldCards(host);
+    const pub = companySession && companySession.pubId; let n = 0, all = [];
+    try{ const sn = await db.collection('favStats').get(); sn.forEach(d => { const v = d.data() || {}; if((v.count || 0) > 0 && v.pub){ all.push(v); if(v.pub === pub) n = v.count; } }); }catch(e){}
+    all.sort((a, b) => (b.count || 0) - (a.count || 0));
+    host.innerHTML = foldCardHTML('cofav', '#EC4899,#9D174D', '❤️', 'Mes favoris', n,
+        n ? '<p style="margin:0;font-weight:800;">❤️ ' + n + ' client' + (n > 1 ? 's' : '') + ' vous ont mis dans leurs favoris.</p><p class="sub" style="margin:6px 0 0;">Votre entreprise apparaît dans la liste des entreprises favorites de tous les clients.</p>' : '<p class="sub" style="margin:0;">Aucun client ne vous a encore mis en favoris (0). Partagez votre lien pour que vos clients vous ajoutent.</p>')
+      + foldCardHTML('cofavall', '#EAB308,#A16207', '📋', 'Liste des entreprises favorites', all.length,
+        all.length ? '<p class="sub" style="margin:0 0 8px;">Entreprises que des clients ont mises en favoris.</p>' + all.map(f => '<div style="padding:10px;margin-bottom:8px;border:1px solid var(--border);border-radius:12px;"><div style="font-weight:800;overflow-wrap:anywhere;">🏢 ' + escHtml(f.name || f.pub) + (f.pub === pub ? ' <span style="color:#F5B93D;">· c\'est vous ⭐</span>' : '') + '</div><div style="margin-top:8px;"><a href="' + window.stsFavLink(f.pub) + '" style="display:block;text-align:center;padding:9px;border-radius:10px;background:#A16207;color:#fff;font-weight:800;text-decoration:underline;">🛍️ Voir les produits</a></div></div>').join('') : '<p class="sub" style="margin:0;">Aucune entreprise pour le moment (0).</p>');
     bindFoldCards(host);
   }catch(e){}
 };
