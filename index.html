@@ -7780,7 +7780,7 @@ async function renderClient(){
     const isCoClient = mode === 'company' && companySession && companyScreen === 'client';
     if(mode !== 'client' && !isCoClient) return;
     const main = document.getElementById('main'); if(!main) return;
-    if(isCoClient){ addBadgeHost(main, [companySession.code]); }
+    if(isCoClient){ addBadgeHost(main, [companySession.code]); { const fo0 = document.getElementById('clFavHost'); if(fo0) fo0.remove(); const fh0 = document.createElement('div'); fh0.id = 'clFavHost'; main.insertBefore(fh0, main.firstChild); window.stsFillFavs(fh0); } }
     if(!isCoClient){
     const oldF = document.getElementById('clFicheHost'); if(oldF) oldF.remove();
     const oldS = document.getElementById('clSurveyHost'); if(oldS) oldS.remove();
@@ -8829,7 +8829,7 @@ async function renderOwnerPackages(){
       <input type="search" id="adminSearch" placeholder="🔍 Rechercher un client, un téléphone ou un n° de suivi" value="${escHtml(adminSearchQ)}" style="margin-bottom:12px;">
       <button type="button" class="ghost" id="btnPrintList" style="width:100%;margin-bottom:12px;color:#fff;border-color:var(--accent);">🖨️ Imprimer / enregistrer la liste en PDF</button>
       <div id="adminList"><div class="empty">Chargement<span class="ldots"><i></i><i></i><i></i></span></div></div>`)}
-    <div id="ownStatsHost"></div><div id="ownTopProdHost"></div>`;
+    <div id="ownStatsHost"></div><div id="ownTopProdHost"></div><div id="ownFavHost"></div>`;
   initLocationFields('','','');
   initColisNumField(isEditing);
   bindCarrierField();
@@ -12434,6 +12434,164 @@ window.fillCoFav = async function(host){
     bindFoldCards(host);
   }catch(e){}
 };
+
+
+// ===== V16 : Top 3 en 3 cases, ordre manuel, favoris stables avec numéros, boutique STS =====
+window.stsCacheGet = function(k){ try{ return localStorage.getItem(k) || ''; }catch(e){ return ''; } };
+window.stsCachePut = function(k, html){ try{ if(html && html.indexOf('ldots') < 0) localStorage.setItem(k, html); }catch(e){} };
+
+window.stsTopLoad = async function(){
+  let v = {}; try{ const d = await db.collection('settings').doc('top3public').get(); v = d.exists ? (d.data() || {}) : {}; }catch(e){}
+  return {before: v.before || window.STS_TOP_BEFORE, after: v.after || window.STS_TOP_AFTER, share: v.share !== false, hide: v.hide || {}, order: v.order || null};
+};
+window.stsApplyTopOrder = function(list, tp){
+  const ym = new Date().toISOString().slice(0, 7), o = tp && tp.order;
+  if(!o || o.ym !== ym || !Array.isArray(o.codes)) return list;
+  const pos = {}; o.codes.forEach((c, i) => { pos[c] = i; });
+  const a = list.filter(x => pos[x.code] !== undefined).sort((x, y) => pos[x.code] - pos[y.code]);
+  return a.concat(list.filter(x => pos[x.code] === undefined));
+};
+window.STS_RANK = [{medal: '🥇', name: 'or', col: '#F5B93D'}, {medal: '🥈', name: 'argent', col: '#C0C7D0'}, {medal: '🥉', name: 'bronze', col: '#CD7F32'}];
+window.stsTopRow2 = function(rank, co, r, given){
+  const R = window.STS_RANK[rank - 1] || window.STS_RANK[2];
+  return '<div style="padding:11px 12px;margin-bottom:8px;border:2px solid ' + R.col + ';border-radius:14px;background:rgba(255,255,255,0.04);overflow-wrap:anywhere;">'
+    + '<div style="font-weight:900;display:flex;align-items:center;gap:5px;flex-wrap:wrap;">' + R.medal + ' <span>#' + rank + '</span> ' + (coLogoMini(co || {}) || '') + '<span>' + escHtml((co && co.companyName) || r.code) + '</span></div>'
+    + '<div style="margin-top:4px;font-size:14px;">— ⭐ ' + r.avg + '/5 (' + r.n + ' avis ce mois-ci)' + (given && given.days > 0 ? ' ➜ <b style="color:#F5B93D;">+' + given.days + ' Jours Bonus offerts !</b>' : '') + '</div>'
+    + (given && given.days > 0 ? '<div class="sub" style="font-size:12.5px;margin:3px 0 0;">🎁' + window.stsBonusLeftHTML(given).replace(/^ · /, ' ') + '</div>' : '') + '</div>';
+};
+// aperçu quand il n'y a pas encore de notes : 3 cases vides (points à la place des vrais nombres)
+window.stsTopDemoHTML = function(tp){
+  const ex = ['4.9', '4.7', '4.6'];
+  return '<p class="sub" style="margin:0 0 8px;font-size:12.5px;">Aucune note ce mois-ci pour le moment. Les trois cases se rempliront toutes seules :</p>'
+    + '<p style="font-weight:700;margin:0 0 10px;color:#F5B93D;">' + escHtml(tp.before) + '</p>'
+    + [1, 2, 3].map(i => { const R = window.STS_RANK[i - 1]; return '<div style="padding:11px 12px;margin-bottom:8px;border:2px solid ' + R.col + ';border-radius:14px;"><div style="font-weight:900;">' + R.medal + ' #' + i + ' <span class="sub" style="font-weight:600;">Nom de l\'entreprise</span></div><div style="margin-top:4px;font-size:14px;opacity:.8;">— ⭐ ' + ex[i - 1] + '/5 (… avis ce mois-ci)</div></div>'; }).join('')
+    + '<p style="font-weight:700;margin:10px 0 0;color:#3ECF8E;">' + escHtml(tp.after) + '</p>';
+};
+
+// ---- carte Top 3 du mois (Admin) : 3 cases #1 or, #2 argent, #3 bronze + changement de place
+window.top3AdminHTML = async function(companies){
+  try{
+    const pk = await getAllPackages(), ym = new Date().toISOString().slice(0, 7), g = {};
+    pk.forEach(p => { if(p.companyCode && p.rating && String(p.ratedAt || '').slice(0, 7) === ym){ const o = g[p.companyCode] = g[p.companyCode] || {sum: 0, n: 0}; o.sum += parseInt(p.rating, 10) || 0; o.n++; } });
+    const coBy = {}; (companies || []).forEach(c => { coBy[c.code] = c; });
+    let list = Object.keys(g).filter(k => coBy[k]).map(k => ({code: k, c: coBy[k], avg: Math.round(g[k].sum / g[k].n * 10) / 10, n: g[k].n})).sort((a, b) => b.avg - a.avg || b.n - a.n);
+    let given = null; try{ const d = await db.collection('settings').doc('top3_' + ym).get(); if(d.exists) given = d.data(); }catch(e){}
+    let tp = {before: '', after: '', share: true, hide: {}, order: null}; try{ tp = await window.stsTopLoad(); }catch(e){}
+    list = window.stsApplyTopOrder(list, tp);
+    const top = list.slice(0, 3);
+    const hidCodes = (tp.hide && tp.hide.ym === ym) ? (tp.hide.codes || []) : [];
+    const manual = !!(tp.order && tp.order.ym === ym);
+    const ex = ['4.9', '4.7', '4.6'];
+    const slots = [0, 1, 2].map(function(i){
+      const t = top[i], R = window.STS_RANK[i];
+      let h = '<div style="padding:10px 12px;margin-bottom:10px;border:2px solid ' + R.col + ';border-radius:14px;"><div style="font-weight:900;overflow-wrap:anywhere;display:flex;align-items:center;gap:4px;flex-wrap:wrap;">' + R.medal + ' <span>#' + (i + 1) + '</span> ' + (t ? (coLogoMini(t.c) || '') + '<span>' + escHtml(t.c.companyName || t.c.code) + '</span>' : '<span class="sub" style="font-weight:600;">— aucune entreprise pour le moment</span>') + '</div>';
+      h += t ? '<div style="font-size:13px;margin-top:3px;">⭐ ' + t.avg + '/5 (' + t.n + ' avis ce mois-ci)</div>' : '<div style="font-size:13px;margin-top:3px;opacity:.7;">⭐ ' + ex[i] + '/5 (… avis ce mois-ci)</div>';
+      if(t && given && given.code === t.c.code) h += '<div style="margin-top:6px;color:var(--ok);font-weight:700;font-size:12.5px;">✅ Bonus donné : ' + given.days + ' jours' + window.stsBonusLeftHTML(given) + '</div>';
+      else if(t && i === 0 && !given) h += '<div style="display:flex;gap:8px;align-items:center;margin-top:8px;"><input type="number" id="topDays" min="1" step="1" value="3" style="width:80px;margin:0;"><button type="button" class="primary" data-top-bonus="' + escHtml(t.c.code) + '" style="width:auto;padding:8px 14px;">🎁 Donner les jours bonus</button></div>';
+      else if(t && i === 0 && given) h += '<div class="sub" style="margin-top:6px;font-size:12.5px;">ℹ️ Bonus déjà donné ce mois-ci (' + given.days + ' jours à ' + escHtml(given.companyName || '') + ')' + window.stsBonusLeftHTML(given) + '</div>';
+      if(t) h += '<div style="display:flex;gap:6px;margin-top:8px;"><button type="button" class="miniBtn" data-t3o-up="' + i + '" ' + (i === 0 ? 'disabled style="opacity:.4;"' : '') + '>▲ Monter</button><button type="button" class="miniBtn" data-t3o-down="' + i + '" ' + (i >= top.length - 1 ? 'disabled style="opacity:.4;"' : '') + '>▼ Descendre</button></div>';
+      return h + '</div>';
+    }).join('');
+    const rows = '<div id="t3oBox" data-codes="' + escHtml(top.map(t => t.code).join(',')) + '">' + slots + '</div>'
+      + (manual ? '<div class="sub" style="font-size:12.5px;margin:0 0 6px;">✋ Ordre manuel actif ce mois-ci. <button type="button" class="miniBtn" id="t3oReset">↩️ Remettre l\'ordre automatique</button></div>' : '<div class="sub" style="font-size:12.5px;margin:0 0 6px;">Ordre automatique : plus d\'étoiles = place plus haute. Si une entreprise n\'est pas à sa vraie place, utilisez ▲ ▼.</div>');
+    return foldCardHTML('top3', '#F59E0B,#EF4444', '🏆', 'Top 3 du mois', top.length, '<p class="sub" style="margin-top:0;">Classement des entreprises selon la moyenne des étoiles reçues ce mois-ci. Vous pouvez offrir des jours bonus à la première (une fois par mois).</p>' + window.stsTop3TopHTML(tp) + '<div style="font-weight:900;margin:12px 0 6px;">2️⃣ Classement du mois (automatique)</div>' + rows + window.stsTop3BottomHTML(top, given, tp, hidCodes));
+  }catch(e){ return ''; }
+};
+(function(){
+  const base = window.stsBindTop3Extra;
+  window.stsBindTop3Extra = function(root, rerender){
+    if(base) base(root, rerender);
+    const box = root.querySelector('#t3oBox'); if(!box) return;
+    const codes = (box.dataset.codes || '').split(',').filter(Boolean);
+    const save = async function(arr){ try{ await window.stsTopSave({order: {ym: new Date().toISOString().slice(0, 7), codes: arr}}); }catch(e){ toast('Échec'); } rerender(); };
+    root.querySelectorAll('[data-t3o-up]').forEach(b => { b.onclick = function(){ if(b.disabled) return; const i = parseInt(b.dataset.t3oUp, 10); if(i < 1) return; const a = codes.slice(); const t = a[i]; a[i] = a[i - 1]; a[i - 1] = t; save(a); }; });
+    root.querySelectorAll('[data-t3o-down]').forEach(b => { b.onclick = function(){ if(b.disabled) return; const i = parseInt(b.dataset.t3oDown, 10); if(i >= codes.length - 1) return; const a = codes.slice(); const t = a[i]; a[i] = a[i + 1]; a[i + 1] = t; save(a); }; });
+    const rs = root.querySelector('#t3oReset'); if(rs) rs.onclick = async function(){ try{ await window.stsTopSave({order: null}); }catch(e){ toast('Échec'); } rerender(); };
+  };
+})();
+
+// ---- carte Top 3 côté entreprise (stable, avec mémoire)
+window.fillCoTop3 = async function(host){
+  try{
+    const COL = '#EAB308,#A16207', key = 'sts_hst_top3';
+    const cached = window.stsCacheGet(key);
+    if(cached){ host.innerHTML = cached; bindFoldCards(host); } else { host.innerHTML = foldCardHTML('cotop3', COL, '🏆', 'Top 3 entreprises du mois', 0, '<div class="empty">Chargement' + LDOTS + '</div>'); bindFoldCards(host); }
+    const t = await window.stsTopLoad(), ym = new Date().toISOString().slice(0, 7);
+    let given = null; try{ const d = await db.collection('settings').doc('top3_' + ym).get(); if(d.exists) given = d.data(); }catch(e){}
+    const hid = (t.hide && t.hide.ym === ym) ? (t.hide.codes || []) : [];
+    let ranking = t.share ? await window.stsTopMonthRanking() : [];
+    ranking = window.stsApplyTopOrder(ranking.filter(r => hid.indexOf(r.code) < 0), t);
+    const top = [];
+    for(const r of ranking){ let co = null; try{ co = await getCompanyByCode(r.code); }catch(e){} if(!co) continue; top.push({r: r, co: co}); if(top.length >= 3) break; }
+    host.innerHTML = foldCardHTML('cotop3', COL, '🏆', 'Top 3 entreprises du mois', top.length,
+      top.length ? '<p style="font-weight:700;margin:0 0 10px;color:#F5B93D;">' + escHtml(t.before) + '</p>' + top.map((x, i) => window.stsTopRow2(i + 1, x.co, x.r, (given && given.code === x.r.code) ? given : null)).join('') + '<p style="font-weight:700;margin:10px 0 0;color:#3ECF8E;">' + escHtml(t.after) + '</p>' : '<p class="sub" style="margin:0;">Aucune entreprise pour le moment.</p>');
+    bindFoldCards(host); window.stsCachePut(key, host.innerHTML);
+  }catch(e){ try{ host.querySelectorAll('.empty').forEach(el => { el.textContent = 'Impossible de charger pour le moment.'; }); }catch(e2){} }
+};
+window.fillTopProducts = async function(host, code){
+  try{
+    const key = 'sts_hst_topprod_' + code, COL = '#06B6D4,#0E7490', cached = window.stsCacheGet(key);
+    if(cached){ host.innerHTML = cached; bindFoldCards(host); } else { host.innerHTML = foldCardHTML('cotop', COL, '🔥', 'Produits les plus demandés', '…', '<div class="empty">Chargement' + LDOTS + '</div>'); bindFoldCards(host); }
+    const r = await window.stsTopProductsBody(code);
+    host.innerHTML = foldCardHTML('cotop', COL, '🔥', 'Produits les plus demandés', r.total, '<p class="sub" style="margin:0 0 6px;">Nombre de fois où un client a touché « Commander » sur chaque produit.</p>' + r.html);
+    bindFoldCards(host); window.stsCachePut(key, host.innerHTML);
+  }catch(e){}
+};
+
+// ---- favoris : stables (mémoire), avec numéros, liens roses, boutique STS
+window.stsFavLink = pub => pub === 'sts' ? appBaseUrl() + '?shop=sts' : appBaseUrl() + '?c=' + encodeURIComponent(pub);
+window.stsFillFavs = async function(host){
+  try{
+    const fk = window.stsFavKey();
+    if(!fk){ host.innerHTML = ''; return; }
+    const ckey = 'sts_hst_favs_' + fk, cached = window.stsCacheGet(ckey);
+    if(cached && !host.innerHTML.trim()){ host.innerHTML = cached; bindFoldCards(host); }
+    const mine = await window.stsFavLoad(true);
+    let all = []; try{ const sn = await db.collection('favStats').get(); sn.forEach(d => { const v = d.data() || {}; if((v.count || 0) > 0 && v.pub) all.push(v); }); }catch(e){}
+    all.sort((a, b) => (b.count || 0) - (a.count || 0));
+    const btn = (pub, name, on) => '<button type="button" data-fav-pub="' + escHtml(pub) + '" data-fav-name="' + escHtml(name || '') + '" style="padding:9px 12px;border-radius:10px;border:1px solid #EC4899;background:' + (on ? 'rgba(236,72,153,0.2)' : 'transparent') + ';color:#F472B6;font-weight:800;font-size:13px;cursor:pointer;">' + (on ? '❤️ Retirer' : '🤍 Ajouter aux favoris') + '</button>';
+    const lnk = pub => '<a href="' + window.stsFavLink(pub) + '" style="flex:1;text-align:center;padding:9px;border-radius:10px;background:#BE185D;color:#fff;font-weight:800;text-decoration:underline;">🛍️ Voir les produits</a>';
+    const cnt = pub => { const f = all.find(x => x.pub === pub); return f ? ' <span style="color:#F472B6;font-weight:700;font-size:12.5px;">· ❤️ ' + f.count + ' client' + (f.count > 1 ? 's' : '') + '</span>' : ''; };
+    const row = (pub, name, on) => '<div style="padding:10px;margin-bottom:8px;border:1px solid var(--border);border-radius:12px;"><div style="font-weight:800;overflow-wrap:anywhere;">🏢 ' + escHtml(name || pub) + cnt(pub) + '</div><div style="display:flex;gap:8px;margin-top:8px;">' + lnk(pub) + btn(pub, name, on) + '</div></div>';
+    host.innerHTML = foldCardHTML('clfav', '#EC4899,#9D174D', '❤️', 'Mes entreprises favorites', mine.length, mine.length ? mine.map(f => row(f.pub, f.name, true)).join('') : '<p class="sub" style="margin:0;">Vous n\'avez pas encore de favori. Touchez « 🤍 Ajouter aux favoris » sur une entreprise.</p>')
+      + foldCardHTML('clfavall', '#EAB308,#A16207', '📋', 'Liste des entreprises favorites', all.length, all.length ? '<p class="sub" style="margin:0 0 8px;">Entreprises que des clients ont mises en favoris. Ouvrez le lien pour voir leurs produits, ou ajoutez-les à vos favoris.</p>' + all.map(f => row(f.pub, f.name, mine.some(m => m.pub === f.pub))).join('') : '<p class="sub" style="margin:0;">Aucune entreprise pour le moment.</p>');
+    bindFoldCards(host); window.stsCachePut(ckey, host.innerHTML);
+  }catch(e){}
+};
+window.fillCoFav = async function(host){
+  try{
+    const pub = companySession && companySession.pubId, key = 'sts_hst_cofav_' + (companySession ? companySession.code : ''), cached = window.stsCacheGet(key);
+    if(cached){ host.innerHTML = cached; bindFoldCards(host); } else { host.innerHTML = foldCardHTML('cofav', '#EC4899,#9D174D', '❤️', 'Mes favoris', 0, '<div class="empty">Chargement' + LDOTS + '</div>'); bindFoldCards(host); }
+    let n = 0, all = [];
+    try{ const sn = await db.collection('favStats').get(); sn.forEach(d => { const v = d.data() || {}; if((v.count || 0) > 0 && v.pub){ all.push(v); if(v.pub === pub) n = v.count; } }); }catch(e){}
+    all.sort((a, b) => (b.count || 0) - (a.count || 0));
+    host.innerHTML = foldCardHTML('cofav', '#EC4899,#9D174D', '❤️', 'Mes favoris', n,
+        n ? '<p style="margin:0;font-weight:800;">❤️ ' + n + ' client' + (n > 1 ? 's' : '') + ' vous ont mis dans leurs favoris.</p><p class="sub" style="margin:6px 0 0;">Votre entreprise apparaît dans la liste des entreprises favorites de tous les clients.</p>' : '<p class="sub" style="margin:0;">Aucun client ne vous a encore mis en favoris (0). Partagez votre lien pour que vos clients vous ajoutent.</p>')
+      + foldCardHTML('cofavall', '#EAB308,#A16207', '📋', 'Liste des entreprises favorites', all.length,
+        all.length ? '<p class="sub" style="margin:0 0 8px;">Entreprises que des clients ont mises en favoris.</p>' + all.map(f => '<div style="padding:10px;margin-bottom:8px;border:1px solid var(--border);border-radius:12px;"><div style="font-weight:800;overflow-wrap:anywhere;">🏢 ' + escHtml(f.name || f.pub) + ' <span style="color:#F472B6;font-weight:700;font-size:12.5px;">· ❤️ ' + f.count + ' client' + (f.count > 1 ? 's' : '') + '</span>' + (f.pub === pub ? ' <span style="color:#F5B93D;">· c\'est vous ⭐</span>' : '') + '</div><div style="margin-top:8px;"><a href="' + window.stsFavLink(f.pub) + '" style="display:block;text-align:center;padding:9px;border-radius:10px;background:#BE185D;color:#fff;font-weight:800;text-decoration:underline;">🛍️ Voir les produits</a></div></div>').join('') : '<p class="sub" style="margin:0;">Aucune entreprise pour le moment (0).</p>');
+    bindFoldCards(host); window.stsCachePut(key, host.innerHTML);
+  }catch(e){}
+};
+// boutique : liste des produits d'une entreprise (ou de Sam Trace Store) ouverte depuis un lien
+window.stsOpenShopLink = async function(tries){
+  tries = tries || 0;
+  try{
+    const q = new URLSearchParams(location.search), pub = q.get('shop'); if(!pub) return;
+    if(typeof db === 'undefined' || !db){ if(tries < 30) setTimeout(function(){ window.stsOpenShopLink(tries + 1); }, 500); return; }
+    let code = '', name = '', wa = '';
+    if(pub === 'sts'){ code = 'sts'; name = 'Sam Trace Store'; wa = WHATSAPP_NUMBER; }
+    else{ const sn = await db.collection('companies').where('pubId', '==', pub).limit(1).get(); if(sn.empty) return; const co = sn.docs[0].data() || {}; code = sn.docs[0].id; name = co.companyName || ''; wa = co.companyWhatsapp || co.companyPhone || ''; }
+    const cd = await db.collection('catalogs').doc(code).get(); const items = cd.exists ? (cd.data().items || []) : [];
+    const ov = document.createElement('div');
+    ov.style.cssText = 'position:fixed;inset:0;z-index:400;background:rgba(0,0,0,0.88);overflow-y:auto;padding:14px;';
+    ov.innerHTML = '<div style="max-width:520px;margin:14px auto;background:var(--panel);border:1px solid var(--border);border-radius:20px;padding:14px;"><div style="font-weight:900;font-size:18px;margin-bottom:10px;">🛍️ Produits · ' + escHtml(name) + '</div>'
+      + (items.length ? catalogCardHTML(items, '', {phone: wa, name: name, pub: pub, code: code}) : '<p class="sub">Cette entreprise n\'a pas encore de produits.</p>')
+      + '<button type="button" id="shopClose" class="primary" style="width:100%;">Fermer</button></div>';
+    document.body.appendChild(ov);
+    document.getElementById('shopClose').onclick = function(){ ov.remove(); try{ q.delete('shop'); history.replaceState(null, '', location.pathname + (q.toString() ? '?' + q.toString() : '')); }catch(e){} };
+  }catch(e){}
+};
+setTimeout(function(){ window.stsOpenShopLink(0); }, 450);
 
 perfInstall();
 installInit();
