@@ -514,11 +514,12 @@ let companySession = null; // {code, companyName}
 let companyScreen = 'home'; // home | colis | settings | client
 let adminStash = null;
 
-function toast(msg){
+function toast(msg, ms){
   const t = document.getElementById('toast');
   t.textContent = msg;
   t.classList.add('show');
-  setTimeout(()=>t.classList.remove('show'), 2400);
+  clearTimeout(window._toastT);
+  window._toastT = setTimeout(()=>t.classList.remove('show'), ms || 2400);
 }
 
 function normalizePhone(p){ return (p||"").replace(/[\s\-\.]/g,""); }
@@ -12344,7 +12345,8 @@ window.stsFavLogos = async function(){
   return m;
 };
 window.stsFavRowHTML = function(f, L, you){
-  return '<div style="padding:10px;margin-bottom:8px;border:1px solid var(--border);border-radius:12px;"><div style="font-weight:800;overflow-wrap:anywhere;display:flex;align-items:center;flex-wrap:wrap;">' + (L[f.pub] || L['n:' + String(f.name || '').trim().toLowerCase()] || '<span style="margin-right:6px;">🏢</span>') + '<span>' + escHtml(f.name || f.pub) + '</span><span style="color:#F472B6;font-weight:700;font-size:12.5px;margin-left:6px;">· ❤️ ' + f.count + ' client' + (f.count > 1 ? 's' : '') + '</span>' + (you ? '<span style="color:#F5B93D;margin-left:6px;">· c\'est vous ⭐</span>' : '') + '</div><div style="margin-top:8px;"><a href="' + window.stsFavLink(f.pub) + '" style="display:block;text-align:center;padding:9px;border-radius:10px;background:#BE185D;color:#fff;font-weight:800;text-decoration:underline;">🛍️ Voir les produits</a></div></div>';
+  const lg = L[f.pub] || L['n:' + String(f.name || '').trim().toLowerCase()] || '<span style="margin-right:6px;">🏢</span>';
+  return '<div style="padding:10px;margin-bottom:8px;border:1px solid var(--border);border-radius:12px;"><div style="display:flex;align-items:center;"><div style="flex:0 0 auto;display:flex;align-items:center;">' + lg + '</div><div style="font-weight:800;overflow-wrap:anywhere;min-width:0;"><span>' + escHtml(f.name || f.pub) + '</span><span style="color:#F472B6;font-weight:700;font-size:12.5px;margin-left:6px;">· ❤️ ' + f.count + ' client' + (f.count > 1 ? 's' : '') + '</span>' + (you ? '<div style="color:#F5B93D;font-weight:800;font-size:13.5px;margin-top:2px;">· c\'est vous ⭐</div>' : '') + '</div></div><div style="margin-top:8px;"><a href="' + window.stsFavLink(f.pub) + '" style="display:block;text-align:center;padding:9px;border-radius:10px;background:#BE185D;color:#fff;font-weight:800;text-decoration:underline;">🛍️ Voir les produits</a></div></div>';
 };
 window.fillOwnMyStaff = async function(host){
   try{
@@ -12415,7 +12417,7 @@ window.fillOwnFav = async function(host){
     const L = await window.stsFavLogos();
     const total = all.reduce((n, x) => n + (x.count || 0), 0);
     host.innerHTML = foldCardHTML('ownfav', '#EC4899,#9D174D', '❤️', 'Entreprises mises en favoris', all.length,
-      '<p class="sub" style="margin:0 0 8px;">Combien de clients ont mis chaque entreprise en favoris (' + total + ' au total).</p>' + (all.length ? all.map(x => '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;padding:9px 0;border-top:1px solid var(--border);"><span style="font-weight:800;overflow-wrap:anywhere;display:flex;align-items:center;">' + (L[x.pub] || L['n:' + String(x.name || '').trim().toLowerCase()] || '<span style="margin-right:6px;">🏢</span>') + '<span>' + escHtml(x.name || x.pub) + '</span></span><span style="white-space:nowrap;">❤️ <b>' + x.count + '</b> client' + (x.count > 1 ? 's' : '') + '</span></div>').join('') : '<p class="sub" style="margin:0;">Aucune entreprise pour le moment.</p>'));
+      '<p class="sub" style="margin:0 0 8px;">Combien de clients ont mis chaque entreprise en favoris (' + total + ' au total).</p>' + (all.length ? all.map(x => '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;padding:9px 0;border-top:1px solid var(--border);"><span style="font-weight:800;overflow-wrap:anywhere;display:flex;align-items:center;">' + (L[x.pub] || L['n:' + String(x.name || '').trim().toLowerCase()] || '<span style="margin-right:6px;">🏢</span>') + '<span>' + escHtml(x.name || x.pub) + (x.pub === 'sts' ? '<span style="display:block;color:#F5B93D;font-weight:800;font-size:13.5px;">· c\'est vous ⭐</span>' : '') + '</span></span><span style="white-space:nowrap;">❤️ <b>' + x.count + '</b> client' + (x.count > 1 ? 's' : '') + '</span></div>').join('') : '<p class="sub" style="margin:0;">Aucune entreprise pour le moment.</p>'));
     bindFoldCards(host);
   }catch(e){ try{ host.querySelectorAll('.empty').forEach(el => { el.textContent = 'Impossible de charger pour le moment.'; }); }catch(e2){} }
 };
@@ -12550,10 +12552,10 @@ window.stsTopRow2 = function(rank, co, r, given){
 };
 // aperçu quand il n'y a pas encore de notes : 3 cases vides (points à la place des vrais nombres)
 window.stsTopDemoHTML = function(tp){
-  const ex = ['4.9', '4.7', '4.6'];
-  return '<p class="sub" style="margin:0 0 8px;font-size:12.5px;">Aucune note ce mois-ci pour le moment. Les trois cases se rempliront toutes seules :</p>'
+  const ex = ['4.9', '4.7', '4.6'], exN = [12, 9, 6];
+  return '<p class="sub" style="margin:0 0 8px;font-size:12.5px;">Aucune note ce mois-ci pour le moment. Les trois cases se rempliront toutes seules (aperçu avec des exemples) :</p>'
     + '<p style="font-weight:700;margin:0 0 10px;color:#F5B93D;">' + escHtml(tp.before) + '</p>'
-    + [1, 2, 3].map(i => { const R = window.STS_RANK[i - 1]; return '<div style="padding:11px 12px;margin-bottom:8px;border:2px solid ' + R.col + ';border-radius:14px;"><div style="font-weight:900;">' + R.medal + ' #' + i + ' <span class="sub" style="font-weight:600;">Nom de l\'entreprise</span></div><div style="margin-top:4px;font-size:14px;opacity:.8;">— ⭐ 0/5 (0 avis ce mois-ci)</div></div>'; }).join('')
+    + [1, 2, 3].map(i => { const R = window.STS_RANK[i - 1]; return '<div style="padding:11px 12px;margin-bottom:8px;border:2px solid ' + R.col + ';border-radius:14px;"><div style="font-weight:900;">' + R.medal + ' #' + i + ' <span class="sub" style="font-weight:600;">Nom de l\'entreprise</span></div><div style="margin-top:4px;font-size:14px;opacity:.8;">— ⭐ ' + ex[i - 1] + '/5 (' + exN[i - 1] + ' avis ce mois-ci)</div></div>'; }).join('')
     + '<p style="font-weight:700;margin:10px 0 0;color:#3ECF8E;">' + escHtml(tp.after) + '</p>';
 };
 
@@ -12581,11 +12583,11 @@ window.top3AdminHTML = async function(companies){
       else if(gi && gi.code === t.c.code) h += '<div style="margin-top:6px;color:var(--ok);font-weight:700;font-size:12.5px;">✅ Bonus donné : ' + gi.days + ' jours' + window.stsBonusLeftHTML(gi) + '</div>';
       else if(!gi) h += btnH(t.c.code);
       else h += '<div class="sub" style="margin-top:6px;font-size:12.5px;">ℹ️ Bonus déjà donné ce mois-ci pour cette place (' + gi.days + ' jours à ' + escHtml(gi.companyName || '') + ')' + window.stsBonusLeftHTML(gi) + '</div>';
-      if(t) h += '<div style="display:flex;gap:6px;margin-top:8px;"><button type="button" class="miniBtn" data-t3o-up="' + i + '" ' + (i === 0 ? 'disabled style="opacity:.4;"' : '') + '>▲ Monter</button><button type="button" class="miniBtn" data-t3o-down="' + i + '" ' + (i >= top.length - 1 ? 'disabled style="opacity:.4;"' : '') + '>▼ Descendre</button></div>';
+      if(t) h += '<div style="display:flex;gap:6px;margin-top:8px;"><button type="button" data-t3o-up="' + i + '" ' + (i === 0 ? 'data-edge="Cette entreprise est déjà à la première place" ' : '') + 'style="flex:1;padding:10px 6px;border-radius:12px;border:none;font-weight:900;font-size:14px;color:#fff;background:linear-gradient(135deg,#22C55E,#15803D);user-select:none;-webkit-user-select:none;-webkit-touch-callout:none;' + (i === 0 ? 'opacity:.45;' : '') + '">▲ Monter</button><button type="button" data-t3o-down="' + i + '" ' + (i >= top.length - 1 ? 'data-edge="Cette entreprise est déjà à la dernière place" ' : '') + 'style="flex:1;padding:10px 6px;border-radius:12px;border:none;font-weight:900;font-size:14px;color:#fff;background:linear-gradient(135deg,#F59E0B,#C2410C);user-select:none;-webkit-user-select:none;-webkit-touch-callout:none;' + (i >= top.length - 1 ? 'opacity:.45;' : '') + '">▼ Descendre</button></div>';
       return h + '</div>';
     }).join('');
     const rows = '<div id="t3oBox" data-codes="' + escHtml(top.map(t => t.code).join(',')) + '">' + slots + '</div>'
-      + (manual ? '<div class="sub" style="font-size:12.5px;margin:0 0 6px;">✋ Ordre manuel actif ce mois-ci. <button type="button" class="miniBtn" id="t3oReset">↩️ Remettre l\'ordre automatique</button></div>' : '<div class="sub" style="font-size:12.5px;margin:0 0 6px;">Ordre automatique : plus d\'étoiles = place plus haute. Si une entreprise n\'est pas à sa vraie place, utilisez ▲ ▼.</div>');
+      + (manual ? '<div class="sub" style="font-size:12.5px;margin:0 0 6px;">✋ Ordre manuel actif ce mois-ci. <button type="button" class="miniBtn" id="t3oReset">↩️ Remettre l\'ordre automatique</button></div>' : '<div class="sub" style="font-size:12.5px;margin:0 0 6px;">Ordre automatique : plus d\'étoiles = place plus haute. Si une entreprise n\'est pas à sa vraie place, utilisez les flèches : <span style="display:inline-flex;gap:6px;vertical-align:middle;"><button type="button" data-t3o-hint="up" style="padding:6px 12px;border-radius:10px;border:none;font-weight:900;font-size:15px;color:#fff;background:linear-gradient(135deg,#22C55E,#15803D);user-select:none;-webkit-user-select:none;-webkit-touch-callout:none;">▲</button><button type="button" data-t3o-hint="down" style="padding:6px 12px;border-radius:10px;border:none;font-weight:900;font-size:15px;color:#fff;background:linear-gradient(135deg,#F59E0B,#C2410C);user-select:none;-webkit-user-select:none;-webkit-touch-callout:none;">▼</button></span></div>');
     return foldCardHTML('top3', '#F59E0B,#EF4444', '🏆', 'Top 3 du mois', top.length, '<p class="sub" style="margin-top:0;">Classement des entreprises selon la moyenne des étoiles reçues ce mois-ci. Vous pouvez offrir des jours bonus aux trois premières (une fois par mois pour chaque place).</p>' + window.stsTop3TopHTML(tp) + '<div style="font-weight:900;margin:12px 0 6px;">2️⃣ Classement du mois (automatique)</div>' + rows + window.stsTop3BottomHTML(top, given, tp, hidCodes));
   }catch(e){ return ''; }
 };
@@ -12594,10 +12596,11 @@ window.top3AdminHTML = async function(companies){
   window.stsBindTop3Extra = function(root, rerender){
     if(base) base(root, rerender);
     const box = root.querySelector('#t3oBox'); if(!box) return;
+    root.querySelectorAll('[data-t3o-hint]').forEach(b => { b.onclick = function(e){ e.preventDefault(); e.stopPropagation(); const n = (box.dataset.codes || '').split(',').filter(Boolean).length; toast((b.dataset.t3oHint === 'up' ? '▲ MONTER : fait monter l\'entreprise d\'une place. ' + (n ? 'Touchez ▲ Monter sous l\'entreprise.' : 'Aucune entreprise dans le classement pour le moment.') : '▼ DESCENDRE : fait descendre l\'entreprise d\'une place. ' + (n ? 'Touchez ▼ Descendre sous l\'entreprise.' : 'Aucune entreprise dans le classement pour le moment.')), 6000); }; });
     const codes = (box.dataset.codes || '').split(',').filter(Boolean);
     const save = async function(arr){ try{ await window.stsTopSave({order: {ym: new Date().toISOString().slice(0, 7), codes: arr}}); }catch(e){ toast('Échec'); } rerender(); };
-    root.querySelectorAll('[data-t3o-up]').forEach(b => { b.onclick = function(){ if(b.disabled) return; const i = parseInt(b.dataset.t3oUp, 10); if(i < 1) return; const a = codes.slice(); const t = a[i]; a[i] = a[i - 1]; a[i - 1] = t; save(a); }; });
-    root.querySelectorAll('[data-t3o-down]').forEach(b => { b.onclick = function(){ if(b.disabled) return; const i = parseInt(b.dataset.t3oDown, 10); if(i >= codes.length - 1) return; const a = codes.slice(); const t = a[i]; a[i] = a[i + 1]; a[i + 1] = t; save(a); }; });
+    root.querySelectorAll('[data-t3o-up]').forEach(b => { b.onclick = function(){ if(b.dataset.edge){ toast('⚠️ ' + b.dataset.edge, 4000); return; } const i = parseInt(b.dataset.t3oUp, 10); if(i < 1) return; const a = codes.slice(); const t = a[i]; a[i] = a[i - 1]; a[i - 1] = t; save(a); }; });
+    root.querySelectorAll('[data-t3o-down]').forEach(b => { b.onclick = function(){ if(b.dataset.edge){ toast('⚠️ ' + b.dataset.edge, 4000); return; } const i = parseInt(b.dataset.t3oDown, 10); if(i >= codes.length - 1) return; const a = codes.slice(); const t = a[i]; a[i] = a[i + 1]; a[i + 1] = t; save(a); }; });
     const rs = root.querySelector('#t3oReset'); if(rs) rs.onclick = async function(){ try{ await window.stsTopSave({order: null}); }catch(e){ toast('Échec'); } rerender(); };
   };
 })();
