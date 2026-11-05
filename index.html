@@ -12552,11 +12552,11 @@ window.stsTopRow2 = function(rank, co, r, given){
 };
 // aperçu quand il n'y a pas encore de notes : 3 cases vides (points à la place des vrais nombres)
 window.stsTopDemoHTML = function(tp){
-  const real = window._stsTopAll || [];
-  return '<p class="sub" style="margin:0 0 8px;font-size:12.5px;">Aucune note ce mois-ci pour le moment. Aperçu avec les vrais chiffres (tous les avis reçus depuis le début) :</p>'
+  const real = window._stsTopAll || [], ex = ['4.9', '4.7', '4.6'];
+  return '<p class="sub" style="margin:0 0 8px;font-size:12.5px;">Aucune note ce mois-ci pour le moment. Les trois cases se rempliront toutes seules (étoiles d\'exemple, nombre d\'avis réel) :</p>'
     + '<p style="font-weight:700;margin:0 0 10px;color:#F5B93D;">' + escHtml(tp.before) + '</p>'
     + [1, 2, 3].map(i => { const R = window.STS_RANK[i - 1], r = real[i - 1];
-      return '<div style="padding:11px 12px;margin-bottom:8px;border:2px solid ' + R.col + ';border-radius:14px;"><div style="font-weight:900;display:flex;align-items:center;flex-wrap:wrap;">' + R.medal + '&nbsp;#' + i + '&nbsp;' + (r ? (coLogoMini(r.c) || '') + '<span>' + escHtml(r.c.companyName || r.c.code) + '</span>' : '<span class="sub" style="font-weight:600;">Nom de l\'entreprise</span>') + '</div><div style="margin-top:4px;font-size:14px;">— ⭐ ' + (r ? r.avg : 0) + '/5 (' + (r ? r.n : 0) + ' avis' + (r ? ' en tout · ' + r.m + ' ce mois-ci' : '') + ')</div></div>'; }).join('')
+      return '<div style="padding:11px 12px;margin-bottom:8px;border:2px solid ' + R.col + ';border-radius:14px;"><div style="font-weight:900;">' + R.medal + ' #' + i + ' <span class="sub" style="font-weight:600;">Nom de l\'entreprise</span></div><div style="margin-top:4px;font-size:14px;">— ⭐ ' + ex[i - 1] + '/5 (' + (r ? r.n : 0) + ' avis)</div></div>'; }).join('')
     + '<p style="font-weight:700;margin:10px 0 0;color:#3ECF8E;">' + escHtml(tp.after) + '</p>';
 };
 
