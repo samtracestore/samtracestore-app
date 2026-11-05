@@ -7780,7 +7780,7 @@ async function renderClient(){
     const isCoClient = mode === 'company' && companySession && companyScreen === 'client';
     if(mode !== 'client' && !isCoClient) return;
     const main = document.getElementById('main'); if(!main) return;
-    if(isCoClient){ addBadgeHost(main, [companySession.code]); { const fo0 = document.getElementById('clFavHost'); if(fo0) fo0.remove(); const fh0 = document.createElement('div'); fh0.id = 'clFavHost'; main.insertBefore(fh0, main.firstChild); window.stsFillFavs(fh0); } }
+    if(isCoClient){ addBadgeHost(main, [companySession.code]); { const fo0 = document.getElementById('clFavHost'); if(fo0) fo0.remove(); const fh0 = document.createElement('div'); fh0.id = 'clFavHost'; const bh0 = document.getElementById('clBadgeHost'); if(bh0 && bh0.parentNode === main) main.insertBefore(fh0, bh0.nextSibling); else main.insertBefore(fh0, main.firstChild); window.stsFillFavs(fh0); } }
     if(!isCoClient){
     const oldF = document.getElementById('clFicheHost'); if(oldF) oldF.remove();
     const oldS = document.getElementById('clSurveyHost'); if(oldS) oldS.remove();
@@ -8474,6 +8474,7 @@ function bindTop3(root, rerender){
   b.onclick = async ()=>{
     const days = parseInt((root.querySelector('#topDays') || {}).value, 10) || 0;
     if(days < 1){ toast('Entrez le nombre de jours'); return; }
+    if(!b.dataset.topBonus){ toast('Aucune entreprise n\'a encore d\'avis ce mois-ci'); return; }
     if(!confirm('Donner ' + days + ' jour(s) bonus à cette entreprise ?')) return;
     const code = b.dataset.topBonus, ym = new Date().toISOString().slice(0, 7);
     try{
@@ -8829,7 +8830,7 @@ async function renderOwnerPackages(){
       <input type="search" id="adminSearch" placeholder="🔍 Rechercher un client, un téléphone ou un n° de suivi" value="${escHtml(adminSearchQ)}" style="margin-bottom:12px;">
       <button type="button" class="ghost" id="btnPrintList" style="width:100%;margin-bottom:12px;color:#fff;border-color:var(--accent);">🖨️ Imprimer / enregistrer la liste en PDF</button>
       <div id="adminList"><div class="empty">Chargement<span class="ldots"><i></i><i></i><i></i></span></div></div>`)}
-    <div id="ownStatsHost"></div><div id="ownTopProdHost"></div><div id="ownFavHost"></div>`;
+    <div id="ownStatsHost"></div><div id="ownTopProdHost"></div><div id="ownMyFavHost"></div>`;
   initLocationFields('','','');
   initColisNumField(isEditing);
   bindCarrierField();
@@ -10737,7 +10738,7 @@ window.fillOwnStats = async function(host){
 (function(){
   const main = document.getElementById('main'); if(!main) return;
   new MutationObserver(function(){
-    [['ownStatsHost', 'fillOwnStats'], ['ownVisitsHost', 'fillOwnVisits'], ['ownReviewsHost', 'fillOwnReviews'], ['ownTrackHost', 'fillOwnTrack'], ['ownExpiryHost', 'fillOwnExpiry'], ['ownDupHost', 'fillOwnDup'], ['ownMonthHost', 'fillOwnMonth'], ['ownStaffHost', 'fillOwnStaff'], ['ownFavHost', 'fillOwnFav'], ['coStaffHost', 'fillCoStaff'], ['ownFeaturesHost', 'fillOwnFeatures'], ['ownTopProdHost', 'fillOwnTop']].forEach(function(x){
+    [['ownStatsHost', 'fillOwnStats'], ['ownVisitsHost', 'fillOwnVisits'], ['ownReviewsHost', 'fillOwnReviews'], ['ownTrackHost', 'fillOwnTrack'], ['ownExpiryHost', 'fillOwnExpiry'], ['ownDupHost', 'fillOwnDup'], ['ownMonthHost', 'fillOwnMonth'], ['ownStaffHost', 'fillOwnStaff'], ['ownFavHost', 'fillOwnFav'], ['ownMyFavHost', 'fillOwnMyFav'], ['coStaffHost', 'fillCoStaff'], ['ownFeaturesHost', 'fillOwnFeatures'], ['ownTopProdHost', 'fillOwnTop']].forEach(function(x){
       const h = document.getElementById(x[0]);
       if(h && !h.dataset.filled && (!h.firstChild || h.innerHTML.indexOf('ldots') >= 0)){ h.dataset.filled = '1'; window[x[1]](h); }
     });
@@ -12319,6 +12320,16 @@ document.addEventListener('click', async function(e){
   }catch(err){ toast('Erreur, réessayez'); }
   b.disabled = false; window.stsFavRefreshAll();
 }, true);
+window.fillOwnMyFav = async function(host){
+  try{
+    host.innerHTML = foldCardHTML('ownmyfav', '#EC4899,#9D174D', '❤️', 'Mes favoris', 0, '<div class="empty">Chargement' + LDOTS + '</div>'); bindFoldCards(host);
+    let n = 0;
+    try{ const d = await db.collection('favStats').doc('sts').get(); n = d.exists ? Math.max(0, (d.data() || {}).count || 0) : 0; }catch(e){}
+    host.innerHTML = foldCardHTML('ownmyfav', '#EC4899,#9D174D', '❤️', 'Mes favoris', n,
+      n ? '<p style="margin:0;font-weight:800;">❤️ ' + n + ' client' + (n > 1 ? 's' : '') + ' ont mis Sam Trace Store dans leurs favoris.</p>' : '<p class="sub" style="margin:0;">Aucun client n\'a encore mis Sam Trace Store en favoris (0).</p>');
+    bindFoldCards(host);
+  }catch(e){}
+};
 window.fillOwnFav = async function(host){
   try{
     host.innerHTML = foldCardHTML('ownfav', '#EC4899,#9D174D', '❤️', 'Entreprises mises en favoris', '…', '<div class="empty">Chargement' + LDOTS + '</div>'); bindFoldCards(host);
@@ -12485,7 +12496,8 @@ window.top3AdminHTML = async function(companies){
     const slots = [0, 1, 2].map(function(i){
       const t = top[i], R = window.STS_RANK[i];
       let h = '<div style="padding:10px 12px;margin-bottom:10px;border:2px solid ' + R.col + ';border-radius:14px;"><div style="font-weight:900;overflow-wrap:anywhere;display:flex;align-items:center;gap:4px;flex-wrap:wrap;">' + R.medal + ' <span>#' + (i + 1) + '</span> ' + (t ? (coLogoMini(t.c) || '') + '<span>' + escHtml(t.c.companyName || t.c.code) + '</span>' : '<span class="sub" style="font-weight:600;">— aucune entreprise pour le moment</span>') + '</div>';
-      h += t ? '<div style="font-size:13px;margin-top:3px;">⭐ ' + t.avg + '/5 (' + t.n + ' avis ce mois-ci)</div>' : '<div style="font-size:13px;margin-top:3px;opacity:.7;">⭐ ' + ex[i] + '/5 (… avis ce mois-ci)</div>';
+      h += t ? '<div style="font-size:13px;margin-top:3px;">⭐ ' + t.avg + '/5 (' + t.n + ' avis ce mois-ci)</div>' : '<div style="font-size:13px;margin-top:3px;">⭐ 0/5 (0 avis ce mois-ci)</div>';
+      if(!t && i === 0) h += '<div style="display:flex;gap:8px;align-items:center;margin-top:8px;"><input type="number" id="topDays" min="1" step="1" value="3" style="width:80px;margin:0;"><button type="button" class="primary" data-top-bonus="" style="width:auto;padding:8px 14px;">🎁 Donner les jours bonus</button></div>';
       if(t && given && given.code === t.c.code) h += '<div style="margin-top:6px;color:var(--ok);font-weight:700;font-size:12.5px;">✅ Bonus donné : ' + given.days + ' jours' + window.stsBonusLeftHTML(given) + '</div>';
       else if(t && i === 0 && !given) h += '<div style="display:flex;gap:8px;align-items:center;margin-top:8px;"><input type="number" id="topDays" min="1" step="1" value="3" style="width:80px;margin:0;"><button type="button" class="primary" data-top-bonus="' + escHtml(t.c.code) + '" style="width:auto;padding:8px 14px;">🎁 Donner les jours bonus</button></div>';
       else if(t && i === 0 && given) h += '<div class="sub" style="margin-top:6px;font-size:12.5px;">ℹ️ Bonus déjà donné ce mois-ci (' + given.days + ' jours à ' + escHtml(given.companyName || '') + ')' + window.stsBonusLeftHTML(given) + '</div>';
