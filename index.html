@@ -12552,10 +12552,11 @@ window.stsTopRow2 = function(rank, co, r, given){
 };
 // aperçu quand il n'y a pas encore de notes : 3 cases vides (points à la place des vrais nombres)
 window.stsTopDemoHTML = function(tp){
-  const ex = ['4.9', '4.7', '4.6'], exN = [12, 9, 6];
-  return '<p class="sub" style="margin:0 0 8px;font-size:12.5px;">Aucune note ce mois-ci pour le moment. Les trois cases se rempliront toutes seules (aperçu avec des exemples) :</p>'
+  const real = window._stsTopAll || [];
+  return '<p class="sub" style="margin:0 0 8px;font-size:12.5px;">Aucune note ce mois-ci pour le moment. Aperçu avec les vrais chiffres (tous les avis reçus depuis le début) :</p>'
     + '<p style="font-weight:700;margin:0 0 10px;color:#F5B93D;">' + escHtml(tp.before) + '</p>'
-    + [1, 2, 3].map(i => { const R = window.STS_RANK[i - 1]; return '<div style="padding:11px 12px;margin-bottom:8px;border:2px solid ' + R.col + ';border-radius:14px;"><div style="font-weight:900;">' + R.medal + ' #' + i + ' <span class="sub" style="font-weight:600;">Nom de l\'entreprise</span></div><div style="margin-top:4px;font-size:14px;opacity:.8;">— ⭐ ' + ex[i - 1] + '/5 (' + exN[i - 1] + ' avis ce mois-ci)</div></div>'; }).join('')
+    + [1, 2, 3].map(i => { const R = window.STS_RANK[i - 1], r = real[i - 1];
+      return '<div style="padding:11px 12px;margin-bottom:8px;border:2px solid ' + R.col + ';border-radius:14px;"><div style="font-weight:900;display:flex;align-items:center;flex-wrap:wrap;">' + R.medal + '&nbsp;#' + i + '&nbsp;' + (r ? (coLogoMini(r.c) || '') + '<span>' + escHtml(r.c.companyName || r.c.code) + '</span>' : '<span class="sub" style="font-weight:600;">Nom de l\'entreprise</span>') + '</div><div style="margin-top:4px;font-size:14px;">— ⭐ ' + (r ? r.avg : 0) + '/5 (' + (r ? r.n : 0) + ' avis' + (r ? ' en tout · ' + r.m + ' ce mois-ci' : '') + ')</div></div>'; }).join('')
     + '<p style="font-weight:700;margin:10px 0 0;color:#3ECF8E;">' + escHtml(tp.after) + '</p>';
 };
 
@@ -12565,6 +12566,7 @@ window.top3AdminHTML = async function(companies){
     const pk = await getAllPackages(), ym = new Date().toISOString().slice(0, 7), g = {};
     pk.forEach(p => { if(p.companyCode && p.rating && String(p.ratedAt || '').slice(0, 7) === ym){ const o = g[p.companyCode] = g[p.companyCode] || {sum: 0, n: 0}; o.sum += parseInt(p.rating, 10) || 0; o.n++; } });
     const coBy = {}; (companies || []).forEach(c => { coBy[c.code] = c; });
+    { const ga = {}; pk.forEach(p => { if(p.companyCode && p.rating){ const o2 = ga[p.companyCode] = ga[p.companyCode] || {sum: 0, n: 0, m: 0}; o2.sum += parseInt(p.rating, 10) || 0; o2.n++; if(String(p.ratedAt || '').slice(0, 7) === ym) o2.m++; } }); window._stsTopAll = Object.keys(ga).filter(k => coBy[k]).map(k => ({c: coBy[k], avg: Math.round(ga[k].sum / ga[k].n * 10) / 10, n: ga[k].n, m: ga[k].m})).sort((x, y) => y.avg - x.avg || y.n - x.n); }
     let list = Object.keys(g).filter(k => coBy[k]).map(k => ({code: k, c: coBy[k], avg: Math.round(g[k].sum / g[k].n * 10) / 10, n: g[k].n})).sort((a, b) => b.avg - a.avg || b.n - a.n);
     let given = null; try{ const d = await db.collection('settings').doc('top3_' + ym).get(); if(d.exists) given = d.data(); }catch(e){}
     const givenR = [given, null, null]; for(const k of [1, 2]){ try{ const d2 = await db.collection('settings').doc('top3_' + ym + '_r' + (k + 1)).get(); if(d2.exists) givenR[k] = d2.data(); }catch(e){} }
