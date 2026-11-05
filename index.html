@@ -11399,7 +11399,8 @@ window.fillOwnVisits = async function(host){
       host.innerHTML = foldCardHTML('ownvisits', '#8B5CF6,#EC4899', '🕒', 'Dernière visite', un.length,
         (un.length > 1 ? '<button type="button" class="miniBtn" data-vis-all="1" style="margin-bottom:8px;">👁️ Tout marquer comme vu (' + un.length + ')</button>' : '')
         + (un.length ? un.map(it => row(it, true)).join('') : '<p class="sub" style="margin:0 0 8px;">Aucune nouvelle visite. 🎉</p>')
-        + (seenShown.length ? '<div style="font-weight:800;margin:10px 0 6px;">Déjà vues (' + seenShown.length + ')</div>' + seenShown.map(it => row(it, false)).join('') : ''));
+        + (seenShown.length ? '<div style="font-weight:800;margin:10px 0 6px;">Déjà vues (' + seenShown.length + ')</div>' + seenShown.map(it => row(it, false)).join('') : '')
+        + ((un.length + seen.length) ? '<button type="button" class="miniBtn" data-vis-clear="1" style="margin-top:10px;width:100%;padding:12px;color:#fff;background:linear-gradient(135deg,#EF4444,#B91C1C);border:none;font-weight:900;">🗑️ Supprimer tout (' + (un.length + seen.length) + ')</button>' : ''));
       bindFoldCards(host);
       const apply = async function(it, op){
         const val = op === 'seen' ? true : (op === 'unseen' ? false : 'hidden');
@@ -11415,6 +11416,14 @@ window.fillOwnVisits = async function(host){
           paint();
         };
       });
+      const clr = host.querySelector('[data-vis-clear]');
+      if(clr) clr.onclick = async function(){
+        const items = un.concat(seen);
+        if(!confirm('Supprimer toutes les visites (' + items.length + ') de cette liste ?\n(Les entreprises ne sont pas supprimées, seulement les lignes de visite.)')) return;
+        if(clr.disabled) return; clr.disabled = true; clr.innerHTML = 'Suppression' + LDOTS;
+        try{ for(let k = 0; k < items.length; k += 10){ await Promise.all(items.slice(k, k + 10).map(it => apply(it, 'hide'))); } toast('🗑️ Toutes les visites sont supprimées'); }catch(e){ toast('Échec, réessayez'); }
+        paint();
+      };
       const all = host.querySelector('[data-vis-all]');
       if(all) all.onclick = async function(){
         if(all.disabled) return; all.disabled = true; all.innerHTML = '…' + LDOTS;
@@ -12099,7 +12108,7 @@ window.fillOwnTop3 = async function(host){
       let rows = '';
       for(let i = 0; i < t.winners.length; i++){ const co = cos.find(c => c.code === t.winners[i].code) || null; rows += window.stsTopRowHTML(i + 1, co, t.winners[i], true); }
       const opts = cos.map(c => '<option value="' + escHtml(c.code) + '">' + escHtml(c.companyName || c.code) + '</option>').join('');
-      const ta = 'width:100%;min-height:90px;background:var(--panel2);color:var(--text);border:1px solid var(--border);border-radius:12px;padding:10px;font-family:inherit;';
+      const ta = 'width:100%;min-height:90px;background:var(--panel2);color:var(--text);border:1px solid var(--border);border-radius:12px;padding:10px;font-family:inherit;overflow:hidden;resize:none;box-sizing:border-box;';
       host.innerHTML = foldCardHTML('owntop3', '#EAB308,#A16207', '🏆', 'Top 3 entreprises du mois', t.winners.length,
         '<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;padding:10px;border:1px solid var(--border);border-radius:12px;margin-bottom:12px;"><div><b>📢 Partager avec les entreprises</b><div class="sub" style="font-size:12.5px;margin:2px 0 0;">' + (t.share ? 'Automatique : les entreprises voient le Top 3 dès qu\'il y a des noms.' : 'Manuel : les entreprises ne voient pas encore le Top 3.') + '</div></div><button type="button" class="miniBtn" id="t3Share" style="min-width:110px;">' + (t.share ? '✅ ON · Automatique' : '⛔ OFF · Manuel') + '</button></div>'
         + '<div style="font-weight:900;margin:6px 0;">1️⃣ Message AVANT (s\'affiche en premier, au-dessus du classement)</div><textarea id="t3Before" style="' + ta + '">' + escHtml(t.before) + '</textarea>'
@@ -12242,12 +12251,12 @@ window.stsTopRow2 = function(rank, co, r, given){
     + (given && given.days > 0 ? '<div class="sub" style="font-size:12.5px;margin:3px 0 0;">🎁' + window.stsBonusLeftHTML(given).replace(/^ · /, ' ') + '</div>' : '') + '</div>';
 };
 window.stsTop3TopHTML = function(tp){
-  const ta = 'width:100%;min-height:90px;background:var(--panel2);color:var(--text);border:1px solid var(--border);border-radius:12px;padding:10px;font-family:inherit;';
+  const ta = 'width:100%;min-height:90px;background:var(--panel2);color:var(--text);border:1px solid var(--border);border-radius:12px;padding:10px;font-family:inherit;overflow:hidden;resize:none;box-sizing:border-box;';
   return '<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;padding:10px;border:1px solid var(--border);border-radius:12px;margin:10px 0;"><div><b>📢 Partager avec les entreprises</b><div class="sub" style="font-size:12.5px;margin:2px 0 0;">' + (tp.share ? 'Automatique : le classement apparaît tout seul chez les entreprises.' : 'Manuel : les entreprises ne voient pas le Top 3.') + '</div></div><button type="button" class="miniBtn" id="t3pShare" style="min-width:120px;">' + (tp.share ? '✅ ON · Automatique' : '⛔ OFF · Manuel') + '</button></div>'
     + '<div style="font-weight:900;margin:8px 0 6px;">1️⃣ Message AVANT (affiché en premier, au-dessus du classement)</div><textarea id="t3pBefore" style="' + ta + '">' + escHtml(tp.before) + '</textarea>';
 };
 window.stsTop3BottomHTML = function(top, given, tp, hidCodes){
-  const ta = 'width:100%;min-height:90px;background:var(--panel2);color:var(--text);border:1px solid var(--border);border-radius:12px;padding:10px;font-family:inherit;';
+  const ta = 'width:100%;min-height:90px;background:var(--panel2);color:var(--text);border:1px solid var(--border);border-radius:12px;padding:10px;font-family:inherit;overflow:hidden;resize:none;box-sizing:border-box;';
   const hideRows = top.length ? top.map(t => '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;padding:6px 0;border-top:1px solid var(--border);font-size:13px;"><span style="overflow-wrap:anywhere;">' + escHtml(t.c.companyName || t.c.code) + (hidCodes.indexOf(t.c.code) >= 0 ? ' <b style="color:#EF5D5D;">(retirée du classement public)</b>' : '') + '</span><button type="button" class="miniBtn" data-t3-hide="' + escHtml(t.c.code) + '">' + (hidCodes.indexOf(t.c.code) >= 0 ? '↩️ Rétablir' : '🙈 Retirer') + '</button></div>').join('') : '';
   const pv = [], shownTop = top.filter(t => hidCodes.indexOf(t.c.code) < 0);
   const prev = shownTop.length ? '<p style="font-weight:700;margin:0 0 10px;color:#F5B93D;">' + escHtml(tp.before) + '</p>' + shownTop.map((t, i) => window.stsTopRow2((t.pl !== undefined ? t.pl : i) + 1, t.c, {code: t.c.code, avg: t.avg, n: t.n}, (given && given.code === t.c.code) ? given : null)).join('') + '<p style="font-weight:700;margin:10px 0 0;color:#3ECF8E;">' + escHtml(tp.after) + '</p>' : window.stsTopDemoHTML(tp);
@@ -12569,6 +12578,9 @@ window.stsTopLoad = async function(){
   let v = {}; try{ const d = await db.collection('settings').doc('top3public').get(); v = d.exists ? (d.data() || {}) : {}; }catch(e){}
   return {before: v.before || window.STS_TOP_BEFORE, after: v.after || window.STS_TOP_AFTER, share: v.share !== false, hide: v.hide || {}, order: v.order || null};
 };
+window.stsAutoGrow = function(el){ try{ el.style.height = 'auto'; el.style.height = (el.scrollHeight + 4) + 'px'; }catch(e){} };
+document.addEventListener('input', function(e){ if(e.target && (e.target.id === 't3pBefore' || e.target.id === 't3pAfter')) window.stsAutoGrow(e.target); });
+setInterval(function(){ ['t3pBefore', 't3pAfter'].forEach(function(id){ const el = document.getElementById(id); if(el && el.offsetParent !== null){ const want = el.scrollHeight + 4; if(Math.abs(el.offsetHeight - want) > 6 || el.dataset.g !== '1'){ el.dataset.g = '1'; window.stsAutoGrow(el); } } }); }, 500);
 window.STS_TOP_REQ = [12, 9, 6];
 window.stsTopPlaces = function(list){
   const used = {}, out = [];
