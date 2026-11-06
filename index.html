@@ -368,7 +368,7 @@ function buildStatusMessage(pkg, companyName){
 }
 
 async function sendStatusEmail(pkg){
-  if(!emailjsReady && !appsScriptReady) return;
+  if(!emailjsReady && !appsScriptReady) return {ok: false, reason: 'noconfig'};
   const recipients = [];
   const client = await getClient(pkg.phone);
   if(client && client.email) recipients.push({email: client.email, name: client.name || pkg.name || ''});
@@ -376,18 +376,19 @@ async function sendStatusEmail(pkg){
   if(alertSub && alertSub.email && !recipients.some(r=> r.email.toLowerCase() === alertSub.email.toLowerCase())){
     recipients.push({email: alertSub.email, name: pkg.name || ''});
   }
-  if(!recipients.length) return;
+  if(!recipients.length) return {ok: false, reason: 'noemail'};
   const companyName = await resolveCompanyNameForPkg(pkg);
   let useScript = appsScriptReady;
   if(useScript){
     try{ const gq = await getGoogleScriptQuota(); if(gq.remaining <= 0) useScript = false; }catch(e){}
   }
+  const sentTo = [], errs = [];
   for(const r of recipients){
     let sent = false;
     // 1) Google Apps Script en premier (100 emails par jour)
     if(useScript){
       try{ await sendViaAppsScript(pkg, {email: r.email, name: r.name}, companyName); sent = true; }
-      catch(e){ console.warn('Google Apps Script a échoué, tentative via EmailJS', e); }
+      catch(e){ console.warn('Google Apps Script a échoué, tentative via EmailJS', e); errs.push(String((e && e.message) || e)); }
     }
     // 2) EmailJS en secours
     if(!sent && emailjsReady){
@@ -400,10 +401,24 @@ async function sendStatusEmail(pkg){
           company_name: companyName
         });
         incrementEmailQuota();
-      }catch(e){ console.warn('EmailJS a échoué aussi', e); }
+        sent = true;
+      }catch(e){ console.warn('EmailJS a échoué aussi', e); errs.push(String((e && (e.text || e.message)) || e)); }
     }
+    if(sent) sentTo.push(r.email);
   }
+  return {ok: sentTo.length > 0, reason: sentTo.length ? 'ok' : 'failed', sent: sentTo, error: errs.slice(-1)[0] || ''};
 }
+window.stsEmailToast = function(r){
+  try{
+    if(!r) return;
+    if(r.ok){
+      const mk = function(e){ const i = String(e).indexOf('@'); return i > 2 ? String(e).slice(0, 2) + '***' + String(e).slice(i) : String(e); };
+      toast('✉️ L\'email a été envoyé' + (r.sent.length === 1 ? ' à ' + mk(r.sent[0]) : ' (' + r.sent.length + ' destinataires)'), 5000);
+    } else if(r.reason === 'noemail') toast('ℹ️ Aucun email envoyé : ce client n\'a pas laissé d\'adresse email.', 5500);
+    else if(r.reason === 'noconfig') toast('⚠️ Le service d\'email n\'est pas configuré.', 5000);
+    else toast('⚠️ L\'email n\'a pas pu être envoyé' + (r.error ? ' (' + String(r.error).slice(0, 60) + ')' : '') + '. Réessayez plus tard.', 6000);
+  }catch(e){}
+};
 
 const _alertCache = new Map();
 async function saveTrackingAlert(trackingId, email){
@@ -2151,6 +2166,7 @@ async function validateDeposit(code){
     await giftLedgerAdd(code, 'used', -bonus.htg, -bonus.days, "Bonus utilisé pour l'abonnement");
   }
   await db.collection('companies').doc(code).set(upd, {merge:true});
+  try{ if(cur) window.stsLedgerRecord({id: 'dep_' + code + '_' + (cur.depositSubmittedAt || Date.now()), code: code, companyName: cur.companyName, amount: cur.depositAmount, currency: cur.depositCurrency, method: cur.depositMethod, kind: 'subscription', at: new Date().toISOString()}); }catch(e){}
   sendMessage(code, 'owner', '✅ Votre paiement a été confirmé. Merci ! Votre abonnement est actif.', 'payment_ok').catch(()=>{});
 }
 
@@ -2187,7 +2203,9 @@ async function submitRegistrationDeposit(code, data){
 async function validateRegistrationDeposit(code){
   const settings = await getPaymentSettings();
   const trialEndsAt = new Date(Date.now() + settings.trialDays*24*60*60*1000).toISOString();
+  let curR = null; try{ curR = await getCompanyByCode(code); }catch(e){}
   await db.collection('companies').doc(code).set({regPaymentStatus:'active', notifiedForRegPayment:false, regRejectionReason:null, trialEndsAt}, {merge:true});
+  try{ if(curR) window.stsLedgerRecord({id: 'reg_' + code + '_' + (curR.regDepositSubmittedAt || Date.now()), code: code, companyName: curR.companyName, amount: curR.regDepositAmount, currency: curR.regDepositCurrency, method: curR.regDepositMethod, kind: 'registration', at: new Date().toISOString()}); }catch(e){}
 }
 
 async function rejectRegistrationDeposit(code, reason){
@@ -4182,7 +4200,7 @@ async function changePackageStatus(trackingId, newStatus){
   try{
     await logActivity(fresh.companyCode || await getOwnerCode(), '🔄', 'Statut changé', '#' + trackingId + ' — ' + (fresh.name || '') + (fresh.phone ? ' · ' + fresh.phone : '') + ' : ' + (STATUS_LABEL[fresh.status] || fresh.status) + ' → ' + (STATUS_LABEL[newStatus] || newStatus) + (window.stsWho() ? ' · par ' + window.stsWho() : ''), trackingId);
   }catch(e){}
-  sendStatusEmail(Object.assign({}, fresh, {status: newStatus, updatedAt: now, history: history}));
+  sendStatusEmail(Object.assign({}, fresh, {status: newStatus, updatedAt: now, history: history})).then(window.stsEmailToast).catch(function(){});
   return true;
 }
 
@@ -5959,7 +5977,7 @@ async function renderOwnerPayments(){
         <p class="sub" style="margin-top:0;">Remplissez le numéro et le nom du bénéficiaire. Le chiffre 2 apparaît à côté du logo chez les entreprises. Quand un compte est « Non actif », l'entreprise voit un message et ne peut pas envoyer d'argent dessus.</p>
         ${SLOTS.map(slotHtml).join('')}
       </div>`);
-    content.innerHTML = emailCard + codeCard + backupCard + '<div id="ownTrackHost"></div>' + pendingRegHtml + pendingHtml + notifCardOwner + confirmedRegHtml + confirmedHtml + receiptsHistoryHTML(receiptHistory) + settingsHtml + methodsHtml + extraAccountsHtml + `
+    content.innerHTML = '<div id="stsAccHost"></div>' + emailCard + codeCard + backupCard + '<div id="ownTrackHost"></div>' + pendingRegHtml + pendingHtml + notifCardOwner + confirmedRegHtml + confirmedHtml + receiptsHistoryHTML(receiptHistory) + settingsHtml + methodsHtml + extraAccountsHtml + `
       <div class="card">
         <h2>Avatar du service client</h2>
         <p class="sub">Choisissez une photo depuis votre galerie pour la bulle WhatsApp affichée aux entreprises.</p>
@@ -8918,7 +8936,15 @@ async function renderOwnerPackages(){
       if(!isEditing){
         const cc = await resolveCrossCompany(trackingId, adminSession.code, adminSession.companyName || 'Sam Trace Store');
         if(cc.renamed){ trackingId = cc.id; derivedId = true; }
-        const dejaPris = await getPackage(trackingId);
+        let dejaPris = await getPackage(trackingId);
+        if(dejaPris && dejaPris.phone === normalizePhone(phone)){
+          const rootId = String(trackingId).replace(/-#\d+$/, '');
+          for(let nn = 2; nn <= 60; nn++){
+            const cand = rootId + '-#' + nn;
+            const exs = await getPackage(cand);
+            if(!exs){ trackingId = cand; colisNum = nn; derivedId = true; dejaPris = null; break; }
+          }
+        }
         if(dejaPris){
           if(dejaPris.phone === normalizePhone(phone)) toast("Ce colis existe déjà. Pour changer son statut, utilise le menu de statut sur le colis dans « Tous les colis ».");
           else toast("Ce numéro de suivi existe déjà. Choisissez-en un autre.");
@@ -8954,7 +8980,7 @@ async function renderOwnerPackages(){
       if(existingPhotoMeta){ Object.keys(existingPhotoMeta).forEach(k => { if(existingPhotoMeta[k] !== undefined) pkg[k] = existingPhotoMeta[k]; }); }
       await savePackage(pkg);
       openClientGroups.add(pkg.phone);
-      if(statusChanged) sendStatusEmail(pkg);
+      if(statusChanged) sendStatusEmail(pkg).then(function(r){ setTimeout(function(){ window.stsEmailToast(r); }, 1700); }).catch(function(){});
       toast(isEditing ? "Colis mis à jour" : (derivedId ? ("Colis enregistré sous " + trackingId) : "Colis enregistré"));
       editingTrackingId = null;
       renderAdmin();
@@ -9693,7 +9719,15 @@ async function renderAdminCore(){
       if(!isEditing){
         const cc = await resolveCrossCompany(trackingId, adminSession.code, adminSession.companyName || 'Sam Trace Store');
         if(cc.renamed){ trackingId = cc.id; derivedId = true; }
-        const dejaPris = await getPackage(trackingId);
+        let dejaPris = await getPackage(trackingId);
+        if(dejaPris && dejaPris.phone === normalizePhone(phone)){
+          const rootId = String(trackingId).replace(/-#\d+$/, '');
+          for(let nn = 2; nn <= 60; nn++){
+            const cand = rootId + '-#' + nn;
+            const exs = await getPackage(cand);
+            if(!exs){ trackingId = cand; colisNum = nn; derivedId = true; dejaPris = null; break; }
+          }
+        }
         if(dejaPris){
           if(dejaPris.phone === normalizePhone(phone)) toast("Ce colis existe déjà. Pour changer son statut, utilise le menu de statut sur le colis dans « Tous les colis ».");
           else toast("Ce numéro de suivi existe déjà. Choisissez-en un autre.");
@@ -9729,7 +9763,7 @@ async function renderAdminCore(){
       if(existingPhotoMeta){ Object.keys(existingPhotoMeta).forEach(k => { if(existingPhotoMeta[k] !== undefined) pkg[k] = existingPhotoMeta[k]; }); }
       await savePackage(pkg);
       openClientGroups.add(pkg.phone);
-      if(statusChanged) sendStatusEmail(pkg);
+      if(statusChanged) sendStatusEmail(pkg).then(function(r){ setTimeout(function(){ window.stsEmailToast(r); }, 1700); }).catch(function(){});
       toast(isEditing ? "Colis mis à jour" : (derivedId ? ("Colis enregistré sous " + trackingId) : "Colis enregistré"));
       editingTrackingId = null;
       renderAdmin();
@@ -10773,7 +10807,7 @@ window.fillOwnStats = async function(host){
 (function(){
   const main = document.getElementById('main'); if(!main) return;
   new MutationObserver(function(){
-    [['ownStatsHost', 'fillOwnStats'], ['ownVisitsHost', 'fillOwnVisits'], ['ownReviewsHost', 'fillOwnReviews'], ['ownTrackHost', 'fillOwnTrack'], ['ownExpiryHost', 'fillOwnExpiry'], ['ownDupHost', 'fillOwnDup'], ['ownMonthHost', 'fillOwnMonth'], ['ownStaffHost', 'fillOwnStaff'], ['ownFavHost', 'fillOwnFav'], ['ownMyFavHost', 'fillOwnMyFav'], ['ownExportHost', 'fillOwnExport'], ['coExportHost', 'fillCoExport'], ['ownMyStaffHost', 'fillOwnMyStaff'], ['coQrHost', 'fillCoQr'], ['coStaffHost', 'fillCoStaff'], ['ownFeaturesHost', 'fillOwnFeatures'], ['ownTopProdHost', 'fillOwnTop']].forEach(function(x){
+    [['ownStatsHost', 'fillOwnStats'], ['ownVisitsHost', 'fillOwnVisits'], ['ownReviewsHost', 'fillOwnReviews'], ['ownTrackHost', 'fillOwnTrack'], ['ownExpiryHost', 'fillOwnExpiry'], ['ownDupHost', 'fillOwnDup'], ['ownMonthHost', 'fillOwnMonth'], ['ownStaffHost', 'fillOwnStaff'], ['ownFavHost', 'fillOwnFav'], ['ownMyFavHost', 'fillOwnMyFav'], ['stsAccHost', 'fillStsAccounts'], ['ownExportHost', 'fillOwnExport'], ['coExportHost', 'fillCoExport'], ['ownMyStaffHost', 'fillOwnMyStaff'], ['coQrHost', 'fillCoQr'], ['coStaffHost', 'fillCoStaff'], ['ownFeaturesHost', 'fillOwnFeatures'], ['ownTopProdHost', 'fillOwnTop']].forEach(function(x){
       const h = document.getElementById(x[0]);
       if(h && !h.dataset.filled && (!h.firstChild || h.innerHTML.indexOf('ldots') >= 0)){ h.dataset.filled = '1'; window[x[1]](h); }
     });
@@ -12490,19 +12524,20 @@ window.stsMakeXlsx = function(head, rows){
     {name: 'xl/worksheets/sheet1.xml', data: sheet}
   ]);
 };
-window.stsMakePdf = function(title, head, rows){
+window.stsMakePdf = function(title, head, rows, biz){
   const W = 842, H = 595, M = 28, FS = 8, LH = 10, widths = [92, 92, 66, 84, 128, 84, 76, 76, 84];
   const tw = widths.reduce(function(a, b){ return a + b; }, 0), sc = (W - 2 * M) / tw, cw = widths.slice(0, head.length).map(function(w){ return w * sc; });
   const clean = function(t){ return String(t == null ? '' : t).replace(/[\u2018\u2019]/g, "'").replace(/[\u201C\u201D]/g, '"').replace(/[\u2013\u2014]/g, '-').replace(/\u2026/g, '...').replace(/[^\x20-\x7E\u00A0-\u00FF]/g, '').replace(/\s+/g, ' ').trim(); };
   const pdfStr = function(t){ return '(' + t.replace(/\\/g, '\\\\').replace(/\(/g, '\\(').replace(/\)/g, '\\)') + ')'; };
   const wrap = function(t, w){ const max = Math.max(3, Math.floor((w - 6) / (FS * 0.5))); const words = clean(t).split(' '), lines = []; let cur = ''; words.forEach(function(wd){ while(wd.length > max){ if(cur){ lines.push(cur); cur = ''; } lines.push(wd.slice(0, max)); wd = wd.slice(max); } if(!cur) cur = wd; else if((cur + ' ' + wd).length <= max) cur += ' ' + wd; else { lines.push(cur); cur = wd; } }); if(cur || !lines.length) lines.push(cur); return lines; };
-  const pages = []; let cs = '', y = 0;
-  const newPage = function(){ if(cs) pages.push(cs); cs = ''; y = H - M; cs += 'BT /F2 11 Tf ' + M + ' ' + (y - 11) + ' Td ' + pdfStr(clean(title)) + ' Tj ET\n'; y -= 24; };
+  const pages = []; let cs = '', y = 0, stripe = false;
+  const newPage = function(){ if(cs) pages.push(cs); cs = ''; y = H - M; cs += '1 0.416 0 rg BT /F2 13 Tf ' + M + ' ' + (y - 13) + ' Td ' + pdfStr(clean(title)) + ' Tj ET 0 g\n'; y -= 28; };
   const drawRow = function(cells, bold){
     const ls = cells.map(function(c, i){ return wrap(c, cw[i]); }), n = Math.max.apply(null, ls.map(function(l){ return l.length; })), h = n * LH + 6;
     if(y - h < M) { newPage(); if(!bold) drawRow(head, true); }
-    let x = M; if(bold) cs += '0.93 0.93 0.93 rg ' + M + ' ' + (y - h) + ' ' + (cw.reduce(function(a, b){ return a + b; }, 0)) + ' ' + h + ' re f 0 g\n';
-    cs += '0.5 G 0.5 w\n';
+    let x = M; if(bold) cs += '1 0.851 0.749 rg ' + M + ' ' + (y - h) + ' ' + (cw.reduce(function(a, b){ return a + b; }, 0)) + ' ' + h + ' re f 0 g\n';
+    if(!bold && (stripe = !stripe)) cs += '1 0.969 0.941 rg ' + M + ' ' + (y - h) + ' ' + (cw.reduce(function(a, b){ return a + b; }, 0)) + ' ' + h + ' re f 0 g\n';
+    cs += '0.6 G 0.5 w\n';
     cells.forEach(function(c, i){ cs += x + ' ' + (y - h) + ' ' + cw[i] + ' ' + h + ' re S\n'; ls[i].forEach(function(line, k){ cs += 'BT /' + (bold ? 'F2' : 'F1') + ' ' + FS + ' Tf ' + (x + 3) + ' ' + (y - 3 - FS - k * LH + 1) + ' Td ' + pdfStr(line) + ' Tj ET\n'; }); x += cw[i]; });
     y -= h;
   };
@@ -12511,7 +12546,7 @@ window.stsMakePdf = function(title, head, rows){
   objs[3] = '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>'; objs[4] = '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold /Encoding /WinAnsiEncoding >>';
   let id = 5; const total = pages.length;
   pages.forEach(function(content, pi){
-    const foot = 'BT /F1 7 Tf ' + (W / 2 - 40) + ' 14 Td ' + pdfStr('Sam Trace Store - page ' + (pi + 1) + '/' + total) + ' Tj ET\n', full = content + foot;
+    const foot = 'BT /F1 7 Tf ' + (W / 2 - 40) + ' 14 Td ' + pdfStr(clean(biz || 'Sam Trace Store') + ' - page ' + (pi + 1) + '/' + total) + ' Tj ET\n', full = content + foot;
     const pid = id++, cid = id++; kids.push(pid + ' 0 R');
     objs[pid] = '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ' + W + ' ' + H + '] /Resources << /Font << /F1 3 0 R /F2 4 0 R >> >> /Contents ' + cid + ' 0 R >>';
     objs[cid] = '<< /Length ' + full.length + ' >>\nstream\n' + full + 'endstream';
@@ -12546,10 +12581,11 @@ document.addEventListener('click', async function(e){
     const head = ['N° de suivi', 'Client', 'Téléphone', 'Statut', 'Destination', 'Transporteur', 'Créé le', 'Mis à jour le', 'Dernier changement par'];
     const rows = pk.map(p => { const lh = (p.history || []).slice(-1)[0] || {}; return [p.trackingId || '', p.name || '', p.phone || '', STATUS_LABEL[p.status] || p.status || '', [p.destCountry, p.destDepartment, p.destCommune].filter(Boolean).join(', '), p.carrier || '', fd(created(p)), fd(p.updatedAt), lh.by || '']; });
     if(b.dataset.stsexp === 'csv'){
-      window.stsDownloadBytes(window.stsMakeXlsx(head, rows), 'colis-' + ym + '.xlsx', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+      window.stsDownloadBytes(window.stsMakeXlsx(head, rows), 'colis-' + (((adminSession && adminSession.isOwner && !adminSession.ownerStaff) ? 'Sam Trace Store' : ((companySession && companySession.companyName) || 'Sam Trace Store'))).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') + '-' + ym + '.xlsx', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
       toast('📥 Fichier Excel téléchargé (' + rows.length + ' colis)', 4000);
     } else {
-      window.stsDownloadBytes(window.stsMakePdf('Sam Trace Store - Colis ' + ym + ' (' + rows.length + ')', head, rows), 'colis-' + ym + '.pdf', 'application/pdf');
+      const biz = (adminSession && adminSession.isOwner && !adminSession.ownerStaff) ? 'Sam Trace Store' : ((companySession && companySession.companyName) || 'Sam Trace Store');
+      window.stsDownloadBytes(window.stsMakePdf(biz + ' - Colis ' + ym + ' (' + rows.length + ')', head, rows, biz), 'colis-' + biz.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') + '-' + ym + '.pdf', 'application/pdf');
       toast('📄 Fichier PDF téléchargé (' + rows.length + ' colis)', 4000);
     }
   }catch(err){ toast('Échec de l\'export, réessayez'); }
@@ -12749,6 +12785,73 @@ setInterval(function(){ ['t3pBefore', 't3pAfter'].forEach(function(id){ const el
 window.stsWho = function(){ try{ return (adminSession && adminSession.staffName) || (typeof companySession !== 'undefined' && companySession && companySession.staffName) || ''; }catch(e){ return ''; } };
 window.stsHist = function(status, date){ const h = {status: status, date: date || new Date().toISOString()}; const w = window.stsWho(); if(w) h.by = w; return h; };
 window.stsByTag = function(h){ try{ return (h && h.by && typeof mode !== 'undefined' && mode !== 'client') ? ' · 👤 ' + escHtml(h.by) : ''; }catch(e){ return ''; } };
+window.stsLedgerId = function(id){ return String(id).replace(/[^A-Za-z0-9_-]/g, '_'); };
+window.stsLedgerLoad = async function(){ try{ const d = await db.collection('settings').doc('accounts').get(); return d.exists ? (d.data() || {}) : {}; }catch(e){ return {}; } };
+window.stsLedgerRecord = async function(e, cached){
+  try{
+    const amt = parseFloat(String(e.amount == null ? '' : e.amount).replace(/\s/g, '').replace(',', '.')); if(!(amt > 0)) return;
+    const id = window.stsLedgerId(e.id), d = cached || await window.stsLedgerLoad();
+    if((d.removed || []).indexOf(id) >= 0 || (d.items && d.items[id])) return;
+    const rec = {id: id, code: e.code || '', companyName: e.companyName || '', amount: amt, currency: /usd|\$/i.test(String(e.currency || '')) ? 'USD' : 'HTG', kind: e.kind || 'subscription', method: e.method || '', at: e.at || new Date().toISOString()};
+    await db.collection('settings').doc('accounts').set({items: {[id]: rec}}, {merge: true});
+    if(cached){ cached.items = cached.items || {}; cached.items[id] = rec; }
+  }catch(err){}
+};
+window.stsLedgerSync = async function(){
+  const d = await window.stsLedgerLoad();
+  try{
+    const cos = await getAllCompanies();
+    for(const c of cos){
+      if(c.paymentStatus === 'active' && c.depositSubmittedAt) await window.stsLedgerRecord({id: 'dep_' + c.code + '_' + c.depositSubmittedAt, code: c.code, companyName: c.companyName, amount: c.depositAmount, currency: c.depositCurrency, method: c.depositMethod, kind: 'subscription', at: c.depositSubmittedAt}, d);
+      if(c.regPaymentStatus === 'active' && c.regDepositSubmittedAt) await window.stsLedgerRecord({id: 'reg_' + c.code + '_' + c.regDepositSubmittedAt, code: c.code, companyName: c.companyName, amount: c.regDepositAmount, currency: c.regDepositCurrency, method: c.regDepositMethod, kind: 'registration', at: c.regDepositSubmittedAt}, d);
+    }
+  }catch(e){}
+  return d;
+};
+window._stsAcc = window._stsAcc || {open: false, month: ''};
+window.fillStsAccounts = async function(host){
+  try{
+    host.innerHTML = '<div class="card"><div class="empty">Chargement' + LDOTS + '</div></div>';
+    const data = await window.stsLedgerSync();
+    const st = window._stsAcc, items = Object.keys(data.items || {}).map(function(k){ return data.items[k]; }).sort(function(a, b){ return String(b.at).localeCompare(String(a.at)); });
+    const num = function(n){ return (Math.round(n * 100) / 100).toLocaleString('fr-FR', {maximumFractionDigits: 2}); };
+    const sum = function(list){ const t = {htg: 0, usd: 0, n: list.length}; list.forEach(function(x){ if(x.currency === 'USD') t.usd += x.amount; else t.htg += x.amount; }); return t; };
+    const fmt = function(t){ if(!t.htg && !t.usd) return '0 G'; return (t.htg ? num(t.htg) + ' G' : '') + (t.htg && t.usd ? ' · ' : '') + (t.usd ? num(t.usd) + ' USD' : ''); };
+    const pad = function(n){ return String(n).padStart(2, '0'); };
+    const dkey = function(iso){ const d = new Date(iso); return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()); };
+    const now = new Date(), today = now.getFullYear() + '-' + pad(now.getMonth() + 1) + '-' + pad(now.getDate()), curM = today.slice(0, 7), curY = today.slice(0, 4);
+    if(!st.month) st.month = curM;
+    const row = function(l, v, color){ return '<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;padding:11px 0;border-bottom:1px solid var(--border);"><span style="opacity:.85;">' + l + '</span><b style="text-align:right;' + (color ? 'color:' + color + ';' : '') + '">' + v + '</b></div>'; };
+    const h3 = function(t){ return '<div style="font-weight:900;margin:16px 0 4px;">' + t + '</div>'; };
+    const all = sum(items), dayT = sum(items.filter(function(x){ return dkey(x.at) === today; })), monT = sum(items.filter(function(x){ return dkey(x.at).slice(0, 7) === curM; })), yearT = sum(items.filter(function(x){ return dkey(x.at).slice(0, 4) === curY; }));
+    const byDay = {}; items.filter(function(x){ return dkey(x.at).slice(0, 7) === st.month; }).forEach(function(x){ (byDay[dkey(x.at)] = byDay[dkey(x.at)] || []).push(x); });
+    const dayRows = Object.keys(byDay).sort().reverse().map(function(k){ const t = sum(byDay[k]); return row('📅 ' + k.split('-').reverse().join('/') + ' <span class="sub">(' + t.n + ' paiement' + (t.n > 1 ? 's' : '') + ')</span>', fmt(t), '#3ECF8E'); }).join('') || '<p class="sub" style="margin:8px 0 0;">Aucune entrée ce mois-là.</p>';
+    const byMonth = {}; items.forEach(function(x){ (byMonth[dkey(x.at).slice(0, 7)] = byMonth[dkey(x.at).slice(0, 7)] || []).push(x); });
+    const monthRows = Object.keys(byMonth).sort().reverse().slice(0, 12).map(function(k){ return row('🗓️ ' + k.split('-').reverse().join('/'), fmt(sum(byMonth[k])), '#60A5FA'); }).join('') || '<p class="sub" style="margin:8px 0 0;">Aucune entrée.</p>';
+    const byCo = {}; items.forEach(function(x){ const k = x.code || x.companyName; (byCo[k] = byCo[k] || {name: x.companyName || x.code, list: []}).list.push(x); });
+    const coRows = Object.keys(byCo).map(function(k){ return {name: byCo[k].name, t: sum(byCo[k].list)}; }).sort(function(a, b){ return (b.t.htg + b.t.usd * 130) - (a.t.htg + a.t.usd * 130); }).slice(0, 15).map(function(x){ return row('🏢 ' + escHtml(x.name), fmt(x.t)); }).join('') || '<p class="sub" style="margin:8px 0 0;">Aucune entreprise.</p>';
+    const kindLbl = function(k){ return k === 'registration' ? 'Inscription' : 'Abonnement'; };
+    const lastRows = items.slice(0, 10).map(function(x){ return '<div style="padding:10px;margin-top:8px;border:1px solid var(--border);border-radius:12px;"><div style="display:flex;justify-content:space-between;gap:8px;"><b>' + escHtml(x.companyName || x.code) + '</b><b style="color:#3ECF8E;">' + num(x.amount) + ' ' + (x.currency === 'USD' ? 'USD' : 'G') + '</b></div><div class="sub" style="font-size:12.5px;">' + kindLbl(x.kind) + (x.method ? ' · ' + escHtml(x.method) : '') + ' · ' + new Date(x.at).toLocaleDateString('fr-FR', {day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit'}) + '</div><button type="button" class="miniBtn" data-acc-del="' + escHtml(x.id) + '" style="margin-top:6px;color:var(--danger);border-color:rgba(239,93,93,0.4);">🗑️ Retirer des comptes</button></div>'; }).join('') || '<p class="sub" style="margin:8px 0 0;">Aucun paiement confirmé pour le moment.</p>';
+    host.innerHTML = '<div class="card" style="padding:0;overflow:hidden;border:2px solid #E59A4F;">'
+      + '<div id="stsAccHead" style="cursor:pointer;display:flex;align-items:center;gap:10px;padding:14px 16px;background:linear-gradient(135deg,#F59E0B,#B45309);color:#fff;"><span style="font-size:24px;">🏦</span><div style="flex:1;font-weight:900;font-size:16px;">Gestion des comptes STS</div><div style="text-align:right;"><div style="font-size:11px;opacity:.9;">Total encaissé</div><div style="font-weight:900;font-size:15px;">' + fmt(all) + '</div></div><span style="font-size:16px;">' + (st.open ? '▲' : '▼') + '</span></div>'
+      + '<div id="stsAccBody" style="display:' + (st.open ? 'block' : 'none') + ';padding:6px 16px 16px;">'
+      + '<p class="sub" style="margin:8px 0 0;">Chaque paiement que vous confirmez (inscription ou abonnement) s\'ajoute ici automatiquement.</p>'
+      + row('💵 Aujourd\'hui', fmt(dayT), '#3ECF8E') + row('📆 Ce mois-ci', fmt(monT), '#3ECF8E') + row('📈 Cette année', fmt(yearT), '#3ECF8E') + row('🏦 Total depuis le début', fmt(all), '#F59E0B') + row('🧾 Nombre de paiements', String(all.n))
+      + row('🆕 Inscriptions', fmt(sum(items.filter(function(x){ return x.kind === 'registration'; })))) + row('🔁 Abonnements', fmt(sum(items.filter(function(x){ return x.kind !== 'registration'; }))))
+      + h3('📅 Entrées par jour') + '<input type="month" id="stsAccMonth" value="' + st.month + '" style="margin-top:6px;">' + dayRows
+      + h3('🗓️ Entrées par mois') + monthRows
+      + h3('🏢 Par entreprise (total)') + coRows
+      + h3('🧾 Derniers paiements') + lastRows
+      + '</div></div>';
+    host.querySelector('#stsAccHead').onclick = function(){ st.open = !st.open; host.querySelector('#stsAccBody').style.display = st.open ? 'block' : 'none'; host.querySelector('#stsAccHead').lastChild.textContent = st.open ? '▲' : '▼'; };
+    const mi = host.querySelector('#stsAccMonth'); if(mi) mi.onchange = function(){ st.month = mi.value || curM; window.fillStsAccounts(host); };
+    host.querySelectorAll('[data-acc-del]').forEach(function(b){ b.onclick = async function(){
+      if(!confirm('Retirer ce paiement des comptes STS ? (Le dépôt de l\'entreprise ne change pas.)')) return;
+      try{ await db.collection('settings').doc('accounts').set({items: {[b.dataset.accDel]: firebase.firestore.FieldValue.delete()}, removed: firebase.firestore.FieldValue.arrayUnion(b.dataset.accDel)}, {merge: true}); toast('Paiement retiré des comptes'); }catch(e){ toast('Échec, réessayez'); }
+      window.fillStsAccounts(host);
+    }; });
+  }catch(e){ host.innerHTML = ''; }
+};
 window.STS_TOP_REQ = [12, 9, 6];
 window.stsTopPlaces = function(list){
   const used = {}, out = [];
