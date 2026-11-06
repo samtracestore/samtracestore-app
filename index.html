@@ -2538,6 +2538,7 @@ document.addEventListener('click', async (e)=>{
       const oc2 = await getOwnerCode(); if(cc && cc !== oc2) await db.collection('companies').doc(cc).set({ratingSum: firebase.firestore.FieldValue.increment(n), ratingCount: firebase.firestore.FieldValue.increment(1)}, {merge: true}); else await db.collection('settings').doc('stsBadge').set({ratingSum: firebase.firestore.FieldValue.increment(n), ratingCount: firebase.firestore.FieldValue.increment(1)}, {merge: true});
     }catch(e3){}
     box.innerHTML = '<div style="font-size:14px;font-weight:700;">Merci pour votre avis ! <span style="color:#F5B93D;font-size:18px;">' + '★'.repeat(n) + '☆'.repeat(5 - n) + '</span>' + (comment ? '<div style="margin-top:5px;font-size:13px;font-weight:400;overflow-wrap:anywhere;">💬 « ' + escHtml(comment) + ' »</div>' : '') + (photos.length ? window.stsPhotosHTML(photos) : '') + '</div>';
+    try{ window.__clPkgs = (window.__clPkgs || []).map(function(q){ return q.trackingId === tid ? Object.assign({}, q, {rating: n, ratingComment: comment, ratedAt: new Date().toISOString()}) : q; }); const rvh = document.getElementById('clReviewsHost'); if(rvh) setTimeout(function(){ window.fillClientReviews(rvh); }, 600); }catch(e6){}
   }catch(err){ toast("Impossible d'enregistrer la note. Réessayez."); if(msg) msg.textContent = 'Échec, touchez « Envoyer ma note » pour réessayer'; }
 }, true);
 function clientContactBtnHTML(p){
@@ -5977,7 +5978,7 @@ async function renderOwnerPayments(){
         <p class="sub" style="margin-top:0;">Remplissez le numéro et le nom du bénéficiaire. Le chiffre 2 apparaît à côté du logo chez les entreprises. Quand un compte est « Non actif », l'entreprise voit un message et ne peut pas envoyer d'argent dessus.</p>
         ${SLOTS.map(slotHtml).join('')}
       </div>`);
-    content.innerHTML = '<div id="stsAccHost"></div>' + emailCard + codeCard + backupCard + '<div id="ownTrackHost"></div>' + pendingRegHtml + pendingHtml + notifCardOwner + confirmedRegHtml + confirmedHtml + receiptsHistoryHTML(receiptHistory) + settingsHtml + methodsHtml + extraAccountsHtml + `
+    content.innerHTML = '<div id="stsAccHost"></div><div id="stsBgHost"></div>' + emailCard + codeCard + backupCard + '<div id="ownTrackHost"></div>' + pendingRegHtml + pendingHtml + notifCardOwner + confirmedRegHtml + confirmedHtml + receiptsHistoryHTML(receiptHistory) + settingsHtml + methodsHtml + extraAccountsHtml + `
       <div class="card">
         <h2>Avatar du service client</h2>
         <p class="sub">Choisissez une photo depuis votre galerie pour la bulle WhatsApp affichée aux entreprises.</p>
@@ -10807,7 +10808,7 @@ window.fillOwnStats = async function(host){
 (function(){
   const main = document.getElementById('main'); if(!main) return;
   new MutationObserver(function(){
-    [['ownStatsHost', 'fillOwnStats'], ['ownVisitsHost', 'fillOwnVisits'], ['ownReviewsHost', 'fillOwnReviews'], ['ownTrackHost', 'fillOwnTrack'], ['ownExpiryHost', 'fillOwnExpiry'], ['ownDupHost', 'fillOwnDup'], ['ownMonthHost', 'fillOwnMonth'], ['ownStaffHost', 'fillOwnStaff'], ['ownFavHost', 'fillOwnFav'], ['ownMyFavHost', 'fillOwnMyFav'], ['stsAccHost', 'fillStsAccounts'], ['ownExportHost', 'fillOwnExport'], ['coExportHost', 'fillCoExport'], ['ownMyStaffHost', 'fillOwnMyStaff'], ['coQrHost', 'fillCoQr'], ['coStaffHost', 'fillCoStaff'], ['ownFeaturesHost', 'fillOwnFeatures'], ['ownTopProdHost', 'fillOwnTop']].forEach(function(x){
+    [['ownStatsHost', 'fillOwnStats'], ['ownVisitsHost', 'fillOwnVisits'], ['ownReviewsHost', 'fillOwnReviews'], ['ownTrackHost', 'fillOwnTrack'], ['ownExpiryHost', 'fillOwnExpiry'], ['ownDupHost', 'fillOwnDup'], ['ownMonthHost', 'fillOwnMonth'], ['ownStaffHost', 'fillOwnStaff'], ['ownFavHost', 'fillOwnFav'], ['ownMyFavHost', 'fillOwnMyFav'], ['stsAccHost', 'fillStsAccounts'], ['stsBgHost', 'fillStsBackground'], ['ownExportHost', 'fillOwnExport'], ['coExportHost', 'fillCoExport'], ['ownMyStaffHost', 'fillOwnMyStaff'], ['coQrHost', 'fillCoQr'], ['coStaffHost', 'fillCoStaff'], ['ownFeaturesHost', 'fillOwnFeatures'], ['ownTopProdHost', 'fillOwnTop']].forEach(function(x){
       const h = document.getElementById(x[0]);
       if(h && !h.dataset.filled && (!h.firstChild || h.innerHTML.indexOf('ldots') >= 0)){ h.dataset.filled = '1'; window[x[1]](h); }
     });
@@ -11002,6 +11003,7 @@ window.stsReviewRowHTML = function(r, canDel, coName){
     + (r.reply ? '<div class="sub" style="margin-top:2px;">↩️ Réponse : « ' + escHtml(r.reply) + ' »</div>' : '')
     + (canDel ? '<button type="button" class="ghost" data-rv-del="' + escHtml(r.trackingId) + '" style="margin-top:6px;width:auto;padding:5px 12px;font-size:12px;color:var(--danger);border-color:rgba(239,93,93,0.4);">🗑️ Supprimer</button>' : '') + '</div>';
 };
+window.stsRvRefreshBtn = '<button type="button" class="miniBtn" data-rv-refresh="1" style="margin-bottom:8px;">🔄 Actualiser les commentaires</button>';
 window.stsBindReviewDel = function(host, refill){
   host.querySelectorAll('[data-rv-del]').forEach(function(b){
     b.onclick = async function(){
@@ -11335,9 +11337,9 @@ window.fillClientReviews = async function(host){
         const docs = await window.stsGetReviews(sc, oc);
         const nm = info[sc].name;
         html += foldCardHTML('clrev-' + sc, '#F59E0B,#EF4444', '💬', 'Commentaires des clients' + (scopes.length > 1 && nm ? ' · ' + nm : ''), docs.length,
-          docs.length ? docs.map(r => window.stsReviewRowHTML(r, canDel, nm, info[sc].logo, canReplyFor(sc))).join('') : '<p class="sub" style="margin:0;">Aucun commentaire pour le moment.</p>');
+          window.stsRvRefreshBtn + (docs.length ? docs.map(r => window.stsReviewRowHTML(r, canDel, nm, info[sc].logo, canReplyFor(sc))).join('') : '<p class="sub" style="margin:0;">Aucun commentaire pour le moment.</p>'));
       }
-      host.innerHTML = html; bindFoldCards(host); window.stsBindReviewDel(host, paint);
+      host.innerHTML = html; bindFoldCards(host); window.stsBindReviewDel(host, paint); host.querySelectorAll('[data-rv-refresh]').forEach(function(b){ b.onclick = function(){ window.fillClientReviews(host); }; });
     };
     await paint();
   }catch(e){ try{ host.querySelectorAll('.empty').forEach(el => { el.textContent = 'Impossible de charger pour le moment.'; }); }catch(e2){} }
@@ -11511,8 +11513,8 @@ window.fillOwnReviews = async function(host){
         html += row;
       }
       host.innerHTML = foldCardHTML('ownrev', '#F59E0B,#EF4444', '💬', 'Commentaires des clients', docs.length,
-        '<p class="sub" style="margin:0 0 6px;">Seul l\'admin peut supprimer un commentaire. Chaque entreprise répond aux avis de ses clients depuis sa carte « Avis de mes clients ».</p>' + (docs.length ? html : '<p class="sub" style="margin:0;">Aucun commentaire pour le moment.</p>'));
-      bindFoldCards(host); window.stsBindReviewDel(host, paint);
+        window.stsRvRefreshBtn + '<p class="sub" style="margin:0 0 6px;">Seul l\'admin peut supprimer un commentaire. Chaque entreprise répond aux avis de ses clients depuis sa carte « Avis de mes clients ».</p>' + (docs.length ? html : '<p class="sub" style="margin:0;">Aucun commentaire pour le moment.</p>'));
+      bindFoldCards(host); window.stsBindReviewDel(host, paint); host.querySelectorAll('[data-rv-refresh]').forEach(function(b){ b.onclick = function(){ window.fillOwnReviews(host); }; });
       host.querySelectorAll('[data-assign-go]').forEach(function(b){
         b.onclick = async function(){
           const tid = b.dataset.assignGo, sel = host.querySelector('[data-assign-sel="' + tid + '"]'); if(!sel || b.disabled) return;
@@ -12526,7 +12528,7 @@ window.stsMakeXlsx = function(head, rows){
 };
 window.stsMakePdf = function(title, head, rows, biz){
   const W = 842, H = 595, M = 28, FS = 8, LH = 10, widths = [92, 92, 66, 84, 128, 84, 76, 76, 84];
-  const tw = widths.reduce(function(a, b){ return a + b; }, 0), sc = (W - 2 * M) / tw, cw = widths.slice(0, head.length).map(function(w){ return w * sc; });
+  const tw = widths.slice(0, head.length).reduce(function(a, b){ return a + b; }, 0), sc = (W - 2 * M) / tw, cw = widths.slice(0, head.length).map(function(w){ return w * sc; });
   const clean = function(t){ return String(t == null ? '' : t).replace(/[\u2018\u2019]/g, "'").replace(/[\u201C\u201D]/g, '"').replace(/[\u2013\u2014]/g, '-').replace(/\u2026/g, '...').replace(/[^\x20-\x7E\u00A0-\u00FF]/g, '').replace(/\s+/g, ' ').trim(); };
   const pdfStr = function(t){ return '(' + t.replace(/\\/g, '\\\\').replace(/\(/g, '\\(').replace(/\)/g, '\\)') + ')'; };
   const wrap = function(t, w){ const max = Math.max(3, Math.floor((w - 6) / (FS * 0.5))); const words = clean(t).split(' '), lines = []; let cur = ''; words.forEach(function(wd){ while(wd.length > max){ if(cur){ lines.push(cur); cur = ''; } lines.push(wd.slice(0, max)); wd = wd.slice(max); } if(!cur) cur = wd; else if((cur + ' ' + wd).length <= max) cur += ' ' + wd; else { lines.push(cur); cur = wd; } }); if(cur || !lines.length) lines.push(cur); return lines; };
@@ -12832,6 +12834,15 @@ window.fillStsAccounts = async function(host){
     const byCo = {}; items.forEach(function(x){ const k = x.code || x.companyName; (byCo[k] = byCo[k] || {name: x.companyName || x.code, list: []}).list.push(x); });
     const coRows = Object.keys(byCo).map(function(k){ return {name: byCo[k].name, t: sum(byCo[k].list)}; }).sort(function(a, b){ return (b.t.htg + b.t.usd * 130) - (a.t.htg + a.t.usd * 130); }).slice(0, 15).map(function(x){ return row('🏢 ' + escHtml(x.name), fmt(x.t)); }).join('') || '<p class="sub" style="margin:8px 0 0;">Aucune entreprise.</p>';
     const kindLbl = function(k){ return k === 'registration' ? 'Inscription' : 'Abonnement'; };
+    let methods = []; try{ methods = paymentMethodsFor(await getPaymentSettings()); }catch(e){ methods = []; }
+    const nrm = function(t){ return String(t || '').toLowerCase().replace(/[^a-z0-9]/g, ''); };
+    const shortLbl = function(m){ return m.key === 'visa' ? 'Meru (Visa)' : (m.key === 'buh' ? 'BUH (compte USD)' : String(m.label || m.key).split(' · ')[0]); };
+    const methodOf = function(x){ const n = nrm(x.method); if(!n) return null; for(const m of methods){ if(nrm(m.key) === n || nrm(m.label) === n) return m.key; } for(const m of methods){ const l = nrm(m.label); if(n.length >= 3 && (l.indexOf(n) >= 0 || n.indexOf(nrm(m.key)) >= 0)) return m.key; } return null; };
+    const byMeth = {}; items.forEach(function(x){ const k = methodOf(x) || ('?' + (x.method || 'autre')); (byMeth[k] = byMeth[k] || []).push(x); });
+    const methRows = methods.map(function(m){ const t = sum(byMeth[m.key] || []); return row('💳 ' + escHtml(shortLbl(m)), (m.currency === 'USD' ? num(t.usd) + ' USD' : num(t.htg) + ' G') + (m.currency === 'USD' && t.htg ? ' · ' + num(t.htg) + ' G' : '') + (m.currency !== 'USD' && t.usd ? ' · ' + num(t.usd) + ' USD' : '')); }).join('')
+      + Object.keys(byMeth).filter(function(k){ return k.charAt(0) === '?'; }).map(function(k){ return row('💳 ' + escHtml(k.slice(1)), fmt(sum(byMeth[k]))); }).join('');
+    const mLabel = function(x){ const k = methodOf(x); const m = methods.find(function(z){ return z.key === k; }); return m ? shortLbl(m) : (x.method || ''); };
+    const expBtn = 'flex:1;padding:12px 6px;border:none;border-radius:12px;font-weight:900;font-size:14px;color:#fff;';
     const lastRows = items.slice(0, 10).map(function(x){ return '<div style="padding:10px;margin-top:8px;border:1px solid var(--border);border-radius:12px;"><div style="display:flex;justify-content:space-between;gap:8px;"><b>' + escHtml(x.companyName || x.code) + '</b><b style="color:#3ECF8E;">' + num(x.amount) + ' ' + (x.currency === 'USD' ? 'USD' : 'G') + '</b></div><div class="sub" style="font-size:12.5px;">' + kindLbl(x.kind) + (x.method ? ' · ' + escHtml(x.method) : '') + ' · ' + new Date(x.at).toLocaleDateString('fr-FR', {day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit'}) + '</div><button type="button" class="miniBtn" data-acc-del="' + escHtml(x.id) + '" style="margin-top:6px;color:var(--danger);border-color:rgba(239,93,93,0.4);">🗑️ Retirer des comptes</button></div>'; }).join('') || '<p class="sub" style="margin:8px 0 0;">Aucun paiement confirmé pour le moment.</p>';
     host.innerHTML = '<div class="card" style="padding:0;overflow:hidden;border:2px solid #E59A4F;">'
       + '<div id="stsAccHead" style="cursor:pointer;display:flex;align-items:center;gap:10px;padding:14px 16px;background:linear-gradient(135deg,#F59E0B,#B45309);color:#fff;"><span style="font-size:24px;">🏦</span><div style="flex:1;font-weight:900;font-size:16px;">Gestion des comptes STS</div><div style="text-align:right;"><div style="font-size:11px;opacity:.9;">Total encaissé</div><div style="font-weight:900;font-size:15px;">' + num(all.htg) + ' G</div><div style="font-weight:900;font-size:15px;">' + num(all.usd) + ' USD</div></div><span style="font-size:16px;">' + (st.open ? '▲' : '▼') + '</span></div>'
@@ -12841,9 +12852,22 @@ window.fillStsAccounts = async function(host){
       + row('🆕 Inscriptions', fmt(sum(items.filter(function(x){ return x.kind === 'registration'; })))) + row('🔁 Abonnements', fmt(sum(items.filter(function(x){ return x.kind !== 'registration'; }))))
       + h3('📅 Entrées par jour') + '<input type="month" id="stsAccMonth" value="' + st.month + '" style="margin-top:6px;">' + dayRows
       + h3('🗓️ Entrées par mois') + monthRows
+      + h3('💳 Par moyen de paiement') + methRows
       + h3('🏢 Par entreprise (total)') + coRows
       + h3('🧾 Derniers paiements') + lastRows
+      + h3('📥 Télécharger le reçu des comptes') + '<p class="sub" style="margin:4px 0 8px;">Télécharge les entrées du mois choisi plus haut (' + st.month.split('-').reverse().join('/') + ').</p><div style="display:flex;gap:8px;"><button type="button" data-acc-exp="xlsx" style="' + expBtn + 'background:linear-gradient(135deg,#22C55E,#15803D);">📥 Excel</button><button type="button" data-acc-exp="pdf" style="' + expBtn + 'background:linear-gradient(135deg,#EF4444,#B91C1C);">📄 PDF</button></div>'
       + '</div></div>';
+    host.querySelectorAll('[data-acc-exp]').forEach(function(b){ b.onclick = function(){
+      const list = items.filter(function(x){ return dkey(x.at).slice(0, 7) === st.month; }).sort(function(a, c){ return String(a.at).localeCompare(String(c.at)); });
+      if(!list.length){ toast('Aucune entrée pour ' + st.month.split('-').reverse().join('/')); return; }
+      const fdt = function(v){ try{ return new Date(v).toLocaleDateString('fr-FR', {day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit'}); }catch(e){ return ''; } };
+      const head = ['Date', 'Entreprise', 'Type', 'Moyen de paiement', 'Montant', 'Devise'];
+      const rows = list.map(function(x){ return [fdt(x.at), x.companyName || x.code, kindLbl(x.kind), mLabel(x), num(x.amount), x.currency === 'USD' ? 'USD' : 'G']; });
+      const tt = sum(list); rows.push(['', '', '', 'TOTAL (G)', num(tt.htg), 'G'], ['', '', '', 'TOTAL (USD)', num(tt.usd), 'USD']);
+      const nm = 'comptes-sts-' + st.month;
+      if(b.dataset.accExp === 'xlsx'){ window.stsDownloadBytes(window.stsMakeXlsx(head, rows), nm + '.xlsx', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'); toast('📥 Fichier Excel téléchargé', 4000); }
+      else { window.stsDownloadBytes(window.stsMakePdf('Sam Trace Store - Gestion des comptes STS - ' + st.month.split('-').reverse().join('/'), head, rows, 'Sam Trace Store'), nm + '.pdf', 'application/pdf'); toast('📄 Fichier PDF téléchargé', 4000); }
+    }; });
     host.querySelector('#stsAccHead').onclick = function(){ st.open = !st.open; host.querySelector('#stsAccBody').style.display = st.open ? 'block' : 'none'; host.querySelector('#stsAccHead').lastChild.textContent = st.open ? '▲' : '▼'; };
     const mi = host.querySelector('#stsAccMonth'); if(mi) mi.onchange = function(){ st.month = mi.value || curM; window.fillStsAccounts(host); };
     host.querySelectorAll('[data-acc-del]').forEach(function(b){ b.onclick = async function(){
@@ -12851,6 +12875,59 @@ window.fillStsAccounts = async function(host){
       try{ await db.collection('settings').doc('accounts').set({items: {[b.dataset.accDel]: firebase.firestore.FieldValue.delete()}, removed: firebase.firestore.FieldValue.arrayUnion(b.dataset.accDel)}, {merge: true}); toast('Paiement retiré des comptes'); }catch(e){ toast('Échec, réessayez'); }
       window.fillStsAccounts(host);
     }; });
+  }catch(e){ host.innerHTML = ''; }
+};
+window.stsApplyBackground = function(v){
+  let st = document.getElementById('stsBgStyle'); if(!st){ st = document.createElement('style'); st.id = 'stsBgStyle'; document.head.appendChild(st); }
+  if(!v || !v.mode || v.mode === 'none'){ st.textContent = ''; return; }
+  if(v.mode === 'color' && /^#[0-9a-fA-F]{6}$/.test(v.color || '')){ st.textContent = 'html,body{background:' + v.color + ' !important;}'; return; }
+  if(v.mode === 'image' && /^data:image\//.test(v.image || '')){
+    const d = Math.max(0, Math.min(0.92, (parseFloat(v.dark) || 55) / 100));
+    st.textContent = 'html,body{background:#05080f !important;} body::before{content:"";position:fixed;left:0;top:0;right:0;bottom:0;z-index:-1;pointer-events:none;background:linear-gradient(rgba(5,8,15,' + d + '),rgba(5,8,15,' + d + ')),url("' + v.image + '") center/cover no-repeat;} .card{background:rgba(17,24,39,0.80) !important;}';
+  }
+};
+(function(){
+  try{ const c = localStorage.getItem('sts_bg'); if(c) window.stsApplyBackground(JSON.parse(c)); }catch(e){}
+  let tries = 0;
+  const load = async function(){
+    tries++;
+    if(typeof db === 'undefined' || !db){ if(tries < 25) setTimeout(load, 400); return; }
+    try{ const d = await db.collection('settings').doc('appBackground').get(); const v = d.exists ? d.data() : null; window.stsApplyBackground(v); try{ localStorage.setItem('sts_bg', v && v.mode && v.mode !== 'none' ? JSON.stringify(v) : ''); }catch(e){} }catch(e){}
+  };
+  setTimeout(load, 600);
+})();
+window.stsCompressBg = function(file){ return new Promise(function(res, rej){ const fr = new FileReader(); fr.onload = function(){ const im = new Image(); im.onload = function(){ let max = 1280, q = 0.72, out = ''; const c = document.createElement('canvas'); for(let t = 0; t < 7; t++){ const sc = Math.min(1, max / Math.max(im.width, im.height)); c.width = Math.round(im.width * sc); c.height = Math.round(im.height * sc); c.getContext('2d').drawImage(im, 0, 0, c.width, c.height); out = c.toDataURL('image/jpeg', q); if(out.length < 600000) break; max = Math.round(max * 0.8); q = Math.max(0.5, q - 0.06); } res(out); }; im.onerror = rej; im.src = fr.result; }; fr.onerror = rej; fr.readAsDataURL(file); }); };
+window.fillStsBackground = async function(host){
+  try{
+    let cur = {}; try{ const d = await db.collection('settings').doc('appBackground').get(); cur = d.exists ? (d.data() || {}) : {}; }catch(e){}
+    const st = {mode: cur.mode || 'none', image: cur.image || '', color: cur.color || '#2a1405', dark: cur.dark || 55};
+    const presets = [['🎃', '#2a1405'], ['🎄', '#0b2a18'], ['💝', '#2b0f1c'], ['🇭🇹', '#0a1f4a'], ['🌙', '#1a1038'], ['🌅', '#3a1d05']];
+    const prev = function(){ return st.mode === 'image' && st.image ? 'background:linear-gradient(rgba(5,8,15,' + (st.dark / 100) + '),rgba(5,8,15,' + (st.dark / 100) + ')),url(' + st.image + ') center/cover;' : (st.mode === 'color' ? 'background:' + st.color + ';' : 'background:#0B1120;'); };
+    const bs = 'width:100%;padding:12px;border:none;border-radius:12px;font-weight:900;font-size:14.5px;color:#fff;margin-top:8px;';
+    host.innerHTML = '<div class="card" style="border:1px solid rgba(168,85,247,0.6);"><h2 style="color:#C084FC;">🎨 Fond d\'écran de l\'application</h2>'
+      + '<p class="sub">Changez le fond pour les mois de fête (Noël, Halloween…). Tous les utilisateurs le voient. Vous pouvez toujours remettre le fond noir d\'origine.</p>'
+      + '<div id="bgPrev" style="height:130px;border-radius:14px;border:1px solid var(--border);' + prev() + '"></div>'
+      + '<p class="sub" style="margin:6px 0 0;">État actuel : <b>' + (cur.mode === 'image' ? 'image personnelle' : (cur.mode === 'color' ? 'couleur ' + escHtml(cur.color || '') : 'fond noir d\'origine')) + '</b></p>'
+      + '<input type="file" id="bgFile" accept="image/*" style="display:none;"><button type="button" id="bgPick" style="' + bs + 'background:linear-gradient(135deg,#8B5CF6,#6D28D9);">📷 Choisir mon image de fond</button>'
+      + '<label style="margin-top:10px;">Assombrir l\'image (pour bien lire le texte) : <b id="bgDarkV">' + st.dark + '%</b></label><input type="range" id="bgDark" min="0" max="90" value="' + st.dark + '" style="width:100%;">'
+      + '<label style="margin-top:10px;">Ou une couleur de fête</label><div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">' + presets.map(function(p){ return '<button type="button" data-bgc="' + p[1] + '" style="width:48px;height:48px;border-radius:12px;border:2px solid var(--border);font-size:22px;background:' + p[1] + ';">' + p[0] + '</button>'; }).join('') + '<input type="color" id="bgColor" value="' + st.color + '" style="width:48px;height:48px;padding:0;border:none;background:none;"></div>'
+      + '<button type="button" id="bgSave" style="' + bs + 'background:linear-gradient(135deg,#22C55E,#15803D);">💾 Appliquer à toute l\'application</button>'
+      + '<button type="button" id="bgReset" style="' + bs + 'background:#111827;border:1px solid #374151;">⬛ Remettre le fond noir</button></div>';
+    const upd = function(){ host.querySelector('#bgPrev').style.cssText = 'height:130px;border-radius:14px;border:1px solid var(--border);' + prev(); };
+    host.querySelector('#bgPick').onclick = function(){ host.querySelector('#bgFile').click(); };
+    host.querySelector('#bgFile').onchange = async function(e){ const f = e.target.files && e.target.files[0]; if(!f) return; try{ st.image = await window.stsCompressBg(f); st.mode = 'image'; upd(); toast('Image prête : touchez « Appliquer »', 3500); }catch(err){ toast('Image illisible, essayez une autre'); } };
+    host.querySelector('#bgDark').oninput = function(e){ st.dark = parseInt(e.target.value, 10) || 0; host.querySelector('#bgDarkV').textContent = st.dark + '%'; upd(); };
+    host.querySelectorAll('[data-bgc]').forEach(function(b){ b.onclick = function(){ st.color = b.dataset.bgc; st.mode = 'color'; host.querySelector('#bgColor').value = st.color; upd(); }; });
+    host.querySelector('#bgColor').oninput = function(e){ st.color = e.target.value; st.mode = 'color'; upd(); };
+    host.querySelector('#bgSave').onclick = async function(){
+      if(st.mode === 'none'){ toast('Choisissez d\'abord une image ou une couleur'); return; }
+      const v = st.mode === 'image' ? {mode: 'image', image: st.image, dark: st.dark, at: new Date().toISOString()} : {mode: 'color', color: st.color, at: new Date().toISOString()};
+      try{ await db.collection('settings').doc('appBackground').set(v); window.stsApplyBackground(v); try{ localStorage.setItem('sts_bg', JSON.stringify(v)); }catch(e){} toast('✅ Nouveau fond appliqué à toute l\'application', 4000); }catch(err){ toast('Échec (image trop lourde ?), réessayez'); }
+    };
+    host.querySelector('#bgReset').onclick = async function(){
+      if(!confirm('Remettre le fond noir d\'origine pour toute l\'application ?')) return;
+      try{ await db.collection('settings').doc('appBackground').set({mode: 'none', at: new Date().toISOString()}); window.stsApplyBackground(null); try{ localStorage.setItem('sts_bg', ''); }catch(e){} toast('⬛ Fond noir remis', 4000); window.fillStsBackground(host); }catch(err){ toast('Échec, réessayez'); }
+    };
   }catch(e){ host.innerHTML = ''; }
 };
 window.STS_TOP_REQ = [12, 9, 6];
