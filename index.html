@@ -12877,14 +12877,61 @@ window.fillStsAccounts = async function(host){
     }; });
   }catch(e){ host.innerHTML = ''; }
 };
+window.stsBgArt = function(name){
+  let seed = 7; const rnd = function(){ seed = (seed * 16807) % 2147483647; return seed / 2147483647; };
+  const R = function(a, b){ return a + rnd() * (b - a); };
+  const star = function(n, cols, y0, y1, rmin, rmax){ let o = ''; for(let i = 0; i < n; i++) o += '<circle cx="' + R(0, 400).toFixed(1) + '" cy="' + R(y0, y1).toFixed(1) + '" r="' + R(rmin, rmax).toFixed(2) + '" fill="' + cols[Math.floor(rnd() * cols.length)] + '" opacity="' + R(0.35, 1).toFixed(2) + '"/>'; return o; };
+  const wrap = function(defs, body){ return '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 800" preserveAspectRatio="xMidYMid slice"><defs>' + defs + '</defs>' + body + '</svg>'; };
+  const grad = function(id, stops){ return '<linearGradient id="' + id + '" x1="0" y1="0" x2="0" y2="1">' + stops.map(function(s){ return '<stop offset="' + s[0] + '" stop-color="' + s[1] + '"/>'; }).join('') + '</linearGradient>'; };
+  let svg = '';
+  if(name === 'halloween'){
+    const pumpkin = function(x, y, s){ return '<g transform="translate(' + x + ' ' + y + ') scale(' + s + ')"><rect x="-4" y="-46" width="8" height="14" rx="3" fill="#2f5d1f"/><ellipse cx="-20" cy="-8" rx="22" ry="34" fill="#e8700a"/><ellipse cx="20" cy="-8" rx="22" ry="34" fill="#e8700a"/><ellipse cx="0" cy="-8" rx="24" ry="36" fill="#ff8a1f"/><path d="M-22 -22 L-10 -10 L-30 -10Z M22 -22 L34 -10 L10 -10Z M-20 8 Q0 30 20 8 L14 4 L8 14 L0 6 L-8 14 L-14 4Z" fill="#2a1200"/><path d="M-4 -8 L4 -8 L0 -16Z" fill="#2a1200"/></g>'; };
+    const bat = function(x, y, s){ return '<g transform="translate(' + x + ' ' + y + ') scale(' + s + ')" fill="#0b0614"><path d="M0 0 C-6 -10 -20 -14 -34 -6 C-28 -6 -24 -2 -22 4 C-18 -2 -12 -2 -8 4 C-6 0 -3 0 0 6 C3 0 6 0 8 4 C12 -2 18 -2 22 4 C24 -2 28 -6 34 -6 C20 -14 6 -10 0 0Z"/></g>'; };
+    let trees = ''; [[30, 700, 1], [110, 720, 0.8], [330, 690, 1.1], [390, 730, 0.9]].forEach(function(t){ trees += '<g transform="translate(' + t[0] + ' ' + t[1] + ') scale(' + t[2] + ')" stroke="#0b0614" stroke-linecap="round" fill="none"><path d="M0 100 L0 -40" stroke-width="12"/><path d="M0 20 L-40 -20 M0 -10 L45 -55 M-20 0 L-30 -45 M0 -30 L-25 -75 M20 -25 L22 -80" stroke-width="6"/></g>'; });
+    svg = wrap(grad('g', [[0, '#150a33'], [0.55, '#42175a'], [1, '#12081c']]) + '<radialGradient id="m"><stop offset="0" stop-color="#ffd98a" stop-opacity=".9"/><stop offset="1" stop-color="#ff9a1f" stop-opacity="0"/></radialGradient>',
+      '<rect width="400" height="800" fill="url(#g)"/>' + star(60, ['#fff', '#ffe9a8'], 0, 520, 0.6, 1.8) + '<circle cx="290" cy="150" r="120" fill="url(#m)"/><circle cx="290" cy="150" r="54" fill="#ffe9a8"/><circle cx="272" cy="136" r="9" fill="#f3cf7a"/><circle cx="306" cy="168" r="12" fill="#f3cf7a"/><circle cx="300" cy="128" r="6" fill="#f3cf7a"/>'
+      + bat(90, 120, 1) + bat(180, 70, 0.7) + bat(340, 260, 0.8) + bat(60, 300, 0.6) + bat(230, 230, 0.5)
+      + '<path d="M0 640 Q100 600 200 640 T400 630 V800 H0Z" fill="#0b0614"/>' + trees
+      + '<g fill="#0b0614"><rect x="150" y="560" width="110" height="90"/><polygon points="140,560 205,500 270,560"/><rect x="225" y="500" width="14" height="40"/></g><g fill="#ffb02e"><rect x="168" y="585" width="14" height="20"/><rect x="215" y="585" width="14" height="20"/><rect x="190" y="520" width="12" height="16"/></g>'
+      + pumpkin(70, 740, 0.9) + pumpkin(330, 760, 1.2) + pumpkin(200, 770, 0.7));
+  } else if(name === 'noel'){
+    const tree = function(x, y, s){ let t = '<g transform="translate(' + x + ' ' + y + ') scale(' + s + ')"><rect x="-8" y="0" width="16" height="22" fill="#5a3a1a"/><polygon points="0,-110 -48,-40 48,-40" fill="#14633a"/><polygon points="0,-75 -62,10 62,10" fill="#1b7a47"/><polygon points="0,-40 -76,50 76,50" fill="#23915a"/><polygon points="0,-130 6,-114 24,-114 10,-104 15,-88 0,-98 -15,-88 -10,-104 -24,-114 -6,-114" fill="#ffd54a"/>'; const cols = ['#ff4d4d', '#ffd54a', '#4da6ff', '#ff8ad8']; [[-20, -20], [18, -12], [-6, -58], [24, 26], [-36, 24], [4, 34], [-40, 0]].forEach(function(p, i){ t += '<circle cx="' + p[0] + '" cy="' + p[1] + '" r="5" fill="' + cols[i % 4] + '"/>'; }); return t + '</g>'; };
+    let snow = ''; for(let i = 0; i < 90; i++) snow += '<circle cx="' + R(0, 400).toFixed(1) + '" cy="' + R(0, 760).toFixed(1) + '" r="' + R(1.2, 4.2).toFixed(1) + '" fill="#fff" opacity="' + R(0.4, 0.95).toFixed(2) + '"/>';
+    let lights = ''; const lc = ['#ff4d4d', '#ffd54a', '#4da6ff', '#6bff8a', '#ff8ad8']; for(let i = 0; i <= 10; i++){ const x = i * 40, y = 28 + Math.sin(i * 0.9) * 14; lights += '<circle cx="' + x + '" cy="' + y.toFixed(1) + '" r="7" fill="' + lc[i % 5] + '"/><circle cx="' + x + '" cy="' + y.toFixed(1) + '" r="14" fill="' + lc[i % 5] + '" opacity=".25"/>'; }
+    svg = wrap(grad('g', [[0, '#071a3a'], [0.6, '#0d3b52'], [1, '#0a2230']]),
+      '<rect width="400" height="800" fill="url(#g)"/>' + star(40, ['#fff', '#cfe8ff'], 40, 400, 0.6, 1.6) + '<path d="M0 22 Q100 50 200 26 T400 30" fill="none" stroke="#0a1a2a" stroke-width="3"/>' + lights + snow
+      + '<path d="M0 700 Q100 660 200 700 T400 690 V800 H0Z" fill="#e9f4ff"/><path d="M0 740 Q120 710 240 745 T400 735 V800 H0Z" fill="#cfe3f5"/>' + tree(70, 700, 1) + tree(320, 710, 1.15) + tree(200, 730, 0.7));
+  } else if(name === 'valentin'){
+    const heart = function(x, y, s, rot, col, op){ return '<path transform="translate(' + x + ' ' + y + ') rotate(' + rot + ') scale(' + s + ')" d="M0 12 C-34 -14 -22 -42 0 -26 C22 -42 34 -14 0 12Z" fill="' + col + '" opacity="' + op + '"/>'; };
+    let h = ''; const cols = ['#ff5c8a', '#ff8fb1', '#ff2e6e', '#ffc2d6', '#e8336d']; for(let i = 0; i < 38; i++) h += heart(R(10, 390).toFixed(0), R(10, 790).toFixed(0), R(0.5, 2.4).toFixed(2), R(-35, 35).toFixed(0), cols[Math.floor(rnd() * 5)], R(0.25, 0.85).toFixed(2));
+    svg = wrap(grad('g', [[0, '#2b0a26'], [0.5, '#5a1138'], [1, '#2b0a26']]), '<rect width="400" height="800" fill="url(#g)"/>' + star(30, ['#ffd1e0'], 0, 800, 0.8, 2) + h);
+  } else if(name === 'nouvelan'){
+    const burst = function(cx, cy, r, col){ let b = '<g stroke="' + col + '" stroke-linecap="round" fill="' + col + '">'; for(let i = 0; i < 18; i++){ const a = i * Math.PI / 9, x1 = cx + Math.cos(a) * r * 0.35, y1 = cy + Math.sin(a) * r * 0.35, x2 = cx + Math.cos(a) * r, y2 = cy + Math.sin(a) * r; b += '<line x1="' + x1.toFixed(1) + '" y1="' + y1.toFixed(1) + '" x2="' + x2.toFixed(1) + '" y2="' + y2.toFixed(1) + '" stroke-width="3" opacity=".9"/><circle cx="' + (cx + Math.cos(a) * r * 1.12).toFixed(1) + '" cy="' + (cy + Math.sin(a) * r * 1.12).toFixed(1) + '" r="3.2" stroke="none"/>'; } return b + '<circle cx="' + cx + '" cy="' + cy + '" r="5" stroke="none"/></g>'; };
+    let conf = ''; const cc = ['#ffd54a', '#ff5c8a', '#4dd2ff', '#9cff6b', '#fff']; for(let i = 0; i < 60; i++) conf += '<rect x="' + R(0, 400).toFixed(0) + '" y="' + R(380, 790).toFixed(0) + '" width="6" height="12" rx="2" fill="' + cc[i % 5] + '" opacity=".8" transform="rotate(' + R(0, 180).toFixed(0) + ' 200 600)"/>';
+    svg = wrap(grad('g', [[0, '#050a24'], [1, '#1a1049']]), '<rect width="400" height="800" fill="url(#g)"/>' + star(70, ['#fff', '#ffe9a8'], 0, 800, 0.5, 1.5) + burst(110, 160, 70, '#ffd54a') + burst(300, 110, 55, '#ff5c8a') + burst(250, 300, 80, '#4dd2ff') + burst(80, 400, 50, '#9cff6b') + burst(320, 480, 60, '#ffd54a') + conf);
+  } else if(name === 'haiti'){
+    const palm = function(x, y, s){ let p = '<g transform="translate(' + x + ' ' + y + ') scale(' + s + ')" stroke="#06101f" stroke-linecap="round" fill="none"><path d="M0 120 Q-6 40 6 -30" stroke-width="9"/>'; [-70, -40, -10, 25, 55, 80].forEach(function(a){ p += '<path d="M6 -30 Q' + (6 + Math.sin(a * Math.PI / 180) * 40) + ' ' + (-60 - Math.abs(Math.cos(a * Math.PI / 180)) * 10) + ' ' + (6 + Math.sin(a * Math.PI / 180) * 80) + ' ' + (-10 + Math.abs(a) * 0.3) + '" stroke-width="5"/>'; }); return p + '</g>'; };
+    svg = wrap(grad('g', [[0, '#071a4a'], [0.6, '#0b2f7a'], [1, '#06122e']]),
+      '<rect width="400" height="800" fill="url(#g)"/>' + star(50, ['#fff'], 0, 520, 0.6, 1.6)
+      + '<g transform="translate(40 70) rotate(-4)"><rect width="320" height="100" fill="#00209f"/><rect y="50" width="320" height="50" fill="#d21034"/><rect x="110" y="18" width="100" height="64" fill="#fff"/><path d="M160 30 L172 62 L148 62Z" fill="#2e8b3c"/><circle cx="160" cy="30" r="5" fill="#f5c542"/><rect x="-6" y="-10" width="6" height="190" fill="#7a5a3a"/></g>'
+      + '<path d="M0 650 Q120 610 240 650 T400 640 V800 H0Z" fill="#06101f"/>' + palm(60, 660, 1) + palm(340, 650, 1.1) + palm(200, 690, 0.7) + '<path d="M0 760 Q100 740 200 760 T400 755 V800 H0Z" fill="#d21034" opacity=".55"/>');
+  } else {
+    let conf = ''; const cc = ['#ff4d6d', '#ffd54a', '#4dd2ff', '#9cff6b', '#c77dff', '#ff9a3c']; for(let i = 0; i < 110; i++){ const x = R(0, 400).toFixed(0), y = R(0, 800).toFixed(0), c = cc[i % 6]; conf += (i % 3 === 0 ? '<circle cx="' + x + '" cy="' + y + '" r="5" fill="' + c + '"/>' : '<rect x="' + x + '" y="' + y + '" width="7" height="14" rx="2" fill="' + c + '" transform="rotate(' + R(0, 180).toFixed(0) + ' ' + x + ' ' + y + ')"/>'); }
+    let str = ''; cc.forEach(function(c, i){ str += '<path d="M' + (i * 70 - 20) + ' 0 C' + (i * 70 + 60) + ' 150 ' + (i * 70 - 60) + ' 300 ' + (i * 70 + 40) + ' 450" fill="none" stroke="' + c + '" stroke-width="5" stroke-linecap="round" opacity=".7"/>'; });
+    svg = wrap(grad('g', [[0, '#2a0a52'], [1, '#12062c']]), '<rect width="400" height="800" fill="url(#g)"/>' + str + conf);
+  }
+  return 'data:image/svg+xml;utf8,' + encodeURIComponent(svg);
+};
 window.stsApplyBackground = function(v){
   let st = document.getElementById('stsBgStyle'); if(!st){ st = document.createElement('style'); st.id = 'stsBgStyle'; document.head.appendChild(st); }
   if(!v || !v.mode || v.mode === 'none'){ st.textContent = ''; return; }
   if(v.mode === 'color' && /^#[0-9a-fA-F]{6}$/.test(v.color || '')){ st.textContent = 'html,body{background:' + v.color + ' !important;}'; return; }
-  if(v.mode === 'image' && /^data:image\//.test(v.image || '')){
-    const d = Math.max(0, Math.min(0.92, (parseFloat(v.dark) || 55) / 100));
-    st.textContent = 'html,body{background:#05080f !important;} body::before{content:"";position:fixed;left:0;top:0;right:0;bottom:0;z-index:-1;pointer-events:none;background:linear-gradient(rgba(5,8,15,' + d + '),rgba(5,8,15,' + d + ')),url("' + v.image + '") center/cover no-repeat;} .card{background:rgba(17,24,39,0.80) !important;}';
-  }
+  let src = '', d = 0.55;
+  if(v.mode === 'image' && /^data:image\//.test(v.image || '')){ src = v.image; d = (parseFloat(v.dark) || 55) / 100; }
+  else if(v.mode === 'art' && v.art){ src = window.stsBgArt(v.art); d = (v.dark == null ? 22 : parseFloat(v.dark)) / 100; }
+  if(!src) return;
+  d = Math.max(0, Math.min(0.92, d));
+  st.textContent = 'html{background:#05080f !important;} body,#app{background:transparent !important;} body::before{content:"";position:fixed;left:0;top:0;right:0;bottom:0;z-index:-1;pointer-events:none;background:linear-gradient(rgba(5,8,15,' + d + '),rgba(5,8,15,' + d + ')),url("' + src + '") center/cover no-repeat;} .card{background:rgba(17,24,39,0.78) !important;} header.top{background:rgba(11,17,32,0.55) !important;}';
 };
 (function(){
   try{ const c = localStorage.getItem('sts_bg'); if(c) window.stsApplyBackground(JSON.parse(c)); }catch(e){}
@@ -12897,32 +12944,37 @@ window.stsApplyBackground = function(v){
   setTimeout(load, 600);
 })();
 window.stsCompressBg = function(file){ return new Promise(function(res, rej){ const fr = new FileReader(); fr.onload = function(){ const im = new Image(); im.onload = function(){ let max = 1280, q = 0.72, out = ''; const c = document.createElement('canvas'); for(let t = 0; t < 7; t++){ const sc = Math.min(1, max / Math.max(im.width, im.height)); c.width = Math.round(im.width * sc); c.height = Math.round(im.height * sc); c.getContext('2d').drawImage(im, 0, 0, c.width, c.height); out = c.toDataURL('image/jpeg', q); if(out.length < 600000) break; max = Math.round(max * 0.8); q = Math.max(0.5, q - 0.06); } res(out); }; im.onerror = rej; im.src = fr.result; }; fr.onerror = rej; fr.readAsDataURL(file); }); };
+window._stsBgOpen = window._stsBgOpen || false;
 window.fillStsBackground = async function(host){
   try{
     let cur = {}; try{ const d = await db.collection('settings').doc('appBackground').get(); cur = d.exists ? (d.data() || {}) : {}; }catch(e){}
-    const st = {mode: cur.mode || 'none', image: cur.image || '', color: cur.color || '#2a1405', dark: cur.dark || 55};
-    const presets = [['🎃', '#2a1405'], ['🎄', '#0b2a18'], ['💝', '#2b0f1c'], ['🇭🇹', '#0a1f4a'], ['🌙', '#1a1038'], ['🌅', '#3a1d05']];
-    const prev = function(){ return st.mode === 'image' && st.image ? 'background:linear-gradient(rgba(5,8,15,' + (st.dark / 100) + '),rgba(5,8,15,' + (st.dark / 100) + ')),url(' + st.image + ') center/cover;' : (st.mode === 'color' ? 'background:' + st.color + ';' : 'background:#0B1120;'); };
+    const st = {mode: cur.mode === 'color' ? 'none' : (cur.mode || 'none'), art: cur.art || '', image: cur.image || '', dark: cur.dark == null ? (cur.mode === 'image' ? 55 : 22) : cur.dark};
+    const arts = [['halloween', '🎃 Halloween'], ['noel', '🎄 Noël'], ['valentin', '💝 Saint-Valentin'], ['nouvelan', '🎆 Nouvel An'], ['haiti', '🇭🇹 Haïti'], ['carnaval', '🎉 Carnaval']];
+    const curLbl = cur.mode === 'image' ? 'image personnelle' : (cur.mode === 'art' ? ((arts.find(function(a){ return a[0] === cur.art; }) || [0, 'dessin'])[1]) : 'fond noir d\'origine');
     const bs = 'width:100%;padding:12px;border:none;border-radius:12px;font-weight:900;font-size:14.5px;color:#fff;margin-top:8px;';
-    host.innerHTML = '<div class="card" style="border:1px solid rgba(168,85,247,0.6);"><h2 style="color:#C084FC;">🎨 Fond d\'écran de l\'application</h2>'
-      + '<p class="sub">Changez le fond pour les mois de fête (Noël, Halloween…). Tous les utilisateurs le voient. Vous pouvez toujours remettre le fond noir d\'origine.</p>'
-      + '<div id="bgPrev" style="height:130px;border-radius:14px;border:1px solid var(--border);' + prev() + '"></div>'
-      + '<p class="sub" style="margin:6px 0 0;">État actuel : <b>' + (cur.mode === 'image' ? 'image personnelle' : (cur.mode === 'color' ? 'couleur ' + escHtml(cur.color || '') : 'fond noir d\'origine')) + '</b></p>'
-      + '<input type="file" id="bgFile" accept="image/*" style="display:none;"><button type="button" id="bgPick" style="' + bs + 'background:linear-gradient(135deg,#8B5CF6,#6D28D9);">📷 Choisir mon image de fond</button>'
-      + '<label style="margin-top:10px;">Assombrir l\'image (pour bien lire le texte) : <b id="bgDarkV">' + st.dark + '%</b></label><input type="range" id="bgDark" min="0" max="90" value="' + st.dark + '" style="width:100%;">'
-      + '<label style="margin-top:10px;">Ou une couleur de fête</label><div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">' + presets.map(function(p){ return '<button type="button" data-bgc="' + p[1] + '" style="width:48px;height:48px;border-radius:12px;border:2px solid var(--border);font-size:22px;background:' + p[1] + ';">' + p[0] + '</button>'; }).join('') + '<input type="color" id="bgColor" value="' + st.color + '" style="width:48px;height:48px;padding:0;border:none;background:none;"></div>'
+    const prevCss = function(){ const src = st.mode === 'image' ? st.image : (st.mode === 'art' ? window.stsBgArt(st.art) : ''); return src ? 'background:linear-gradient(rgba(5,8,15,' + (st.dark / 100) + '),rgba(5,8,15,' + (st.dark / 100) + ')),url("' + src + '") center/cover;' : 'background:#0B1120;'; };
+    host.innerHTML = '<div class="card" style="padding:0;overflow:hidden;border:2px solid #FF7A1A;">'
+      + '<div id="bgHead" style="cursor:pointer;display:flex;align-items:center;gap:10px;padding:14px 16px;background:linear-gradient(135deg,#FF7A1A,#E11D48);color:#fff;"><span style="font-size:24px;">🎨</span><div style="flex:1;font-weight:900;font-size:16px;">Fond d\'écran de l\'application<div style="font-size:12px;font-weight:600;opacity:.92;">Actuel : ' + escHtml(curLbl) + '</div></div><span style="font-size:16px;">' + (window._stsBgOpen ? '▲' : '▼') + '</span></div>'
+      + '<div id="bgBody" style="display:' + (window._stsBgOpen ? 'block' : 'none') + ';padding:12px 16px 16px;">'
+      + '<p class="sub" style="margin:0 0 8px;">Choisissez un dessin pour les mois de fête, ou mettez votre propre image. Tous les utilisateurs le voient. Vous pouvez toujours remettre le fond noir.</p>'
+      + '<div id="bgPrev" style="height:150px;border-radius:14px;border:1px solid var(--border);' + prevCss() + '"></div>'
+      + '<div style="font-weight:800;margin:12px 0 6px;">Dessins prêts à utiliser</div><div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;">'
+      + arts.map(function(a){ return '<button type="button" data-bga="' + a[0] + '" style="height:92px;border-radius:12px;border:2px solid var(--border);color:#fff;font-weight:900;font-size:12.5px;text-shadow:0 1px 4px #000;display:flex;align-items:flex-end;justify-content:center;padding:6px 2px;background:url(\'' + window.stsBgArt(a[0]) + '\') center/cover;">' + a[1] + '</button>'; }).join('') + '</div>'
+      + '<input type="file" id="bgFile" accept="image/*" style="display:none;"><button type="button" id="bgPick" style="' + bs + 'background:linear-gradient(135deg,#3B82F6,#1D4ED8);">📷 Choisir ma propre image</button>'
+      + '<label style="margin-top:12px;">Assombrir le fond (pour bien lire le texte) : <b id="bgDarkV">' + st.dark + '%</b></label><input type="range" id="bgDark" min="0" max="90" value="' + st.dark + '" style="width:100%;">'
       + '<button type="button" id="bgSave" style="' + bs + 'background:linear-gradient(135deg,#22C55E,#15803D);">💾 Appliquer à toute l\'application</button>'
-      + '<button type="button" id="bgReset" style="' + bs + 'background:#111827;border:1px solid #374151;">⬛ Remettre le fond noir</button></div>';
-    const upd = function(){ host.querySelector('#bgPrev').style.cssText = 'height:130px;border-radius:14px;border:1px solid var(--border);' + prev(); };
+      + '<button type="button" id="bgReset" style="' + bs + 'background:#111827;border:1px solid #374151;">⬛ Remettre le fond noir</button></div></div>';
+    const upd = function(){ host.querySelector('#bgPrev').style.cssText = 'height:150px;border-radius:14px;border:1px solid var(--border);' + prevCss(); host.querySelectorAll('[data-bga]').forEach(function(b){ b.style.borderColor = (st.mode === 'art' && st.art === b.dataset.bga) ? '#FF7A1A' : 'var(--border)'; }); };
+    upd();
+    host.querySelector('#bgHead').onclick = function(){ window._stsBgOpen = !window._stsBgOpen; host.querySelector('#bgBody').style.display = window._stsBgOpen ? 'block' : 'none'; host.querySelector('#bgHead').lastChild.textContent = window._stsBgOpen ? '▲' : '▼'; };
+    host.querySelectorAll('[data-bga]').forEach(function(b){ b.onclick = function(){ st.mode = 'art'; st.art = b.dataset.bga; if(cur.mode !== 'art') st.dark = 22; host.querySelector('#bgDark').value = st.dark; host.querySelector('#bgDarkV').textContent = st.dark + '%'; upd(); }; });
     host.querySelector('#bgPick').onclick = function(){ host.querySelector('#bgFile').click(); };
-    host.querySelector('#bgFile').onchange = async function(e){ const f = e.target.files && e.target.files[0]; if(!f) return; try{ st.image = await window.stsCompressBg(f); st.mode = 'image'; upd(); toast('Image prête : touchez « Appliquer »', 3500); }catch(err){ toast('Image illisible, essayez une autre'); } };
+    host.querySelector('#bgFile').onchange = async function(e){ const f = e.target.files && e.target.files[0]; if(!f) return; try{ st.image = await window.stsCompressBg(f); st.mode = 'image'; st.dark = Math.max(st.dark, 35); host.querySelector('#bgDark').value = st.dark; host.querySelector('#bgDarkV').textContent = st.dark + '%'; upd(); toast('Image prête : touchez « Appliquer »', 3500); }catch(err){ toast('Image illisible, essayez une autre'); } };
     host.querySelector('#bgDark').oninput = function(e){ st.dark = parseInt(e.target.value, 10) || 0; host.querySelector('#bgDarkV').textContent = st.dark + '%'; upd(); };
-    host.querySelectorAll('[data-bgc]').forEach(function(b){ b.onclick = function(){ st.color = b.dataset.bgc; st.mode = 'color'; host.querySelector('#bgColor').value = st.color; upd(); }; });
-    host.querySelector('#bgColor').oninput = function(e){ st.color = e.target.value; st.mode = 'color'; upd(); };
     host.querySelector('#bgSave').onclick = async function(){
-      if(st.mode === 'none'){ toast('Choisissez d\'abord une image ou une couleur'); return; }
-      const v = st.mode === 'image' ? {mode: 'image', image: st.image, dark: st.dark, at: new Date().toISOString()} : {mode: 'color', color: st.color, at: new Date().toISOString()};
-      try{ await db.collection('settings').doc('appBackground').set(v); window.stsApplyBackground(v); try{ localStorage.setItem('sts_bg', JSON.stringify(v)); }catch(e){} toast('✅ Nouveau fond appliqué à toute l\'application', 4000); }catch(err){ toast('Échec (image trop lourde ?), réessayez'); }
+      if(st.mode === 'none'){ toast('Choisissez d\'abord un dessin ou une image'); return; }
+      const v = st.mode === 'image' ? {mode: 'image', image: st.image, dark: st.dark, at: new Date().toISOString()} : {mode: 'art', art: st.art, dark: st.dark, at: new Date().toISOString()};
+      try{ await db.collection('settings').doc('appBackground').set(v); window.stsApplyBackground(v); try{ localStorage.setItem('sts_bg', JSON.stringify(v)); }catch(e){} toast('✅ Nouveau fond appliqué à toute l\'application', 4000); window.fillStsBackground(host); }catch(err){ toast('Échec (image trop lourde ?), réessayez'); }
     };
     host.querySelector('#bgReset').onclick = async function(){
       if(!confirm('Remettre le fond noir d\'origine pour toute l\'application ?')) return;
