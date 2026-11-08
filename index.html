@@ -5519,7 +5519,7 @@ async function renderOwnerSettings(){
       <button type="button" class="primary" id="btnOwnWaSave">💾 Enregistrer le numéro</button>
       <div id="ownWaMsg" class="sub" style="margin-top:8px;font-weight:700;overflow-wrap:anywhere;"></div>
     </div>
-    <div id="ownMyStaffHost"></div>
+    <div id="stsReadsHost"></div><div id="ownMyStaffHost"></div>
     <div class="card">
       <h2>📄 Guides</h2>
       <p class="sub" style="margin-bottom:6px;"><b>Guide de l'administrateur</b> : comment utiliser votre espace Admin (entreprises, colis, preuves, paiements).</p>
@@ -7208,6 +7208,7 @@ function perfInstall(){
   db.__perf = true;
   const caches = [];
   const clearAll = ()=> caches.forEach(c => { for(const k in c) delete c[k]; });
+  window.stsMemoClear = clearAll;
   const WATCH = {companies: 1, settings: 1, packages: 1, announcements: 1};
   const origCol = db.collection.bind(db);
   db.collection = function(name){
@@ -7234,9 +7235,10 @@ function perfInstall(){
     const orig = window[name]; if(typeof orig !== 'function') return;
     const cache = {}; caches.push(cache);
     window[name] = function(...args){
+      if(window.stsCacheOff && window.stsCacheOff()) return orig.apply(this, args);
       const k = JSON.stringify(args);
       const c = cache[k];
-      if(c && Date.now() - c.t < ttl) return c.p.then(v => Array.isArray(v) ? v.slice() : v);
+      if(c && Date.now() - c.t < ttl) return c.p.then(v => { try{ if(window.stsReads) window.stsReads.avoid(Array.isArray(v) ? Math.max(1, v.length) : 1); }catch(e){} return Array.isArray(v) ? v.slice() : v; });
       const p = orig.apply(this, args);
       cache[k] = {t: Date.now(), p: p};
       p.catch(()=>{ delete cache[k]; });
@@ -8844,12 +8846,12 @@ async function renderOwnerPackages(){
       ${isEditing ? `<div class="editingBanner"><span>Modification de #${editingTrackingId}</span><button class="ghost" id="btnCancelEdit">Annuler</button></div>` : ''}
       <label>Numéro de suivi</label>
       <input id="pTrack" placeholder="Ex : STS-2026-001" ${isEditing ? 'disabled' : ''}>
-      <div id="pTrackHint" style="font-size:11.5px;color:var(--accent2);margin:-6px 0 12px;"></div>
+      <div id="pTrackHint" style="font-size:11.5px;line-height:1.35;color:var(--accent2);margin:-6px 0 8px;min-height:32px;"></div>
       <label>Nom du client</label>
       <input id="pName" placeholder="Ex : Marie Dupont">
       <label>Numéro du colis de ce client <span style="color:var(--muted);font-weight:400;">(facultatif : 1, 2, 3...)</span></label>
       <input id="pColisNum" type="number" min="1" inputmode="numeric" placeholder="Ex : 2 pour « Colis #2 »">
-      <div id="pColisHint" style="font-size:11.5px;color:var(--accent2);margin:-6px 0 12px;"></div>
+      <div id="pColisHint" style="font-size:11.5px;line-height:1.35;color:var(--accent2);margin:-6px 0 8px;min-height:32px;"></div>
       <label>Téléphone du client</label>
       <input id="pPhone" type="tel" placeholder="Ex : 06 12 34 56 78">
       ${buildLocationSelectsHTML()}
@@ -9629,12 +9631,12 @@ async function renderAdminCore(){
       ${isEditing ? `<div class="editingBanner"><span>Modification de #${editingTrackingId}</span><button class="ghost" id="btnCancelEdit">Annuler</button></div>` : ''}
       <label>Numéro de suivi</label>
       <input id="pTrack" placeholder="Ex : STS-2026-001" ${isEditing ? 'disabled' : ''}>
-      <div id="pTrackHint" style="font-size:11.5px;color:var(--accent2);margin:-6px 0 12px;"></div>
+      <div id="pTrackHint" style="font-size:11.5px;line-height:1.35;color:var(--accent2);margin:-6px 0 8px;min-height:32px;"></div>
       <label>Nom du client</label>
       <input id="pName" placeholder="Ex : Marie Dupont">
       <label>Numéro du colis de ce client <span style="color:var(--muted);font-weight:400;">(facultatif : 1, 2, 3...)</span></label>
       <input id="pColisNum" type="number" min="1" inputmode="numeric" placeholder="Ex : 2 pour « Colis #2 »">
-      <div id="pColisHint" style="font-size:11.5px;color:var(--accent2);margin:-6px 0 12px;"></div>
+      <div id="pColisHint" style="font-size:11.5px;line-height:1.35;color:var(--accent2);margin:-6px 0 8px;min-height:32px;"></div>
       <label>Téléphone du client</label>
       <input id="pPhone" type="tel" placeholder="Ex : 06 12 34 56 78">
       ${buildLocationSelectsHTML()}
@@ -10808,7 +10810,7 @@ window.fillOwnStats = async function(host){
 (function(){
   const main = document.getElementById('main'); if(!main) return;
   new MutationObserver(function(){
-    [['ownStatsHost', 'fillOwnStats'], ['ownVisitsHost', 'fillOwnVisits'], ['ownReviewsHost', 'fillOwnReviews'], ['ownTrackHost', 'fillOwnTrack'], ['ownExpiryHost', 'fillOwnExpiry'], ['ownDupHost', 'fillOwnDup'], ['ownMonthHost', 'fillOwnMonth'], ['ownStaffHost', 'fillOwnStaff'], ['ownFavHost', 'fillOwnFav'], ['ownMyFavHost', 'fillOwnMyFav'], ['stsAccHost', 'fillStsAccounts'], ['stsBgHost', 'fillStsBackground'], ['ownExportHost', 'fillOwnExport'], ['coExportHost', 'fillCoExport'], ['ownMyStaffHost', 'fillOwnMyStaff'], ['coQrHost', 'fillCoQr'], ['coStaffHost', 'fillCoStaff'], ['ownFeaturesHost', 'fillOwnFeatures'], ['ownTopProdHost', 'fillOwnTop']].forEach(function(x){
+    [['ownStatsHost', 'fillOwnStats'], ['ownVisitsHost', 'fillOwnVisits'], ['ownReviewsHost', 'fillOwnReviews'], ['ownTrackHost', 'fillOwnTrack'], ['ownExpiryHost', 'fillOwnExpiry'], ['ownDupHost', 'fillOwnDup'], ['ownMonthHost', 'fillOwnMonth'], ['ownStaffHost', 'fillOwnStaff'], ['ownFavHost', 'fillOwnFav'], ['ownMyFavHost', 'fillOwnMyFav'], ['stsAccHost', 'fillStsAccounts'], ['stsReadsHost', 'fillStsReads'], ['stsBgHost', 'fillStsBackground'], ['ownExportHost', 'fillOwnExport'], ['coExportHost', 'fillCoExport'], ['ownMyStaffHost', 'fillOwnMyStaff'], ['coQrHost', 'fillCoQr'], ['coStaffHost', 'fillCoStaff'], ['ownFeaturesHost', 'fillOwnFeatures'], ['ownTopProdHost', 'fillOwnTop']].forEach(function(x){
       const h = document.getElementById(x[0]);
       if(h && !h.dataset.filled && (!h.firstChild || h.innerHTML.indexOf('ldots') >= 0)){ h.dataset.filled = '1'; window[x[1]](h); }
     });
@@ -12982,6 +12984,118 @@ window.fillStsBackground = async function(host){
     };
   }catch(e){ host.innerHTML = ''; }
 };
+(function(){
+  if(window.__stsReadMeter) return; window.__stsReadMeter = true;
+  const KEY = 'sts_reads';
+  const dayKey = function(){ const d = new Date(); return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'); };
+  let st = null, saveT = null;
+  try{ st = JSON.parse(localStorage.getItem(KEY) || 'null'); }catch(e){ st = null; }
+  if(!st || typeof st !== 'object' || !st.days) st = {days: {}};
+  const today = function(){ const k = dayKey(); if(!st.days[k]){ st.days[k] = {r: 0, a: 0, c: {}}; const ks = Object.keys(st.days).sort(); while(ks.length > 14) delete st.days[ks.shift()]; } return st.days[k]; };
+  const save = function(){ if(saveT) return; saveT = setTimeout(function(){ saveT = null; try{ localStorage.setItem(KEY, JSON.stringify(st)); }catch(e){} }, 1500); };
+  window.stsReads = {
+    count: function(col, n){ const d = today(); d.r += n; d.c[col] = (d.c[col] || 0) + n; save(); },
+    avoid: function(n){ today().a += n; save(); },
+    data: function(){ return st; },
+    reset: function(){ st = {days: {}}; save(); try{ localStorage.setItem(KEY, JSON.stringify(st)); }catch(e){} },
+    dayKey: dayKey
+  };
+  window.stsCacheOff = function(){ try{ return localStorage.getItem('sts_cache_off') === '1'; }catch(e){ return false; } };
+  window._stsLC = {}; window._stsGen = 0;
+  window.stsListCacheClear = function(){ try{ if(window.stsMemoClear) window.stsMemoClear(); }catch(e){} };
+  const sCache = {};
+  window.stsCacheClear = function(){ Object.keys(sCache).forEach(function(k){ delete sCache[k]; }); window.stsListCacheClear(); };
+  let tries = 0;
+  const patch = function(){
+    tries++;
+    try{
+      if(!window.__stsFsPatched && window.firebase && firebase.firestore && firebase.firestore.Query && firebase.firestore.DocumentReference){
+        const Q = firebase.firestore.Query.prototype, D = firebase.firestore.DocumentReference.prototype;
+        window.__stsFsPatched = true;
+        const qGet = Q.get;
+        Q.get = function(){ return qGet.apply(this, arguments).then(function(snap){ try{ const n = Math.max(1, snap.size || 0); const nm = snap.docs && snap.docs[0] ? snap.docs[0].ref.parent.id : '?'; window.stsReads.count(nm, n); }catch(e){} return snap; }); };
+        const dGet = D.get;
+        D.get = function(opts){
+          let col = '?', pth = ''; try{ col = this.parent.id; pth = this.path; }catch(e){}
+          const cacheable = col === 'settings' && !(opts && opts.source);
+          if(cacheable && !window.stsCacheOff()){ const c = sCache[pth]; if(c && Date.now() - c.at < 30000){ window.stsReads.avoid(1); return Promise.resolve(c.snap); } }
+          return dGet.apply(this, arguments).then(function(snap){ try{ window.stsReads.count(col, 1); if(cacheable) sCache[pth] = {at: Date.now(), snap: snap}; }catch(e){} return snap; });
+        };
+        ['set', 'update', 'delete'].forEach(function(m){
+          const o = D[m]; if(typeof o !== 'function') return;
+          D[m] = function(){
+            let col = ''; try{ col = this.parent.id; }catch(e){}
+            const clr = function(){ try{ if(col === 'settings'){ Object.keys(sCache).forEach(function(k){ delete sCache[k]; }); } else if(col === 'packages' || col === 'companies'){ window.stsListCacheClear(); } }catch(e){} };
+            clr(); const r = o.apply(this, arguments);
+            try{ Promise.resolve(r).then(clr, clr); }catch(e){}
+            return r;
+          };
+        });
+        try{
+          const W = firebase.firestore.WriteBatch && firebase.firestore.WriteBatch.prototype;
+          if(W && W.commit){ const wc = W.commit; W.commit = function(){ window.stsCacheClear(); const r = wc.apply(this, arguments); try{ Promise.resolve(r).then(window.stsCacheClear, window.stsCacheClear); }catch(e){} return r; }; }
+          const F = firebase.firestore.Firestore && firebase.firestore.Firestore.prototype;
+          if(F && F.runTransaction){ const rt = F.runTransaction; F.runTransaction = function(){ const r = rt.apply(this, arguments); try{ Promise.resolve(r).then(window.stsCacheClear, window.stsCacheClear); }catch(e){} return r; }; }
+        }catch(e){}
+      }
+    }catch(e){}
+    if(!window.__stsFsPatched && tries < 40) setTimeout(patch, 500);
+  };
+  patch();
+})();
+window.fillStsReads = function(host){
+  try{
+    const st = window.stsReads.data(), k = window.stsReads.dayKey(), d = st.days[k] || {r: 0, a: 0, c: {}};
+    const keys = Object.keys(st.days).sort().reverse(), yk = keys.find(function(x){ return x < k; }), y = yk ? st.days[yk] : null;
+    const num = function(n){ return Number(n || 0).toLocaleString('fr-FR'); };
+    const tot = d.r + d.a, pct = tot ? Math.round(d.a * 100 / tot) : 0, lim = Math.min(100, d.r * 100 / 50000);
+    const row = function(l, v, color){ return '<div style="display:flex;justify-content:space-between;gap:10px;padding:10px 0;border-bottom:1px solid var(--border);"><span style="opacity:.85;">' + l + '</span><b style="text-align:right;' + (color ? 'color:' + color + ';' : '') + '">' + v + '</b></div>'; };
+    const off = window.stsCacheOff(), open = !!window._stsRdOpen;
+    const top = Object.keys(d.c).sort(function(a, b){ return d.c[b] - d.c[a]; }).slice(0, 6).map(function(c){ return row('📁 ' + escHtml(c), num(d.c[c])); }).join('') || '<p class="sub" style="margin:8px 0 0;">Rien de lu pour le moment.</p>';
+    const hist = keys.slice(0, 7).map(function(x){ const v = st.days[x]; return row('📅 ' + x.split('-').reverse().join('/'), num(v.r) + ' <span class="sub">(' + num(v.a) + ' évitées)</span>'); }).join('');
+    const bs = 'width:100%;padding:12px;border:none;border-radius:12px;font-weight:900;font-size:14px;color:#fff;margin-top:8px;';
+    host.innerHTML = '<div class="card" style="padding:0;overflow:hidden;border:2px solid #0EA5E9;">'
+      + '<div id="rdHead" style="cursor:pointer;display:flex;align-items:center;gap:10px;padding:14px 16px;background:linear-gradient(135deg,#0EA5E9,#2563EB);color:#fff;"><span style="font-size:24px;">📊</span><div style="flex:1;font-weight:900;font-size:16px;">Suivi des lectures Firebase</div><div style="text-align:right;"><div style="font-size:11px;opacity:.9;">Aujourd\'hui</div><div style="font-weight:900;font-size:15px;">' + num(d.r) + ' lectures</div>' + (pct ? '<div style="font-size:11px;">−' + pct + ' % grâce à la mémoire</div>' : '') + '</div><span>' + (open ? '▲' : '▼') + '</span></div>'
+      + '<div id="rdBody" style="display:' + (open ? 'block' : 'none') + ';padding:8px 16px 16px;">'
+      + (window.__stsFsPatched ? '' : '<p class="sub" style="color:#F59E0B;margin:8px 0 0;">⚠️ Le compteur n\'est pas encore actif (attendez quelques secondes et rouvrez la carte).</p>')
+      + '<p class="sub" style="margin:8px 0 0;">Compte les lectures faites depuis <b>ce téléphone</b> (hors écoute en direct). La limite gratuite est de 50 000 par jour pour <b>tous les utilisateurs ensemble</b> : le total réel est dans Firebase &gt; Firestore &gt; Utilisation.</p>'
+      + '<div style="height:10px;border-radius:6px;background:var(--panel2);margin:10px 0 2px;overflow:hidden;"><div style="height:100%;width:' + lim.toFixed(1) + '%;background:linear-gradient(90deg,#22C55E,#F59E0B);"></div></div><div class="sub" style="font-size:12px;">' + lim.toFixed(1) + ' % de la limite journalière (sur ce téléphone)</div>'
+      + row('📖 Lectures faites aujourd\'hui', num(d.r), '#60A5FA') + row('⚡ Lectures évitées (mémoire rapide)', num(d.a), '#3ECF8E') + row('🔎 Sans mémoire rapide : ', num(tot)) + row('💰 Économie', pct + ' %', '#3ECF8E')
+      + (y ? row('🕘 Hier', num(y.r) + ' <span class="sub">(' + num(y.a) + ' évitées)</span>') : '')
+      + '<div style="font-weight:900;margin:14px 0 2px;">📁 Les plus lues aujourd\'hui</div>' + top
+      + (hist ? '<div style="font-weight:900;margin:14px 0 2px;">📅 Derniers jours</div>' + hist : '')
+      + '<div style="font-weight:900;margin:14px 0 2px;">⚙️ Mémoire rapide : ' + (off ? '<span style="color:#F87171;">⛔ désactivée</span>' : '<span style="color:#3ECF8E;">✅ activée</span>') + '</div>'
+      + '<button type="button" id="rdTog" style="' + bs + 'background:' + (off ? 'linear-gradient(135deg,#22C55E,#15803D)' : '#374151') + ';">' + (off ? '✅ Activer la mémoire rapide' : '⛔ Désactiver (pour comparer)') + '</button>'
+      + '<button type="button" id="rdClr" style="' + bs + 'background:linear-gradient(135deg,#3B82F6,#1D4ED8);">🧹 Vider la mémoire rapide (actualiser)</button>'
+      + '<button type="button" id="rdRst" style="' + bs + 'background:#111827;border:1px solid #374151;">↺ Remettre le compteur à zéro</button></div></div>';
+    host.querySelector('#rdHead').onclick = function(){ window._stsRdOpen = !window._stsRdOpen; window.fillStsReads(host); };
+    host.querySelector('#rdTog').onclick = function(){ try{ localStorage.setItem('sts_cache_off', off ? '0' : '1'); }catch(e){} window.stsCacheClear(); toast(off ? '✅ Mémoire rapide activée' : '⛔ Mémoire rapide désactivée', 3000); window.fillStsReads(host); };
+    host.querySelector('#rdClr').onclick = function(){ window.stsCacheClear(); toast('🧹 Mémoire vidée : les prochains écrans seront à jour', 3500); };
+    host.querySelector('#rdRst').onclick = function(){ if(!confirm('Remettre le compteur à zéro ?')) return; window.stsReads.reset(); window.fillStsReads(host); };
+  }catch(e){ host.innerHTML = ''; }
+};
+(function(){
+  window.__stsKeepDepth = 0; window.__stsLastView = '';
+  const viewKey = function(){ try{ return [mode, companyScreen, ownerView, adminSession ? 'a' : '', companySession ? 'c' : ''].join('|'); }catch(e){ return ''; } };
+  const wrap = function(name){
+    const o = window[name]; if(typeof o !== 'function' || o.__ks) return;
+    const w = function(){
+      const outer = window.__stsKeepDepth === 0; window.__stsKeepDepth++;
+      const y = window.scrollY, key = viewKey(), same = outer && window.__stsLastView === key;
+      if(outer) window.__stsLastView = key;
+      let r; try{ r = o.apply(this, arguments); }catch(e){ window.__stsKeepDepth--; throw e; }
+      Promise.resolve(r).then(function(){ window.__stsKeepDepth--; }, function(){ window.__stsKeepDepth--; });
+      if(same && y > 120){
+        const restore = function(){ try{ if(window.scrollY < y - 60 && viewKey() === key) window.scrollTo(0, y); }catch(e){} };
+        Promise.resolve(r).then(function(){ restore(); requestAnimationFrame(restore); }, function(){});
+      }
+      return r;
+    };
+    w.__ks = true; window[name] = w;
+  };
+  const go = function(){ ['renderAdminCore', 'renderAdmin', 'renderCompany'].forEach(wrap); };
+  go(); document.addEventListener('DOMContentLoaded', go); setTimeout(go, 800);
+})();
 window.STS_TOP_REQ = [12, 9, 6];
 window.stsTopPlaces = function(list){
   const used = {}, out = [];
