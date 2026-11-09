@@ -6676,12 +6676,27 @@ function openReceiptSample(){
   ov.style.cssText = 'position:fixed;inset:0;z-index:275;background:rgba(0,0,0,0.8);display:flex;align-items:center;justify-content:center;padding:12px;overflow-y:auto;';
   ov.innerHTML = `<div style="width:100%;max-width:440px;background:var(--panel);border:1px solid var(--border);border-radius:18px;padding:14px;">
       <div style="font-weight:800;font-size:16px;margin-bottom:4px;">🧾 Aperçu du reçu (exemple)</div>
-      <p class="sub" style="margin:0 0 8px;font-size:12.5px;">Exemple avec des données fictives. Rien n'est envoyé ni enregistré.</p>
+      <p class="sub" style="margin:0 0 8px;font-size:12.5px;">Exemple avec des données fictives. Rien n'est enregistré. Vous pouvez vous l'envoyer par email pour tester.</p>
       <img src="${img}" style="width:100%;border-radius:10px;border:1px solid var(--border);display:block;margin-bottom:12px;">
+      <input type="text" inputmode="email" autocomplete="off" autocapitalize="off" spellcheck="false" id="rcSampleTo" placeholder="Votre email pour le test" style="width:100%;margin-bottom:8px;">
+      <button class="primary" id="rcSampleSend" style="width:100%;margin-bottom:8px;">✉️ M'envoyer cet exemple par email</button>
+      <div id="rcSampleMsg" class="sub" style="margin-bottom:8px;font-weight:700;"></div>
       <button class="ghost" id="rcSampleClose" style="width:100%;">Fermer</button>
     </div>`;
   document.body.appendChild(ov);
   document.getElementById('rcSampleClose').onclick = ()=> ov.remove();
+  document.getElementById('rcSampleSend').onclick = async ()=>{
+    const to = document.getElementById('rcSampleTo').value.trim();
+    const msg = document.getElementById('rcSampleMsg'); msg.style.color = '';
+    if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(to)){ msg.style.color = 'var(--danger)'; msg.textContent = 'Entrez une adresse email valide.'; return; }
+    msg.textContent = '⏳ Envoi en cours…';
+    try{
+      const res = await sendReceiptEmail(r, img, to, 'Test');
+      if(res && res.ok && res.attached){ msg.style.color = 'var(--ok)'; msg.textContent = '✅ Envoyé avec le reçu en pièce jointe. Vérifiez votre boîte email.'; }
+      else if(res && res.ok){ msg.style.color = '#F59E0B'; msg.textContent = '⚠️ Envoyé en texte seulement : le script Reçus ne répond pas.'; }
+      else { msg.style.color = 'var(--danger)'; msg.textContent = '❌ Envoi impossible. Réessayez.'; }
+    }catch(e){ msg.style.color = 'var(--danger)'; msg.textContent = '❌ Envoi impossible. Réessayez.'; }
+  };
 }
 function openReceiptPreview(r){
   const old = document.getElementById('receiptOv'); if(old) old.remove();
