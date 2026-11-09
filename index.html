@@ -5593,6 +5593,7 @@ async function renderOwnerSettings(){
         <button class="ghost" id="btnTestRcUrl" style="flex:1;">🧪 Tester</button>
       </div>
       <div id="rcUrlMsg" class="sub" style="margin-top:10px;font-weight:700;overflow-wrap:anywhere;"></div>
+      <div id="rcQuota" class="sub" style="margin-top:8px;font-weight:700;"></div>
     </div>
     <div id="stsAgentsHost"></div>`;
   try{ bindGiftAdminSettings(content); }catch(e){}
@@ -5695,10 +5696,11 @@ async function renderOwnerSettings(){
     try{
       const res = await fetch(url, {method: 'POST', headers: {'Content-Type': 'text/plain'}, body: JSON.stringify({test: true})});
       const d = await res.json();
-      if(d && d.ok){ msg.style.color = 'var(--ok)'; msg.textContent = '✅ Le script répond. Vous pouvez enregistrer.'; }
+      if(d && d.ok){ msg.style.color = 'var(--ok)'; msg.textContent = '✅ Le script répond. Vous pouvez enregistrer.'; try{ window.stsRcQuotaFill(d); }catch(e){} }
       else { msg.style.color = 'var(--danger)'; msg.textContent = '❌ Réponse inattendue : ' + JSON.stringify(d).slice(0, 160); }
     }catch(err){ msg.style.color = 'var(--danger)'; msg.textContent = '❌ Impossible de joindre le script : ' + ((err && err.message) || 'erreur'); }
   };
+  try{ window.stsLoadRcQuota(); }catch(e){}
   document.getElementById('btnSaveSamAi').onclick = async ()=>{
     const url = document.getElementById('samAiUrlInput').value.trim();
     const msg = document.getElementById('samAiMsg'); msg.style.color = ''; msg.textContent = '⏳ Enregistrement…';
@@ -8333,7 +8335,7 @@ async function sendBackupByEmail(to){
   const out = await buildBackupObject();
   const b64 = btoa(unescape(encodeURIComponent(JSON.stringify(out))));
   const day = new Date().toISOString().slice(0, 10);
-  const res = await fetch(receiptMailUrl, {method: 'POST', headers: {'Content-Type': 'text/plain'}, body: JSON.stringify({to_email: to, name: 'STS', subject: 'Sauvegarde STS ' + day, message: 'Sauvegarde complète de STS du ' + day + ' en pièce jointe.', attachment_base64: b64, attachment_name: 'sauvegarde-sts-' + day + '.json', attachment_mime: 'application/json'})});
+  const res = await fetch(receiptMailUrl, {method: 'POST', headers: {'Content-Type': 'text/plain'}, body: JSON.stringify({to_email: to, name: 'STS', subject: 'Sauvegarde STS ' + day, message: 'Sauvegarde complète de STS du ' + day + ' en pièce jointe (fichier .json, à garder en lieu sûr).\n\nContenu : ' + (out.companies || []).length + ' entreprises, ' + (out.packages || []).length + ' colis, ' + (out.clients || []).length + ' clients, ' + (out.messages || []).length + ' messages, ' + (out.activityLog || []).length + ' entrées du journal.\nLes images et photos ne sont pas incluses.', attachment_base64: b64, attachment_name: 'sauvegarde-sts-' + day + '.json', attachment_mime: 'application/json'})});
   const d = await res.json();
   if(!(d && d.ok)) throw new Error((d && d.error) || 'Envoi impossible');
   markBackupDone();
@@ -12987,13 +12989,22 @@ window.stsApplyBackground = function(v){
   d = Math.max(0, Math.min(0.92, d));
   st.textContent = 'html{background:#05080f !important;} body,#app{background:transparent !important;} body::before{content:"";position:fixed;left:0;top:0;right:0;bottom:0;z-index:-1;pointer-events:none;background:linear-gradient(rgba(5,8,15,' + d + '),rgba(5,8,15,' + d + ')),url("' + src + '") center/cover no-repeat;} .card{background:rgba(17,24,39,0.78) !important;} header.top{background:rgba(11,17,32,0.55) !important;}';
 };
+window.stsBgCacheSave = function(str){
+  try{ localStorage.setItem('sts_bg', str); return; }catch(e){}
+  try{
+    localStorage.removeItem('sts_bg');
+    const del = []; for(let i = 0; i < localStorage.length; i++){ const k = localStorage.key(i); if(k && k.indexOf('sts_hst_') === 0) del.push(k); }
+    del.forEach(function(k){ localStorage.removeItem(k); });
+    localStorage.setItem('sts_bg', str);
+  }catch(e2){ try{ localStorage.removeItem('sts_bg'); }catch(e3){} }
+};
 (function(){
   try{ const c = localStorage.getItem('sts_bg'); if(c) window.stsApplyBackground(JSON.parse(c)); }catch(e){}
   let tries = 0;
   const load = async function(){
     tries++;
     if(typeof db === 'undefined' || !db){ if(tries < 25) setTimeout(load, 400); return; }
-    try{ const d = await db.collection('settings').doc('appBackground').get(); const v = d.exists ? d.data() : null; window.stsApplyBackground(v); try{ localStorage.setItem('sts_bg', v && v.mode && v.mode !== 'none' ? JSON.stringify(v) : ''); }catch(e){} }catch(e){}
+    try{ const d = await db.collection('settings').doc('appBackground').get(); const v = d.exists ? d.data() : null; window.stsApplyBackground(v); try{ window.stsBgCacheSave(v && v.mode && v.mode !== 'none' ? JSON.stringify(v) : ''); }catch(e){} }catch(e){}
   };
   setTimeout(load, 600);
 })();
@@ -13028,11 +13039,11 @@ window.fillStsBackground = async function(host){
     host.querySelector('#bgSave').onclick = async function(){
       if(st.mode === 'none'){ toast('Choisissez d\'abord un dessin ou une image'); return; }
       const v = st.mode === 'image' ? {mode: 'image', image: st.image, dark: st.dark, at: new Date().toISOString()} : {mode: 'art', art: st.art, dark: st.dark, at: new Date().toISOString()};
-      try{ await db.collection('settings').doc('appBackground').set(v); window.stsApplyBackground(v); try{ localStorage.setItem('sts_bg', JSON.stringify(v)); }catch(e){} toast('✅ Nouveau fond appliqué à toute l\'application', 4000); window.fillStsBackground(host); }catch(err){ toast('Échec (image trop lourde ?), réessayez'); }
+      try{ await db.collection('settings').doc('appBackground').set(v); window.stsApplyBackground(v); try{ window.stsBgCacheSave(JSON.stringify(v)); }catch(e){} toast('✅ Nouveau fond appliqué à toute l\'application', 4000); window.fillStsBackground(host); }catch(err){ toast('Échec (image trop lourde ?), réessayez'); }
     };
     host.querySelector('#bgReset').onclick = async function(){
       if(!confirm('Remettre le fond noir d\'origine pour toute l\'application ?')) return;
-      try{ await db.collection('settings').doc('appBackground').set({mode: 'none', at: new Date().toISOString()}); window.stsApplyBackground(null); try{ localStorage.setItem('sts_bg', ''); }catch(e){} toast('⬛ Fond noir remis', 4000); window.fillStsBackground(host); }catch(err){ toast('Échec, réessayez'); }
+      try{ await db.collection('settings').doc('appBackground').set({mode: 'none', at: new Date().toISOString()}); window.stsApplyBackground(null); try{ window.stsBgCacheSave(''); }catch(e){} toast('⬛ Fond noir remis', 4000); window.fillStsBackground(host); }catch(err){ toast('Échec, réessayez'); }
     };
   }catch(e){ host.innerHTML = ''; }
 };
@@ -13122,6 +13133,21 @@ window.fillStsBackground = async function(host){
   patch();
 })();
 
+
+// ===== Compteur d'emails du jour (script Reçus) =====
+window.stsRcQuotaFill = function(d){
+  const el = document.getElementById('rcQuota'); if(!el) return;
+  if(!d || typeof d.envoyes !== 'number'){ el.style.color = ''; el.textContent = receiptMailUrl ? 'ℹ️ Mettez à jour le script Reçus pour voir ici le nombre d\'emails envoyés aujourd\'hui.' : ''; return; }
+  const lim = d.limite || 80, pc = d.envoyes * 100 / lim;
+  el.style.color = pc >= 100 ? 'var(--danger)' : pc >= 80 ? '#F59E0B' : 'var(--ok)';
+  el.textContent = '✉️ Emails envoyés aujourd\'hui : ' + d.envoyes + ' / ' + lim + (pc >= 100 ? ' — limite atteinte, reprise demain' : pc >= 80 ? ' — attention, presque à la limite' : '');
+};
+window.stsLoadRcQuota = async function(){
+  const el = document.getElementById('rcQuota'); if(!el || !receiptMailUrl) return;
+  el.style.color = ''; el.textContent = '⏳ Emails du jour…';
+  try{ const res = await fetch(receiptMailUrl, {method: 'GET'}); const d = await res.json(); window.stsRcQuotaFill(d); }
+  catch(e){ el.style.color = ''; el.textContent = ''; }
+};
 // ===== Carte Admin : numéros des agents =====
 window.stsSquareAvatar = function(file){ return new Promise(function(res, rej){ const fr = new FileReader(); fr.onerror = rej; fr.onload = function(){ const im = new Image(); im.onerror = rej; im.onload = function(){ const S = 192, c = document.createElement('canvas'); c.width = S; c.height = S; const m = Math.min(im.width, im.height); c.getContext('2d').drawImage(im, (im.width - m) / 2, (im.height - m) / 2, m, m, 0, 0, S, S); res(c.toDataURL('image/jpeg', 0.8)); }; im.src = fr.result; }; fr.readAsDataURL(file); }); };
 window.fillStsAgents = async function(host){
