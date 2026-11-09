@@ -5786,7 +5786,7 @@ async function renderOwnerPayments(){
           <div style="color:#fff;font-weight:700;font-size:16px;">Code d'accès propriétaire</div>
         </div>
         <div style="padding:14px 16px;">
-          <p class="sub">Code actuel : <b id="ownerCodeShown">${currentOwnerCode ? '••••' : 'non défini'}</b>${currentOwnerCode ? ' <button type="button" class="ghost" id="btnToggleOwnerCode" style="width:auto;padding:4px 12px;margin-left:8px;font-size:12.5px;">👁️ Voir</button>' : ''}</p>
+          <p class="sub">Code actuel : <b id="ownerCodeShown">${currentOwnerCode ? '••••' : 'non défini'}</b>${currentOwnerCode ? ' <button type="button" class="ghost" id="btnToggleOwnerCode" style="width:auto;padding:4px 12px;margin-left:8px;font-size:12.5px;">🙈 Voir</button>' : ''}</p>
           <label>Nouveau code (4 chiffres)</label>
           <input id="ownerCodeInput" type="text" inputmode="numeric" maxlength="6" placeholder="••••">
           <button class="primary" id="btnSaveOwnerCode" style="margin-top:10px;">Enregistrer le nouveau code</button>
@@ -6201,7 +6201,7 @@ async function renderOwnerPayments(){
       const b = document.getElementById('ownerCodeShown');
       const hidden = b.textContent === '••••';
       b.textContent = hidden ? currentOwnerCode : '••••';
-      tgl.textContent = hidden ? '🙈 Cacher' : '👁️ Voir';
+      tgl.textContent = hidden ? '👁️ Cacher' : '🙈 Voir';
     };
     document.getElementById('btnSaveOwnerCode').onclick = async ()=>{
       const newCode = document.getElementById('ownerCodeInput').value.trim();
@@ -10364,7 +10364,7 @@ async function renderCompanySettings(main){
       <p class="sub" style="color:var(--warn);">Ce code sert à vous connecter avec le bouton Entreprise. Il est visible par SamTraceStore dans l'espace Admin.</p>
       <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px;">
         <div id="curCode" style="font-size:22px;font-weight:800;letter-spacing:4px;color:var(--warn);">••••</div>
-        <button class="ghost" id="btnShowCode" style="width:auto;padding:6px 12px;">👁️ Voir</button>
+        <button class="ghost" id="btnShowCode" style="width:auto;padding:6px 12px;">🙈 Voir</button>
       </div>
       <label style="color:var(--warn);">Nouveau code (4 chiffres)</label>
       <input id="newCode" type="text" inputmode="numeric" maxlength="4" placeholder="Ex : 7788">
@@ -10526,7 +10526,7 @@ async function renderCompanySettings(main){
   document.getElementById('btnShowCode').onclick = ()=>{
     shown = !shown;
     document.getElementById('curCode').textContent = shown ? companySession.code : '••••';
-    document.getElementById('btnShowCode').textContent = shown ? '🙈 Cacher' : '👁️ Voir';
+    document.getElementById('btnShowCode').textContent = shown ? '👁️ Cacher' : '🙈 Voir';
   };
   document.getElementById('btnChangeCode').onclick = async ()=>{
     const c1 = document.getElementById('newCode').value.trim();
