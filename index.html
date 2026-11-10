@@ -9470,7 +9470,8 @@ async function renderAdminCore(){
           <div class="warnBox" style="margin-bottom:14px;">
             💰 Frais d'inscription : ${pSettings.regFeeHTG} HTG (ou ${pSettings.regFeeUSD} USD), à payer une seule fois.<br>
             🎁 Essai gratuit de ${pSettings.trialDays} jours inclus dès l'inscription.<br>
-            💳 Ensuite, abonnement de ${pSettings.minHTG} HTG (ou ${pSettings.minUSD} USD) par mois pour continuer à utiliser la plateforme.
+            💳 Ensuite, abonnement de ${pSettings.minHTG} HTG (ou ${pSettings.minUSD} USD) par mois pour continuer à utiliser la plateforme.<br>
+            📢 Si votre dépôt n'est pas encore confirmé, vérifiez le petit camion de suivi pour voir votre place dans la file d'attente.
           </div>
           <label>Nom de l'entreprise</label>
           <input id="cName" placeholder="Ex : Boutique Aurore">
@@ -11911,7 +11912,7 @@ window.fillOwnDup = async function(host){
 
 
 // ===== V10 : sauvegarde par email + mise à jour de l'app =====
-window.STS_BUILD = '20261110-e';
+window.STS_BUILD = '20261110-f';
 window.stsSendBackupText = async function(email){
   try{
     const cos = await getAllCompanies(), pk = await getAllPackages();
@@ -13165,7 +13166,7 @@ window.fillStsBackground = async function(host){
 
 
 
-window.STS_BUILD_LABEL = '10 novembre 2026 (e)';
+window.STS_BUILD_LABEL = '10 novembre 2026 (f)';
 // ===== Garder la position de l'écran après une suppression =====
 (function(){
   if(window.__stsKeepScroll) return; window.__stsKeepScroll = true;
