@@ -5601,7 +5601,7 @@ async function renderOwnerSettings(){
       <div id="rcQuota" class="sub" style="margin-top:8px;font-weight:700;"></div>
     </div>
     <div id="stsAgentsHost"></div>
-    <div style="text-align:center;margin:14px 0 8px;"><span style="display:inline-block;padding:8px 16px;border-radius:999px;font-weight:800;font-size:13px;color:#fff;background:linear-gradient(135deg,#0D9488,#0EA5E9);box-shadow:0 2px 10px rgba(0,0,0,0.35);">Version de l'application : 10 novembre 2026 (c)</span></div>`;
+    <div style="text-align:center;margin:14px 0 8px;"><button type="button" id="stsVerBadge" style="width:auto;display:inline-block;padding:10px 18px;border:none;border-radius:999px;font-weight:800;font-size:13px;color:#fff;background:linear-gradient(135deg,#0D9488,#0EA5E9);box-shadow:0 2px 10px rgba(0,0,0,0.35);">Version de l'application : ${window.STS_BUILD_LABEL}</button><div id="stsVerMsg" class="sub" style="margin-top:8px;font-weight:700;"></div></div>`;
   try{ bindGiftAdminSettings(content); }catch(e){}
   const ownWaBtn = document.getElementById('btnOwnWaSave');
   if(ownWaBtn) ownWaBtn.onclick = async ()=>{
@@ -5709,6 +5709,7 @@ async function renderOwnerSettings(){
     }catch(err){ msg.style.color = 'var(--danger)'; msg.textContent = '❌ Impossible de joindre le script : ' + ((err && err.message) || 'erreur'); }
   };
   try{ window.stsLoadRcQuota(); }catch(e){}
+  try{ window.stsBindVersion(); }catch(e){}
   document.getElementById('btnSaveSamAi').onclick = async ()=>{
     const url = document.getElementById('samAiUrlInput').value.trim();
     const msg = document.getElementById('samAiMsg'); msg.style.color = ''; msg.textContent = '⏳ Enregistrement…';
@@ -6753,7 +6754,12 @@ function subEndOf(c){
   if(!c || c.isFree) return null;
   if(c.subEndsAt) return new Date(c.subEndsAt);
   const paid = c.subPaidAt || (c.paymentStatus === 'active' ? c.depositSubmittedAt : null);
-  return paid ? new Date(new Date(paid).getTime() + 30*24*60*60*1000) : null;
+  if(paid) return new Date(new Date(paid).getTime() + 30*24*60*60*1000);
+  if(c.subExpiredAt){
+    const ex = new Date(c.subExpiredAt), dep = c.depositSubmittedAt ? new Date(new Date(c.depositSubmittedAt).getTime() + 30*24*60*60*1000) : null;
+    return (dep && dep <= ex) ? dep : ex;
+  }
+  return null;
 }
 function subExpired(c){
   const e = subEndOf(c);
@@ -6762,7 +6768,10 @@ function subExpired(c){
 async function expireSubscriptionIfNeeded(c){
   if(!subExpired(c) || !c.code) return c;
   try{
-    await db.collection('companies').doc(c.code).set({paymentStatus: 'none', notifiedForPayment: false, subExpiredAt: new Date().toISOString()}, {merge: true});
+    const endNow = subEndOf(c);
+    const upd = {paymentStatus: 'none', notifiedForPayment: false, subExpiredAt: new Date().toISOString()};
+    if(endNow && !c.subEndsAt) upd.subEndsAt = endNow.toISOString();
+    await db.collection('companies').doc(c.code).set(upd, {merge: true});
     c.paymentStatus = 'none';
   }catch(e){}
   return c;
@@ -10274,7 +10283,7 @@ function subscriptionBannerHTML(co){
   if(endSub && endSub < new Date()){
     const ago = Math.max(1, Math.ceil((new Date() - endSub) / 86400000));
     const dd = endSub.toLocaleDateString('fr-FR', {day: '2-digit', month: 'long', year: 'numeric'});
-    return box('#EF5D5D', 'rgba(239,93,93,0.1)', '⛔ Votre abonnement est terminé depuis le <b>' + dd + '</b> (' + ago + ' jour' + (ago > 1 ? 's' : '') + '). Payez pour le renouveler.', true);
+    return box('#EF5D5D', 'rgba(239,93,93,0.1)', '⛔ <b>Abonnement terminé</b> depuis le <b>' + dd + '</b> (' + ago + ' jour' + (ago > 1 ? 's' : '') + ').<br>Votre accès doit être activé : payez pour le renouveler.', true);
   }
   return box('#EF5D5D', 'rgba(239,93,93,0.1)', '⚠️ Votre accès doit être activé.', true);
 }
@@ -11685,16 +11694,16 @@ window.stsRefreshPayBadge = async function(){
 };
 window.fillOwnExpiry = async function(host){
   try{
-    host.innerHTML = foldCardHTML('ownexpiry', '#EF4444,#F59E0B', '⏰', 'Abonnements bientôt terminés', '…', '<div class="empty">Chargement' + LDOTS + '</div>'); bindFoldCards(host);
+    host.innerHTML = foldCardHTML('ownexpiry', '#EF4444,#F59E0B', '⏰', 'Abonnements terminés ou bientôt terminés', '…', '<div class="empty">Chargement' + LDOTS + '</div>'); bindFoldCards(host);
     const cos = await getAllCompanies(), now = new Date();
-    const list = cos.filter(c => c.paymentStatus === 'active' && !c.isFree && subEndOf(c)).map(c => { const end = subEndOf(c); return {c: c, end: end, left: Math.ceil((end - now) / 86400000)}; }).filter(x => x.left <= 3 && x.left >= -7).sort((a, b) => a.left - b.left);
+    const list = cos.filter(c => !c.isFree && (c.paymentStatus === 'active' || c.subExpiredAt || c.subEndsAt) && subEndOf(c)).map(c => { const end = subEndOf(c); return {c: c, end: end, left: Math.ceil((end - now) / 86400000)}; }).filter(x => x.left <= 3 && x.left >= -30).sort((a, b) => a.left - b.left);
     const rows = list.map(function(x){
       const nm = x.c.companyName || x.c.code, d = x.end.toLocaleDateString('fr-FR');
-      const when = x.left > 0 ? 'se termine dans ' + x.left + ' jour' + (x.left > 1 ? 's' : '') + ' (le ' + d + ')' : (x.left === 0 ? 'se termine aujourd\'hui' : 'est terminé depuis ' + (-x.left) + ' jour' + (x.left < -1 ? 's' : '') + ' (le ' + d + ')');
+      const when = x.left > 0 ? 'se termine dans ' + x.left + ' jour' + (x.left > 1 ? 's' : '') + ' (le ' + d + ')' : (x.left === 0 ? (x.end < now ? 'est terminé aujourd\'hui' : 'se termine aujourd\'hui') : 'est terminé depuis ' + (-x.left) + ' jour' + (x.left < -1 ? 's' : '') + ' (le ' + d + ')');
       const msg = 'Bonjour ' + nm + ', ici Sam Trace Store. Votre abonnement ' + when + '. Pensez à renouveler pour garder votre accès. Merci !';
       return '<div style="padding:10px;margin-bottom:8px;border:1px solid var(--border);border-radius:12px;"><div style="font-weight:800;overflow-wrap:anywhere;display:flex;align-items:center;">' + (coLogoMini(x.c) || '🏢') + '<span style="margin-left:4px;">' + escHtml(nm) + '</span></div><div class="sub" style="font-size:12.5px;margin:2px 0 0;">🔑 code ' + escHtml(x.c.code) + '</div><div style="font-size:13px;margin-top:3px;color:' + (x.left <= 0 ? '#EF5D5D' : '#F5B93D') + ';font-weight:700;">⏳ ' + escHtml(when.charAt(0).toUpperCase() + when.slice(1)) + '</div><div style="margin-top:8px;">' + waChatBtn(x.c.companyWhatsapp || x.c.companyPhone, msg) + '</div></div>';
     }).join('');
-    host.innerHTML = foldCardHTML('ownexpiry', '#EF4444,#F59E0B', '⏰', 'Abonnements bientôt terminés', list.length, '<p class="sub" style="margin:0 0 8px;">Entreprises dont l\'abonnement se termine dans 3 jours ou moins. Touchez le bouton WhatsApp pour les rappeler (le message est déjà écrit).</p>' + (rows || '<p class="sub" style="margin:0;">Aucun abonnement ne se termine dans les 3 prochains jours. 🎉</p>'));
+    host.innerHTML = foldCardHTML('ownexpiry', '#EF4444,#F59E0B', '⏰', 'Abonnements terminés ou bientôt terminés', list.length, '<p class="sub" style="margin:0 0 8px;">Entreprises dont l\'abonnement est terminé (depuis 30 jours ou moins) ou se termine dans 3 jours ou moins. Touchez le bouton WhatsApp pour les rappeler (le message est déjà écrit).</p>' + (rows || '<p class="sub" style="margin:0;">Aucun abonnement terminé ou proche de la fin. 🎉</p>'));
     bindFoldCards(host);
   }catch(e){ try{ host.querySelectorAll('.empty').forEach(el => { el.textContent = 'Impossible de charger pour le moment.'; }); }catch(e2){} }
 };
@@ -11891,7 +11900,7 @@ window.fillOwnDup = async function(host){
 
 
 // ===== V10 : sauvegarde par email + mise à jour de l'app =====
-window.STS_BUILD = '20261030-c';
+window.STS_BUILD = '20261110-d';
 window.stsSendBackupText = async function(email){
   try{
     const cos = await getAllCompanies(), pk = await getAllPackages();
@@ -13145,6 +13154,7 @@ window.fillStsBackground = async function(host){
 
 
 
+window.STS_BUILD_LABEL = '10 novembre 2026 (d)';
 // ===== Garder la position de l'écran après une suppression =====
 (function(){
   if(window.__stsKeepScroll) return; window.__stsKeepScroll = true;
@@ -13170,6 +13180,40 @@ window.fillStsBackground = async function(host){
   };
   init();
 })();
+
+// ===== Version de l'application : vérification et mise à jour =====
+window.stsDoUpdate = async function(){
+  try{ toast('Mise à jour en cours…'); }catch(e){}
+  try{ if(navigator.serviceWorker){ const rs = await navigator.serviceWorker.getRegistrations(); rs.forEach(function(x){ x.unregister(); }); } }catch(e){}
+  try{ if(window.caches){ const ks = await caches.keys(); await Promise.all(ks.map(function(k){ return caches.delete(k); })); } }catch(e){}
+  const base = location.href.split('#')[0].split('?')[0];
+  location.replace(base + '?u=' + Date.now());
+};
+window.stsCheckVersion = async function(){
+  const b = document.getElementById('stsVerBadge'), m = document.getElementById('stsVerMsg'); if(!b || !m) return;
+  const lab = 'Version de l\'application : ' + window.STS_BUILD_LABEL;
+  m.style.color = ''; m.textContent = '⏳ Vérification…';
+  try{
+    const base = location.href.split('#')[0].split('?')[0];
+    const res = await fetch(base + '?chk=' + Date.now(), {cache: 'no-store'});
+    const t = await res.text();
+    const mm = t.match(/window\.STS_BUILD = '([^']+)'/);
+    if(!mm){ b.dataset.state = ''; m.textContent = ''; return; }
+    if(mm[1] !== window.STS_BUILD){
+      b.dataset.state = 'old'; b.style.background = 'linear-gradient(135deg,#DC2626,#F97316)';
+      b.textContent = '⚠️ Nouvelle version disponible : touchez ici pour mettre à jour';
+      m.style.color = '#F87171'; m.textContent = 'Votre application n\'est plus à jour (' + window.STS_BUILD_LABEL + '). Touchez le bouton rouge pour charger la dernière version.';
+    } else {
+      b.dataset.state = 'ok'; b.style.background = 'linear-gradient(135deg,#0D9488,#0EA5E9)';
+      b.textContent = lab + ' · à jour ✓'; m.textContent = '';
+    }
+  }catch(e){ b.dataset.state = ''; m.style.color = ''; m.textContent = 'Vérification impossible pour le moment (pas de connexion).'; }
+};
+window.stsBindVersion = function(){
+  const b = document.getElementById('stsVerBadge'); if(!b) return;
+  b.onclick = function(){ if(b.dataset.state === 'old') window.stsDoUpdate(); else window.stsCheckVersion(); };
+  window.stsCheckVersion();
+};
 // ===== Restauration depuis un fichier de sauvegarde (.json) =====
 window.stsRestoreFromFile = function(file, say){
   const COLS = ['companies', 'packages', 'clients', 'announcements', 'supportRequests', 'messages'];
