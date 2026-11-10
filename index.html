@@ -5571,9 +5571,9 @@ async function renderOwnerSettings(){
     <div class="card">
       <h2>🗄️ Sauvegarde et export</h2>
       <p class="sub">Téléchargez une copie de vos données. Gardez ces fichiers en lieu sûr : la sauvegarde complète contient les codes d'accès des entreprises. Les images (logos, preuves) ne sont pas incluses.</p>
-      ${backupReminderHTML()}<button class="primary" id="btnBackupJson" style="margin-bottom:8px;">⬇️ Sauvegarde complète (JSON)</button>
-      <button class="ghost" id="btnExportPkgs" style="width:100%;margin-bottom:8px;color:#fff;border-color:var(--accent);">📊 Exporter les colis (Excel)</button>
-      <button class="ghost" id="btnExportCos" style="width:100%;color:#fff;border-color:var(--accent);">📊 Exporter les entreprises (Excel)</button>
+      ${window.stsDlNote('json', '<b>Sauvegarde complète (fichier JSON)</b> : toutes les entreprises (avec leurs codes), les colis, les clients et les messages. Sert de copie de sécurité et se remet dans l\'app avec le bouton « Restaurer ». Ce n\'est pas fait pour être lu.')}<button class="primary" id="btnBackupJson" style="margin-bottom:12px;">⬇️ Sauvegarde complète (JSON)</button>
+      ${window.stsDlNote('pkgs', '<b>Liste des colis (Excel)</b> : numéro de suivi, client, statut, destination. Sert à lire, trier ou imprimer. Ne se restaure pas.')}<button class="ghost" id="btnExportPkgs" style="width:100%;margin-bottom:12px;color:#fff;border-color:var(--accent);">📊 Exporter les colis (Excel)</button>
+      ${window.stsDlNote('cos', '<b>Liste des entreprises (Excel)</b> : contacts, statut, essai, abonnement. Sert à suivre les paiements. Ne contient pas les codes d\'accès. Ne se restaure pas.')}<button class="ghost" id="btnExportCos" style="width:100%;color:#fff;border-color:var(--accent);">📊 Exporter les entreprises (Excel)</button>
       <div style="margin-top:12px;padding-top:12px;border-top:1px dashed var(--border);">
         <div style="font-weight:800;margin-bottom:6px;">✉️ Sauvegarde par email</div>
         <input type="email" id="bkMail" placeholder="Votre email pour recevoir la sauvegarde" style="width:100%;margin-bottom:8px;">
@@ -5601,7 +5601,7 @@ async function renderOwnerSettings(){
       <div id="rcQuota" class="sub" style="margin-top:8px;font-weight:700;"></div>
     </div>
     <div id="stsAgentsHost"></div>
-    <div style="text-align:center;margin:14px 0 8px;"><button type="button" id="stsVerBadge" style="width:auto;display:inline-block;padding:10px 18px;border:none;border-radius:999px;font-weight:800;font-size:13px;color:#fff;background:linear-gradient(135deg,#0D9488,#0EA5E9);box-shadow:0 2px 10px rgba(0,0,0,0.35);">Version de l'application : ${window.STS_BUILD_LABEL}</button><div id="stsVerMsg" class="sub" style="margin-top:8px;font-weight:700;"></div></div>`;
+    <div style="text-align:center;margin:14px 0 8px;"><button type="button" id="stsVerBadge" style="width:auto;display:inline-block;padding:10px 18px;border:none;border-radius:999px;font-weight:800;font-size:13px;color:#fff;background:linear-gradient(135deg,#0D9488,#0EA5E9);box-shadow:0 2px 10px rgba(0,0,0,0.35);">Version de l'application : ${window.STS_BUILD_LABEL}</button><div id="stsVerMsg" class="sub" style="margin-top:8px;font-weight:700;"></div><button type="button" class="ghost" id="stsVerCheck" style="width:auto;display:inline-block;margin-top:8px;padding:9px 14px;color:#fff;border-color:var(--accent);">🔄 Vérifier les mises à jour</button><div class="sub" style="font-size:12.5px;margin-top:8px;">Pour changer la version de l'application, il faut d'abord remplacer le fichier index.html sur GitHub. Ce bouton recharge ensuite la dernière version publiée.</div></div>`;
   try{ bindGiftAdminSettings(content); }catch(e){}
   const ownWaBtn = document.getElementById('btnOwnWaSave');
   if(ownWaBtn) ownWaBtn.onclick = async ()=>{
@@ -5636,6 +5636,7 @@ async function renderOwnerSettings(){
       try{ out.receipts = await loadReceiptHistory(); }catch(e){ out.receipts = []; }
       deliverFile(new Blob([JSON.stringify(out, null, 1)], {type: 'application/json'}), 'sauvegarde-sts-' + stamp + '.json', '💾 Sauvegarde complète (JSON)');
       markBackupDone();
+      try{ window.stsDlMark('json'); }catch(e5){}
       bmsg('✅ Sauvegarde prête', true);
     }catch(e){ bmsg('❌ Impossible de préparer la sauvegarde', false); }
   };
@@ -5671,6 +5672,7 @@ async function renderOwnerSettings(){
       const rows = [['N° de suivi', 'Client', 'Téléphone', 'Email', 'Entreprise', 'Statut', 'Compagnie de transport', 'Destination', 'Mise à jour']];
       pk.forEach(p => rows.push([p.trackingId, p.name, p.phone, emailBy[p.phone] || '', nameBy[p.companyCode] || '', STATUS_LABEL[p.status] || p.status, p.carrier || '', [p.destCommune, p.destDepartment, p.destCountry].filter(Boolean).join(', '), p.updatedAt ? new Date(p.updatedAt).toLocaleString('fr-FR') : '']));
       deliverFile(makeXlsx('Colis', rows), 'colis-sts-' + stamp + '.xlsx', '📊 Liste des colis (Excel)');
+      try{ window.stsDlMark('pkgs'); }catch(e5){}
       bmsg('✅ ' + pk.length + ' colis exportés', true);
     }catch(e){ bmsg('❌ Export impossible', false); }
   };
@@ -5682,6 +5684,7 @@ async function renderOwnerSettings(){
       const rows = [['Entreprise', 'Téléphone entreprise', 'Adresse', 'Responsable', 'Email', 'Téléphone responsable', 'Statut', 'Bloquée', 'Inscrite le', 'Fin de l\'essai gratuit', 'Frais d\'inscription', 'Abonnement payé le', 'Abonnement fini le']];
       co.forEach(c => rows.push([c.companyName || '', c.companyPhone || '', c.companyAddress || '', c.adminName || '', c.adminEmail || '', c.adminPhone || '', (c.isFree || c.paymentStatus === 'active') ? 'Actif' : 'Non actif', c.blocked ? 'Oui' : 'Non', dd(c.registeredAt), dd(c.trialEndsAt), c.regPaymentStatus === undefined ? '' : (c.regPaymentStatus === 'active' ? 'Payés' : 'Non payés'), dd(c.subPaidAt), dd(c.subEndsAt)]));
       deliverFile(makeXlsx('Entreprises', rows), 'entreprises-sts-' + stamp + '.xlsx', '📊 Liste des entreprises (Excel)');
+      try{ window.stsDlMark('cos'); }catch(e5){}
       bmsg('✅ ' + co.length + ' entreprises exportées', true);
     }catch(e){ bmsg('❌ Export impossible', false); }
   };
@@ -5813,7 +5816,7 @@ async function renderOwnerPayments(){
         </div>
         <div style="padding:14px 16px;">
           ${backupReminderHTML()}
-          <p class="sub">Télécharge une copie de toutes tes entreprises et de tous tes colis, au cas où.</p>
+          <p class="sub"><b>Copie rapide (fichier JSON)</b> : les entreprises et les colis, sans images, au cas où. Plus légère que la sauvegarde complète de Paramètres (pas de clients ni de messages). Ce fichier ne se remet pas avec le bouton « Restaurer » : pour restaurer, utilisez la sauvegarde complète de Paramètres.</p>
           <button class="primary" id="btnExportBackup" style="margin-top:6px;">📥 Exporter mes données</button>
           
           <button class="primary" id="btnCleanOrphans" style="margin-top:10px;background:linear-gradient(135deg,#F59E0B,#EA580C);">🧹 Nettoyer les colis orphelins</button>
@@ -9214,7 +9217,8 @@ async function renderPaymentGate(main, company, status){
       💳 Abonnement : <b>${settings.minHTG} HTG</b> (ou <b>${settings.minUSD} USD</b>) par mois pour continuer à utiliser la plateforme.<br>
       ✅ Envoyez un montant égal ou supérieur à ce prix, dans la monnaie du compte choisi.<br>
       ⚠️ Un montant plus bas sera refusé : « Montant incorrect ».<br>
-      🕐 Votre dépôt est vérifié en quelques minutes, parfois jusqu'à une heure.
+      🕐 Votre dépôt est vérifié en quelques minutes, parfois jusqu'à une heure.<br>
+      📢 Si votre dépôt n'est pas encore confirmé, vérifiez le petit camion de suivi pour voir votre place dans la file d'attente.
     </div></div>
     ${bonusBox}
     ${methodCards}
@@ -9382,7 +9386,8 @@ async function renderRegistrationGate(main, company, status){
       💰 Frais d'inscription : <b>${settings.regFeeHTG} HTG</b> (ou <b>${settings.regFeeUSD} USD</b>), à payer une seule fois.<br>
       🎁 Essai gratuit de ${settings.trialDays} jours inclus dès l'inscription.<br>
       💳 Ensuite, abonnement de ${settings.minHTG} HTG (ou ${settings.minUSD} USD) par mois.<br>
-      ⚠️ Un montant plus bas sera refusé : « Montant incorrect ».
+      ⚠️ Un montant plus bas sera refusé : « Montant incorrect ».<br>
+      📢 Si votre dépôt n'est pas encore confirmé, vérifiez le petit camion de suivi pour voir votre place dans la file d'attente.
     </div></div>
     ${methodCards}
     ${whatsappBubbleHTML()}`;
@@ -11696,15 +11701,21 @@ window.fillOwnExpiry = async function(host){
   try{
     host.innerHTML = foldCardHTML('ownexpiry', '#EF4444,#F59E0B', '⏰', 'Abonnements terminés ou bientôt terminés', '…', '<div class="empty">Chargement' + LDOTS + '</div>'); bindFoldCards(host);
     const cos = await getAllCompanies(), now = new Date();
-    const list = cos.filter(c => !c.isFree && (c.paymentStatus === 'active' || c.subExpiredAt || c.subEndsAt) && subEndOf(c)).map(c => { const end = subEndOf(c); return {c: c, end: end, left: Math.ceil((end - now) / 86400000)}; }).filter(x => x.left <= 3 && x.left >= -30).sort((a, b) => a.left - b.left);
+    const list = cos.filter(c => !c.isFree && (c.paymentStatus === 'active' || c.subExpiredAt || c.subEndsAt) && subEndOf(c)).map(c => { const end = subEndOf(c); return {c: c, end: end, left: Math.ceil((end - now) / 86400000)}; }).filter(x => x.left <= 3 && x.left >= -30 && x.c.expiryDismissedFor !== x.end.toISOString()).sort((a, b) => a.left - b.left);
     const rows = list.map(function(x){
       const nm = x.c.companyName || x.c.code, d = x.end.toLocaleDateString('fr-FR');
       const when = x.left > 0 ? 'se termine dans ' + x.left + ' jour' + (x.left > 1 ? 's' : '') + ' (le ' + d + ')' : (x.left === 0 ? (x.end < now ? 'est terminé aujourd\'hui' : 'se termine aujourd\'hui') : 'est terminé depuis ' + (-x.left) + ' jour' + (x.left < -1 ? 's' : '') + ' (le ' + d + ')');
       const msg = 'Bonjour ' + nm + ', ici Sam Trace Store. Votre abonnement ' + when + '. Pensez à renouveler pour garder votre accès. Merci !';
-      return '<div style="padding:10px;margin-bottom:8px;border:1px solid var(--border);border-radius:12px;"><div style="font-weight:800;overflow-wrap:anywhere;display:flex;align-items:center;">' + (coLogoMini(x.c) || '🏢') + '<span style="margin-left:4px;">' + escHtml(nm) + '</span></div><div class="sub" style="font-size:12.5px;margin:2px 0 0;">🔑 code ' + escHtml(x.c.code) + '</div><div style="font-size:13px;margin-top:3px;color:' + (x.left <= 0 ? '#EF5D5D' : '#F5B93D') + ';font-weight:700;">⏳ ' + escHtml(when.charAt(0).toUpperCase() + when.slice(1)) + '</div><div style="margin-top:8px;">' + waChatBtn(x.c.companyWhatsapp || x.c.companyPhone, msg) + '</div></div>';
+      return '<div style="padding:10px;margin-bottom:8px;border:1px solid var(--border);border-radius:12px;"><div style="font-weight:800;overflow-wrap:anywhere;display:flex;align-items:center;">' + (coLogoMini(x.c) || '🏢') + '<span style="margin-left:4px;">' + escHtml(nm) + '</span></div><div class="sub" style="font-size:12.5px;margin:2px 0 0;">🔑 code ' + escHtml(x.c.code) + '</div><div style="font-size:13px;margin-top:3px;color:' + (x.left <= 0 ? '#EF5D5D' : '#F5B93D') + ';font-weight:700;">⏳ ' + escHtml(when.charAt(0).toUpperCase() + when.slice(1)) + '</div><div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap;align-items:center;">' + waChatBtn(x.c.companyWhatsapp || x.c.companyPhone, msg) + '<button type="button" data-exp-hide="' + escHtml(x.c.code) + '|' + x.end.toISOString() + '" style="width:auto;padding:9px 12px;border-radius:10px;border:1px solid #374151;background:#111827;color:#F87171;font-weight:800;font-size:13px;cursor:pointer;">🗑️ Retirer de la liste</button></div></div>';
     }).join('');
-    host.innerHTML = foldCardHTML('ownexpiry', '#EF4444,#F59E0B', '⏰', 'Abonnements terminés ou bientôt terminés', list.length, '<p class="sub" style="margin:0 0 8px;">Entreprises dont l\'abonnement est terminé (depuis 30 jours ou moins) ou se termine dans 3 jours ou moins. Touchez le bouton WhatsApp pour les rappeler (le message est déjà écrit).</p>' + (rows || '<p class="sub" style="margin:0;">Aucun abonnement terminé ou proche de la fin. 🎉</p>'));
+    host.innerHTML = foldCardHTML('ownexpiry', '#EF4444,#F59E0B', '⏰', 'Abonnements terminés ou bientôt terminés', list.length, '<p class="sub" style="margin:0 0 8px;">Entreprises dont l\'abonnement est terminé (depuis 30 jours ou moins) ou se termine dans 3 jours ou moins. Touchez le bouton WhatsApp pour les rappeler (le message est déjà écrit). Quand une entreprise paie, elle disparaît toute seule de cette liste. Le bouton « Retirer de la liste » sert à la cacher sans la supprimer.</p>' + (rows || '<p class="sub" style="margin:0;">Aucun abonnement terminé ou proche de la fin. 🎉</p>'));
     bindFoldCards(host);
+    host.onclick = async function(ev){
+      const b = ev.target.closest && ev.target.closest('[data-exp-hide]'); if(!b) return;
+      const parts = String(b.dataset.expHide).split('|'), code = parts[0], endIso = parts.slice(1).join('|');
+      if(!confirm('Retirer cette entreprise de la liste ? L\'entreprise n\'est pas supprimée : elle réapparaîtra seulement à la prochaine fin d\'abonnement.')) return;
+      try{ await db.collection('companies').doc(code).set({expiryDismissedFor: endIso}, {merge: true}); window.fillOwnExpiry(host); }catch(err){ try{ toast('Échec, réessayez'); }catch(e3){} }
+    };
   }catch(e){ try{ host.querySelectorAll('.empty').forEach(el => { el.textContent = 'Impossible de charger pour le moment.'; }); }catch(e2){} }
 };
 
@@ -11900,7 +11911,7 @@ window.fillOwnDup = async function(host){
 
 
 // ===== V10 : sauvegarde par email + mise à jour de l'app =====
-window.STS_BUILD = '20261110-d';
+window.STS_BUILD = '20261110-e';
 window.stsSendBackupText = async function(email){
   try{
     const cos = await getAllCompanies(), pk = await getAllPackages();
@@ -13154,7 +13165,7 @@ window.fillStsBackground = async function(host){
 
 
 
-window.STS_BUILD_LABEL = '10 novembre 2026 (d)';
+window.STS_BUILD_LABEL = '10 novembre 2026 (e)';
 // ===== Garder la position de l'écran après une suppression =====
 (function(){
   if(window.__stsKeepScroll) return; window.__stsKeepScroll = true;
@@ -13181,6 +13192,25 @@ window.STS_BUILD_LABEL = '10 novembre 2026 (d)';
   init();
 })();
 
+
+// ===== Messages d'explication + dernier téléchargement =====
+window.stsDlMark = function(key){
+  try{ localStorage.setItem('sts_dl_' + key, String(Date.now())); }catch(e){}
+  try{ document.querySelectorAll('.stsDlSt[data-dl="' + key + '"]').forEach(function(el){ el.textContent = window.stsDlStatus(key).txt; el.parentNode.style.cssText = window.stsDlStatus(key).css; }); }catch(e2){}
+};
+window.stsDlStatus = function(key){
+  let t = 0; try{ t = parseInt(localStorage.getItem(key === 'json' ? 'sts_last_backup' : 'sts_dl_' + key) || '0', 10) || 0; }catch(e){}
+  const days = t ? Math.floor((Date.now() - t) / 86400000) : null, lim = key === 'json' ? 7 : 30;
+  const old = days === null || days >= lim;
+  const lab = key === 'json' ? 'Dernière sauvegarde' : 'Dernier téléchargement';
+  const txt = days === null ? '⏰ Jamais téléchargé sur cet appareil' : (old ? '⏰ ' + lab + ' : il y a ' + days + ' jours' : '✅ ' + lab + ' : ' + (days === 0 ? "aujourd'hui" : 'il y a ' + days + ' j'));
+  const css = 'margin:0 0 6px;padding:9px 12px;border-radius:10px;font-size:13px;line-height:1.45;' + (old ? 'background:rgba(245,158,11,0.15);border:1px solid rgba(245,158,11,0.5);color:#FBBF24;' : 'background:rgba(62,207,142,0.12);border:1px solid rgba(62,207,142,0.4);color:var(--ok);');
+  return {txt: txt, css: css};
+};
+window.stsDlNote = function(key, desc){
+  const st = window.stsDlStatus(key);
+  return '<div style="' + st.css + '"><div class="stsDlSt" data-dl="' + key + '" style="font-weight:800;">' + st.txt + '</div><div style="font-weight:600;margin-top:2px;">' + desc + '</div></div>';
+};
 // ===== Version de l'application : vérification et mise à jour =====
 window.stsDoUpdate = async function(){
   try{ toast('Mise à jour en cours…'); }catch(e){}
@@ -13212,6 +13242,7 @@ window.stsCheckVersion = async function(){
 window.stsBindVersion = function(){
   const b = document.getElementById('stsVerBadge'); if(!b) return;
   b.onclick = function(){ if(b.dataset.state === 'old') window.stsDoUpdate(); else window.stsCheckVersion(); };
+  const vc = document.getElementById('stsVerCheck'); if(vc) vc.onclick = function(){ if(b.dataset.state === 'old') window.stsDoUpdate(); else window.stsCheckVersion(); };
   window.stsCheckVersion();
 };
 // ===== Restauration depuis un fichier de sauvegarde (.json) =====
