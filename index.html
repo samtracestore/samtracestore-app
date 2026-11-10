@@ -5601,7 +5601,7 @@ async function renderOwnerSettings(){
       <div id="rcQuota" class="sub" style="margin-top:8px;font-weight:700;"></div>
     </div>
     <div id="stsAgentsHost"></div>
-    <div class="sub" style="text-align:center;opacity:.7;margin:14px 0 6px;">Version de l'application : 10 novembre 2026 (b)</div>`;
+    <div style="text-align:center;margin:14px 0 8px;"><span style="display:inline-block;padding:8px 16px;border-radius:999px;font-weight:800;font-size:13px;color:#fff;background:linear-gradient(135deg,#0D9488,#0EA5E9);box-shadow:0 2px 10px rgba(0,0,0,0.35);">Version de l'application : 10 novembre 2026 (c)</span></div>`;
   try{ bindGiftAdminSettings(content); }catch(e){}
   const ownWaBtn = document.getElementById('btnOwnWaSave');
   if(ownWaBtn) ownWaBtn.onclick = async ()=>{
@@ -13144,6 +13144,32 @@ window.fillStsBackground = async function(host){
 
 
 
+
+// ===== Garder la position de l'écran après une suppression =====
+(function(){
+  if(window.__stsKeepScroll) return; window.__stsKeepScroll = true;
+  const init = function(){
+    const main = document.getElementById('main'); if(!main){ setTimeout(init, 300); return; }
+    const se = function(){ return document.scrollingElement || document.documentElement; };
+    let mark = null, moved = false;
+    const isDel = function(el){
+      const b = el && el.closest ? el.closest('button, a, [role="button"], .miniBtn') : null; if(!b) return false;
+      let t = b.textContent || ''; try{ for(let i = 0; i < b.attributes.length; i++) t += ' ' + b.attributes[i].name; }catch(e){}
+      return /🗑|❌|Supprimer|Effacer|Retirer|Vider|Nettoyer|data-[a-z-]*del|data-rm/i.test(t);
+    };
+    document.addEventListener('click', function(e){
+      if(e.target.closest && e.target.closest('.modeSwitch')){ mark = null; return; }
+      if(isDel(e.target)){ mark = {y: se().scrollTop, t: Date.now()}; moved = false; }
+    }, true);
+    ['touchmove', 'wheel'].forEach(function(ev){ window.addEventListener(ev, function(){ if(mark && Date.now() - mark.t > 500) moved = true; }, {passive: true}); });
+    const restore = function(){
+      if(!mark || moved || Date.now() - mark.t > 6000) return;
+      [0, 80, 250, 600, 1200, 2000].forEach(function(d){ setTimeout(function(){ if(mark && !moved && Date.now() - mark.t < 8000) se().scrollTop = mark.y; }, d); });
+    };
+    new MutationObserver(restore).observe(main, {childList: true});
+  };
+  init();
+})();
 // ===== Restauration depuis un fichier de sauvegarde (.json) =====
 window.stsRestoreFromFile = function(file, say){
   const COLS = ['companies', 'packages', 'clients', 'announcements', 'supportRequests', 'messages'];
