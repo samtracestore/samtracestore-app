@@ -5651,7 +5651,7 @@ async function renderOwnerSettings(){
     if(!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(to)){ bmsg('Entrez une adresse email valide', false); return; }
     try{ localStorage.setItem('sts_backup_email', to); }catch(e){}
     bmsg('⏳ Envoi de la sauvegarde…');
-    try{ await sendBackupByEmail(to); bmsg('✅ Sauvegarde envoyée à ' + to, true); }
+    try{ const how = await sendBackupByEmail(to); bmsg(how === 'text' ? '⚠️ Le script Reçus ne répond pas : un résumé en texte a été envoyé à ' + to + ' (sans le fichier complet).' : '✅ Sauvegarde envoyée à ' + to, true); }
     catch(err){ bmsg('❌ ' + ((err && err.message) || 'Envoi impossible'), false); }
   };
   document.getElementById('btnExportPkgs').onclick = async ()=>{
@@ -8335,11 +8335,12 @@ async function sendBackupByEmail(to){
   const out = await buildBackupObject();
   const b64 = btoa(unescape(encodeURIComponent(JSON.stringify(out))));
   const day = new Date().toISOString().slice(0, 10);
-  const res = await fetch(receiptMailUrl, {method: 'POST', headers: {'Content-Type': 'text/plain'}, body: JSON.stringify({to_email: to, name: 'STS', subject: 'Sauvegarde STS ' + day, message: 'Sauvegarde complète de STS du ' + day + ' en pièce jointe (fichier .json, à garder en lieu sûr).\n\nContenu : ' + (out.companies || []).length + ' entreprises, ' + (out.packages || []).length + ' colis, ' + (out.clients || []).length + ' clients, ' + (out.messages || []).length + ' messages, ' + (out.activityLog || []).length + ' entrées du journal.\nLes images et photos ne sont pas incluses.', attachment_base64: b64, attachment_name: 'sauvegarde-sts-' + day + '.json', attachment_mime: 'application/json'})});
-  const d = await res.json();
-  if(!(d && d.ok)) throw new Error((d && d.error) || 'Envoi impossible');
-  markBackupDone();
-  try{ localStorage.setItem('sts_last_auto_backup', String(Date.now())); }catch(e){}
+  let res = null, d = null;
+  try{ res = await fetch(receiptMailUrl, {method: 'POST', headers: {'Content-Type': 'text/plain'}, body: JSON.stringify({to_email: to, name: 'STS', subject: 'Sauvegarde STS ' + day, message: 'Sauvegarde complète de STS du ' + day + ' en pièce jointe (fichier .json, à garder en lieu sûr).\n\nContenu : ' + (out.companies || []).length + ' entreprises, ' + (out.packages || []).length + ' colis, ' + (out.clients || []).length + ' clients, ' + (out.messages || []).length + ' messages, ' + (out.activityLog || []).length + ' entrées du journal.\nLes images et photos ne sont pas incluses.', attachment_base64: b64, attachment_name: 'sauvegarde-sts-' + day + '.json', attachment_mime: 'application/json'})}); d = await res.json(); }catch(e){ d = null; }
+  if(d && d.ok){ markBackupDone(); try{ localStorage.setItem('sts_last_auto_backup', String(Date.now())); }catch(e){} return 'file'; }
+  const okTxt2 = await window.stsSendBackupText(to);
+  if(okTxt2){ markBackupDone(); try{ localStorage.setItem('sts_last_auto_backup', String(Date.now())); }catch(e){} return 'text'; }
+  throw new Error((d && d.error) || 'Envoi impossible');
 }
 async function autoBackupCheck(){
   return; // remplacé par l'envoi automatique enregistré en ligne
