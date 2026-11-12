@@ -13013,11 +13013,11 @@ window.fillStsAccounts = async function(host){
     const dkey = function(iso){ const d = new Date(iso); return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()); };
     const now = new Date(), today = now.getFullYear() + '-' + pad(now.getMonth() + 1) + '-' + pad(now.getDate()), curM = today.slice(0, 7), curY = today.slice(0, 4);
     if(!st.month) st.month = curM;
-    const row = function(l, v, color){ return '<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;padding:11px 0;border-bottom:1px solid var(--border);"><span style="opacity:.85;">' + l + '</span><b style="text-align:right;' + (color ? 'color:' + color + ';' : '') + '">' + v + '</b></div>'; };
+    const row = function(l, v, color){ return '<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;padding:11px 0;border-bottom:1px solid var(--border);"><span style="opacity:.85;">' + l + '</span><b style="text-align:right;white-space:nowrap;' + (color ? 'color:' + color + ';' : '') + '">' + v + '</b></div>'; };
     const h3 = function(t){ return '<div style="font-weight:900;margin:16px 0 4px;">' + t + '</div>'; };
     const all = sum(items), dayT = sum(items.filter(function(x){ return dkey(x.at) === today; })), monT = sum(items.filter(function(x){ return dkey(x.at).slice(0, 7) === curM; })), yearT = sum(items.filter(function(x){ return dkey(x.at).slice(0, 4) === curY; }));
     const byDay = {}; items.filter(function(x){ return dkey(x.at).slice(0, 7) === st.month; }).forEach(function(x){ (byDay[dkey(x.at)] = byDay[dkey(x.at)] || []).push(x); });
-    const dayRows = Object.keys(byDay).sort().reverse().map(function(k){ const t = sum(byDay[k]); return row('📅 ' + k.split('-').reverse().join('/') + ' <span class="sub">(' + t.n + ' paiement' + (t.n > 1 ? 's' : '') + ')</span>', fmt(t), '#3ECF8E'); }).join('') || '<p class="sub" style="margin:8px 0 0;">Aucune entrée ce mois-là.</p>';
+    const dayRows = Object.keys(byDay).sort().reverse().map(function(k){ const t = sum(byDay[k]); return row('📅 ' + k.split('-').reverse().join('/') + '<div class="sub" style="font-size:12px;">(' + t.n + ' paiement' + (t.n > 1 ? 's' : '') + ')</div>', fmt(t), '#3ECF8E'); }).join('') || '<p class="sub" style="margin:8px 0 0;">Aucune entrée ce mois-là.</p>';
     const byMonth = {}; items.forEach(function(x){ (byMonth[dkey(x.at).slice(0, 7)] = byMonth[dkey(x.at).slice(0, 7)] || []).push(x); });
     const monthRows = Object.keys(byMonth).sort().reverse().slice(0, 12).map(function(k){ return row('🗓️ ' + k.split('-').reverse().join('/'), fmt(sum(byMonth[k])), '#60A5FA'); }).join('') || '<p class="sub" style="margin:8px 0 0;">Aucune entrée.</p>';
     const byCo = {}; items.forEach(function(x){ const k = x.code || x.companyName; (byCo[k] = byCo[k] || {name: x.companyName || x.code, list: []}).list.push(x); });
@@ -13269,7 +13269,7 @@ window.fillStsBackground = async function(host){
 
 
 
-window.STS_BUILD_LABEL = '12 novembre 2026 (k)';
+window.STS_BUILD_LABEL = '12 novembre 2026 (l)';
 // ===== Garder la position de l'écran après une suppression (v2) =====
 (function(){
   if(window.__stsKeepScroll2) return; window.__stsKeepScroll2 = true;
