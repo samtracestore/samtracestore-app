@@ -10549,8 +10549,8 @@ async function renderCompanySettings(main){
       <h2>🖼️ Logo de l'entreprise</h2>
       <p class="sub">Choisissez une image depuis votre galerie, puis réglez-la avec les boutons. Vous pouvez la changer à tout moment.</p>
       <div style="display:flex;justify-content:center;margin:6px 0 14px;">
-        <div id="logoPrevFrame" style="display:${hasLogo ? 'inline-block' : 'none'};line-height:0;overflow:hidden;border-radius:18px;border:3px solid var(--accent);">
-          <img loading=lazy decoding=async id="logoPrevImg" ${hasLogo ? 'src="' + company.logoUrl + '"' : ''} style="display:block;height:220px;width:auto;max-width:300px;object-fit:contain;transform:scale(${lz / 100});transform-origin:${lx}% ${ly}%;">
+        <div id="logoPrevFrame" style="display:${hasLogo ? 'inline-block' : 'none'};line-height:0;overflow:hidden;border-radius:${stsShapeGet(company.logoUrl) === '50%' ? '50%' : '18px'};border:3px solid var(--accent);">
+          <img loading=lazy decoding=async id="logoPrevImg" ${hasLogo ? 'src="' + company.logoUrl + '"' : ''} onload="try{this.parentElement.style.borderRadius=stsLogoIsCircle(this)?'50%':'18px';}catch(e){}" style="display:block;height:220px;width:auto;max-width:300px;object-fit:contain;transform:scale(${lz / 100});transform-origin:${lx}% ${ly}%;">
         </div>
         <div id="logoPrevEmpty" style="display:${hasLogo ? 'none' : 'flex'};width:150px;height:150px;border-radius:24px;border:3px dashed var(--accent);align-items:center;justify-content:center;font-size:12px;color:var(--muted);text-align:center;">Aucun logo</div>
       </div>
@@ -13320,7 +13320,7 @@ window.fillStsBackground = async function(host){
 
 
 
-window.STS_BUILD_LABEL = '12 novembre 2026 (o)';
+window.STS_BUILD_LABEL = '12 novembre 2026 (p)';
 // ===== Garder la position de l'écran après une suppression (v2) =====
 (function(){
   if(window.__stsKeepScroll2) return; window.__stsKeepScroll2 = true;
