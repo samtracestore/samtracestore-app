@@ -790,7 +790,7 @@ function whatsappBubbleHTML(){
   }
   const text = encodeURIComponent(msg);
   const inner = supportAvatarUrl
-    ? `<img loading=lazy decoding=async src="${supportAvatarUrl}" style="width:100%;height:100%;object-fit:cover;object-position:center ${supportAvatarPos}%;border-radius:50%;">`
+    ? `<img decoding=sync src="${supportAvatarUrl}" style="width:100%;height:100%;object-fit:cover;object-position:center ${supportAvatarPos}%;border-radius:50%;">`
     : `👧`;
   return `<a href="https://wa.me/${WHATSAPP_NUMBER}?text=${text}" target="_blank" style="position:fixed;bottom:24px;left:20px;width:56px;height:56px;border-radius:50%;
     background:linear-gradient(135deg,#25D366,#128C7E);display:flex;align-items:center;justify-content:center;
@@ -823,7 +823,7 @@ function samRole(){
 }
 function samAvatarHTML(size){
   return samAvatarUrl
-    ? `<img loading=lazy decoding=async src="${samAvatarUrl}" style="width:100%;height:100%;object-fit:cover;object-position:center ${samAvatarPos}%;border-radius:50%;">`
+    ? `<img decoding=sync src="${samAvatarUrl}" style="width:100%;height:100%;object-fit:cover;object-position:center ${samAvatarPos}%;border-radius:50%;">`
     : `<span style="font-size:${Math.round(size * 0.5)}px;line-height:1;">🤖</span>`;
 }
 let samFabPos = null;
@@ -854,11 +854,14 @@ function samEnsureStyle(){
 }
 function renderSamButton(){
   samEnsureStyle();
-  const old = document.getElementById('samFab'); if(old) old.remove();
+  const old = document.getElementById('samFab');
+  const _sig = [samAvatarUrl, samUnread ? 1 : 0, JSON.stringify(samFabPos), samAvatarLoaded ? 1 : 0].join('|');
+  if(old && samAvatarLoaded && !samIsOwnerView() && old.dataset.sig === _sig && document.body.contains(old)) return;
+  if(old) old.remove();
   if(!samAvatarLoaded) return;
   if(samIsOwnerView()){ const g = document.getElementById('samGreet'); if(g) g.remove(); return; }
   const b = document.createElement('div');
-  b.id = 'samFab'; b.setAttribute('role', 'button'); b.setAttribute('data-sam-open', '1'); b.setAttribute('aria-label', 'Sam, assistante virtuelle');
+  b.id = 'samFab'; b.dataset.sig = _sig; b.setAttribute('role', 'button'); b.setAttribute('data-sam-open', '1'); b.setAttribute('aria-label', 'Sam, assistante virtuelle');
   b.style.cssText = 'position:fixed;width:62px;height:62px;z-index:60;cursor:pointer;touch-action:none;user-select:none;-webkit-user-select:none;';
   if(samFabPos){ const p = samClampPos(samFabPos.x, samFabPos.y); b.style.left = p.x + 'px'; b.style.top = p.y + 'px'; }
   else { b.style.right = '16px'; b.style.bottom = '96px'; }
@@ -13343,7 +13346,7 @@ window.fillStsBackground = async function(host){
 
 
 
-window.STS_BUILD_LABEL = '13 novembre 2026 (u)';
+window.STS_BUILD_LABEL = '13 novembre 2026 (v)';
 // ===== Garder la position de l'écran après une suppression (v2) =====
 (function(){
   if(window.__stsKeepScroll2) return; window.__stsKeepScroll2 = true;
