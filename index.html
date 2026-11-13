@@ -6383,12 +6383,15 @@ async function openMessagesModal(code, name, side){
   listEl.addEventListener('load', function(e){ if(stick && e.target && e.target.tagName === 'IMG') listEl.scrollTop = listEl.scrollHeight; }, true);
   const otherSide = side === 'owner' ? 'company' : 'owner';
   const readKey = side === 'owner' ? 'readByOwner' : 'readByCompany';
-  let lastThread = [];
+  let lastThread = [], lastSig = '';
   async function paint(scroll){
     try{
       let thread = await loadThread(code);
       if(side === 'company') thread = thread.filter(m => !m.deletedByCompany);
       lastThread = thread;
+      const sig = thread.map(m => m.id + (m.deletedByCompany ? 'd' : '')).join('|');
+      if(!scroll && sig === lastSig && listEl.childElementCount) return;
+      lastSig = sig;
       const keepTop = listEl.scrollTop;
       if(thread.some(m => m.from === otherSide && !m[readKey])) markThreadRead(code, side).catch(()=>{});
       listEl.innerHTML = thread.length ? thread.map(m => {
@@ -13337,7 +13340,7 @@ window.fillStsBackground = async function(host){
 
 
 
-window.STS_BUILD_LABEL = '13 novembre 2026 (s)';
+window.STS_BUILD_LABEL = '13 novembre 2026 (t)';
 // ===== Garder la position de l'écran après une suppression (v2) =====
 (function(){
   if(window.__stsKeepScroll2) return; window.__stsKeepScroll2 = true;
