@@ -6352,20 +6352,21 @@ function onMessagesClosed(){
 function closeMessagesModal(notify){
   if(msgPoll){ clearInterval(msgPoll); msgPoll = null; }
   const o = document.getElementById('msgModal');
+  document.documentElement.style.overflow = ''; document.body.style.overflow = '';
   if(o){ o.remove(); if(notify === true) onMessagesClosed(); }
 }
 async function openMessagesModal(code, name, side){
   closeMessagesModal(false);
   const ov = document.createElement('div');
   ov.id = 'msgModal';
-  ov.style.cssText = 'position:fixed;inset:0;z-index:280;background:var(--bg);display:flex;flex-direction:column;';
+  ov.style.cssText = 'position:fixed;left:0;top:0;right:0;bottom:0;height:100%;max-height:100dvh;overflow:hidden;overscroll-behavior:contain;z-index:280;background:var(--bg);display:flex;flex-direction:column;';
   ov.innerHTML = `
     <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;padding:12px 16px;background:linear-gradient(135deg,#FF6A00,#FF5A1A);color:#fff;">
       <div style="font-weight:800;font-size:16px;min-width:0;overflow-wrap:anywhere;">💬 ${side === 'owner' ? 'Messages — ' + escHtml(name) : 'Messages avec STS'}</div>
       <button type="button" id="msgClose" style="flex:0 0 auto;padding:8px 14px;border:none;border-radius:12px;background:#fff;color:#C2185B;font-weight:800;font-size:14px;cursor:pointer;">✕ Fermer</button>
     </div>
     <div style="padding:6px 14px;text-align:right;border-bottom:1px solid var(--border);"><button type="button" id="msgClear" style="background:none;border:none;color:var(--danger);font-size:12px;font-weight:800;cursor:pointer;">${side === 'owner' ? '🗑️ Supprimer toute la conversation' : '🗑️ Supprimer mes messages'}</button></div>
-    <div id="msgList" style="flex:1;overflow-y:auto;padding:14px;"></div>
+    <div id="msgList" style="flex:1 1 0;min-height:0;overflow-y:auto;-webkit-overflow-scrolling:touch;overscroll-behavior:contain;padding:14px;"></div>
     <div style="padding:10px 12px;border-top:1px solid var(--border);background:var(--panel);">
       ${side === 'owner' ? '<button type="button" id="msgPayReq" style="width:100%;margin-bottom:8px;padding:10px;border:none;border-radius:12px;background:linear-gradient(135deg,#8B5CF6,#F97316);color:#fff;font-weight:800;font-size:14px;cursor:pointer;">💳 Passer au paiement mensuel</button><button type="button" id="msgRegPayReq" style="width:100%;margin-bottom:8px;padding:10px;border:none;border-radius:12px;background:linear-gradient(135deg,#0EA5E9,#8B5CF6);color:#fff;font-weight:800;font-size:14px;cursor:pointer;">💳 Passer au paiement d\'inscription</button><button type="button" id="msgBonusPayReq" style="width:100%;margin-bottom:8px;padding:10px;border:1px solid rgba(250,204,21,0.7);border-radius:12px;background:linear-gradient(135deg,rgba(250,204,21,0.25),rgba(249,115,22,0.2));color:#FDE047;font-weight:800;font-size:14px;cursor:pointer;">🎁 Passer au paiement après le retrait du Bonus</button>' : ''}
       <div style="display:flex;gap:8px;align-items:flex-end;">
@@ -6374,7 +6375,12 @@ async function openMessagesModal(code, name, side){
       </div>
     </div>`;
   document.body.appendChild(ov);
+  document.documentElement.style.overflow = 'hidden'; document.body.style.overflow = 'hidden';
+  ov.addEventListener('touchmove', function(e){ if(!(e.target.closest && e.target.closest('#msgList')) && !(e.target.closest && e.target.closest('textarea'))) e.preventDefault(); }, {passive: false});
   const listEl = ov.querySelector('#msgList');
+  let stick = true;
+  listEl.addEventListener('scroll', function(){ stick = listEl.scrollHeight - listEl.scrollTop - listEl.clientHeight < 80; }, {passive: true});
+  listEl.addEventListener('load', function(e){ if(stick && e.target && e.target.tagName === 'IMG') listEl.scrollTop = listEl.scrollHeight; }, true);
   const otherSide = side === 'owner' ? 'company' : 'owner';
   const readKey = side === 'owner' ? 'readByOwner' : 'readByCompany';
   let lastThread = [];
@@ -13331,7 +13337,7 @@ window.fillStsBackground = async function(host){
 
 
 
-window.STS_BUILD_LABEL = '13 novembre 2026 (r)';
+window.STS_BUILD_LABEL = '13 novembre 2026 (s)';
 // ===== Garder la position de l'écran après une suppression (v2) =====
 (function(){
   if(window.__stsKeepScroll2) return; window.__stsKeepScroll2 = true;
