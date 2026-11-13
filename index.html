@@ -891,7 +891,7 @@ function renderSamButton(){
   };
   b.addEventListener('pointerup', end); b.addEventListener('pointercancel', end);
 }
-window.addEventListener('resize', ()=>{ if(document.getElementById('samFab')) renderSamButton(); });
+window.addEventListener('resize', ()=>{ const b = document.getElementById('samFab'); if(b && samFabPos){ const p = samClampPos(samFabPos.x, samFabPos.y); if(b.style.left !== p.x + 'px') b.style.left = p.x + 'px'; if(b.style.top !== p.y + 'px') b.style.top = p.y + 'px'; } });
 
 function samAvatarsLoaded(){
   samAvatarLoaded = true;
@@ -6353,13 +6353,14 @@ function closeMessagesModal(notify){
   if(msgPoll){ clearInterval(msgPoll); msgPoll = null; }
   const o = document.getElementById('msgModal');
   document.documentElement.style.overflow = ''; document.body.style.overflow = '';
+  if(window.__stsScrollLock){ document.body.style.position = ''; document.body.style.top = ''; document.body.style.left = ''; document.body.style.right = ''; document.body.style.width = ''; const ly = window.__stsLockY || 0; window.__stsScrollLock = false; window.scrollTo(0, ly); }
   if(o){ o.remove(); if(notify === true) onMessagesClosed(); }
 }
 async function openMessagesModal(code, name, side){
   closeMessagesModal(false);
   const ov = document.createElement('div');
   ov.id = 'msgModal';
-  ov.style.cssText = 'position:fixed;left:0;top:0;right:0;bottom:0;height:100%;max-height:100dvh;overflow:hidden;overscroll-behavior:contain;z-index:280;background:var(--bg);display:flex;flex-direction:column;';
+  ov.style.cssText = 'position:fixed;left:0;top:0;right:0;bottom:0;height:100%;max-height:100dvh;overflow:hidden;overscroll-behavior:contain;z-index:280;background:#0A1020;box-shadow:0 -600px 0 0 #0A1020;display:flex;flex-direction:column;';
   ov.innerHTML = `
     <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;padding:12px 16px;background:linear-gradient(135deg,#FF6A00,#FF5A1A);color:#fff;">
       <div style="font-weight:800;font-size:16px;min-width:0;overflow-wrap:anywhere;">💬 ${side === 'owner' ? 'Messages — ' + escHtml(name) : 'Messages avec STS'}</div>
@@ -6375,7 +6376,9 @@ async function openMessagesModal(code, name, side){
       </div>
     </div>`;
   document.body.appendChild(ov);
+  window.__stsScrollLock = true; window.__stsLockY = window.pageYOffset || 0;
   document.documentElement.style.overflow = 'hidden'; document.body.style.overflow = 'hidden';
+  document.body.style.position = 'fixed'; document.body.style.top = (-window.__stsLockY) + 'px'; document.body.style.left = '0'; document.body.style.right = '0'; document.body.style.width = '100%';
   ov.addEventListener('touchmove', function(e){ if(!(e.target.closest && e.target.closest('#msgList')) && !(e.target.closest && e.target.closest('textarea'))) e.preventDefault(); }, {passive: false});
   const listEl = ov.querySelector('#msgList');
   let stick = true;
@@ -13340,7 +13343,7 @@ window.fillStsBackground = async function(host){
 
 
 
-window.STS_BUILD_LABEL = '13 novembre 2026 (t)';
+window.STS_BUILD_LABEL = '13 novembre 2026 (u)';
 // ===== Garder la position de l'écran après une suppression (v2) =====
 (function(){
   if(window.__stsKeepScroll2) return; window.__stsKeepScroll2 = true;
@@ -13827,6 +13830,7 @@ if(!window.__stsLivDeleg){
   };
   ['touchstart', 'touchmove', 'wheel', 'mousedown', 'keydown', 'click'].forEach(function(ev){ window.addEventListener(ev, function(){ lastUser = Date.now(); pend = null; }, {passive: true, capture: true}); });
   window.addEventListener('scroll', function(){
+    if(window.__stsScrollLock) return;
     const y = se().scrollTop, k = keyNow();
     if(k !== lastKey){ lastKey = k; lastY = y; pend = null; return; }
     if(lastY > 250 && y < 80 && Date.now() - lastUser > 2500){ pend = {y: lastY, until: Date.now() + 8000, key: k}; tryRestore(); return; }
