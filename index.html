@@ -9716,7 +9716,7 @@ async function renderAdminCore(){
         <p class="sub">Entrez les 4 premiers chiffres de votre numéro de téléphone.</p>
         <label>Code (4 ou 6 chiffres)</label>
         <div style="position:relative;">
-          <input id="pinInput" type="text" inputmode="numeric" maxlength="6" placeholder="••••" style="padding-right:46px;-webkit-text-security:disc;">
+          <input id="pinInput" type="password" name="password" autocomplete="current-password" inputmode="numeric" maxlength="6" placeholder="••••" style="padding-right:46px;">
           <button type="button" id="togglePin" style="position:absolute;right:10px;top:9px;background:none;border:none;color:var(--muted);font-size:16px;cursor:pointer;">🙈</button>
         </div>
         <button class="primary" id="btnUnlock">Accéder</button>
@@ -9729,9 +9729,9 @@ async function renderAdminCore(){
     document.getElementById('togglePin').onclick = ()=>{
       const inp = document.getElementById('pinInput');
       const btn = document.getElementById('togglePin');
-      const isHidden = inp.style.webkitTextSecurity !== 'none';
-      if(isHidden){ inp.style.webkitTextSecurity = 'none'; btn.textContent = '👁️'; }
-      else { inp.style.webkitTextSecurity = 'disc'; btn.textContent = '🙈'; }
+      const isHidden = inp.type === 'password';
+      if(isHidden){ inp.type = 'text'; btn.textContent = '👁️'; }
+      else { inp.type = 'password'; btn.textContent = '🙈'; }
     };
     document.getElementById('btnUnlock').onclick = async ()=>{
       const rawCode = document.getElementById('pinInput').value.trim();
@@ -10818,7 +10818,7 @@ async function renderCompanyCore(){
         <p class="sub">Entrez le code de votre entreprise. Pas encore inscrit ? Inscrivez-vous d'abord avec le bouton Admin.</p>
         <label>Code (4 ou 6 chiffres)</label>
         <div style="position:relative;">
-          <input id="coPin" type="text" inputmode="numeric" maxlength="6" placeholder="••••" style="padding-right:46px;-webkit-text-security:disc;">
+          <input id="coPin" type="password" name="password" autocomplete="current-password" inputmode="numeric" maxlength="6" placeholder="••••" style="padding-right:46px;">
           <button type="button" id="coTogglePin" style="position:absolute;right:10px;top:9px;background:none;border:none;color:var(--muted);font-size:16px;cursor:pointer;">🙈</button>
         </div>
         <button class="primary" id="coUnlock">Accéder</button>
@@ -10829,8 +10829,8 @@ async function renderCompanyCore(){
     document.getElementById('coGoRegister').onclick = ()=>{ showCompanyRegister = true; setMode('admin'); };
     document.getElementById('coTogglePin').onclick = ()=>{
       const inp = document.getElementById('coPin'); const btn = document.getElementById('coTogglePin');
-      const hidden = inp.style.webkitTextSecurity !== 'none';
-      inp.style.webkitTextSecurity = hidden ? 'none' : 'disc'; btn.textContent = hidden ? '👁️' : '🙈';
+      const hidden = inp.type === 'password';
+      inp.type = hidden ? 'text' : 'password'; btn.textContent = hidden ? '👁️' : '🙈';
     };
     document.getElementById('coUnlock').onclick = async ()=>{
       const code = document.getElementById('coPin').value.trim().replace(/\D/g, '');
@@ -13350,7 +13350,7 @@ window.fillStsBackground = async function(host){
 
 
 
-window.STS_BUILD_LABEL = '13 novembre 2026 (x)';
+window.STS_BUILD_LABEL = '13 novembre 2026 (y)';
 // ===== Garder la position de l'écran après une suppression (v2) =====
 (function(){
   if(window.__stsKeepScroll2) return; window.__stsKeepScroll2 = true;
@@ -13906,14 +13906,6 @@ window.stsFitOverlay = function(ov){
       navigator.credentials.store(new PasswordCredential({id: id, password: String(pw), name: id})).catch(function(){});
     }catch(e){}
   }, 1500);
-  document.addEventListener('focusin', function(e){
-    try{
-      const t = e.target;
-      if(!t || (t.id !== 'coPin' && t.id !== 'pinInput') || t.value || !window.PasswordCredential || !navigator.credentials || window._stsCredAsking) return;
-      window._stsCredAsking = true;
-      navigator.credentials.get({password: true, mediation: 'optional'}).then(function(c){ if(c && c.password && !t.value) t.value = c.password; }).catch(function(){}).then(function(){ setTimeout(function(){ window._stsCredAsking = false; }, 3000); });
-    }catch(err){ window._stsCredAsking = false; }
-  });
 })();
 
 window.stsLockPage = function(){
